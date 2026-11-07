@@ -17,8 +17,9 @@ namespace RimSiege.Integration
     {
         private static IEnumerable<MethodBase> TargetMethods()
         {
-            yield return AccessTools.Method(typeof(LadderSite), nameof(LadderSite.Find));
-            yield return AccessTools.Method(typeof(LadderSite), nameof(LadderSite.Spawn));
+            foreach (MethodInfo method in AccessTools.GetDeclaredMethods(typeof(LadderSite)))
+                if (method.Name == nameof(LadderSite.Find) || method.Name == nameof(LadderSite.FindFromFoot) || method.Name == nameof(LadderSite.Spawn))
+                    yield return method;
             yield return AccessTools.Method(typeof(StairGrid), nameof(StairGrid.UsableIn));
             yield return AccessTools.Method(typeof(StairTouch), nameof(StairTouch.UpperCells));
             yield return AccessTools.Method(typeof(RaidVertical), nameof(RaidVertical.ClearableTop));
