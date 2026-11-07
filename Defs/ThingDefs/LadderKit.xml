@@ -1,21 +1,59 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Defs>
-  <ThingDef ParentName="ResourceBase">
-    <defName>RS_LadderKit</defName>
-    <label>folded assault ladder</label>
-    <description>A portable ladder kit. Raiders deploy it as a ladder or a mechanoid lift. One kit is consumed when deployment succeeds.</description>
-    <thingClass>RimSiege.Raids.LadderKit</thingClass>
+  <ThingDef ParentName="BuildingBase">
+    <defName>RS_AssaultLadder</defName>
+    <label>folding ladder kit</label>
+    <description>A portable folding ladder kit. Once installed, it can serve as a permanent part of a colony, though it is more often used on the battlefield as portable siege equipment.</description>
+    <thingClass>ProjectZ.Building_SiegeLadder</thingClass>
     <graphicData>
       <texPath>ProjectZ/SiegeLadder</texPath>
       <graphicClass>Graphic_Single</graphicClass>
-      <drawSize>(0.8,0.8)</drawSize>
+      <drawSize>(1,1)</drawSize>
     </graphicData>
+    <uiIconPath>ProjectZ/SiegeLadder</uiIconPath>
+    <passability>Standable</passability>
+    <pathCost>4</pathCost>
+    <fillPercent>0.1</fillPercent>
+    <castEdgeShadows>false</castEdgeShadows>
+    <blockWind>false</blockWind>
+    <rotatable>true</rotatable>
+    <size>(1,1)</size>
+    <building>
+      <isInert>true</isInert>
+      <ai_chillDestination>false</ai_chillDestination>
+      <claimable>true</claimable>
+      <deconstructible>true</deconstructible>
+    </building>
+    <statBases>
+      <MaxHitPoints>60</MaxHitPoints>
+      <WorkToBuild>200</WorkToBuild>
+      <Mass>2</Mass>
+      <MarketValue>20</MarketValue>
+      <Flammability>1</Flammability>
+      <Beauty>-2</Beauty>
+    </statBases>
+    <costList>
+      <Steel>40</Steel>
+    </costList>
+    <resourcesFractionWhenDeconstructed>0.5</resourcesFractionWhenDeconstructed>
+    <designationCategory>Structure</designationCategory>
+    <minifiedDef>RS_LadderKit</minifiedDef>
+    <thingCategories>
+      <li>BuildingsSpecial</li>
+    </thingCategories>
+    <placeWorkers>
+      <li>ProjectZ.PlaceWorker_LadderFromFoot</li>
+    </placeWorkers>
+  </ThingDef>
+
+  <ThingDef ParentName="MinifiedThing">
+    <defName>RS_LadderKit</defName>
+    <label>folding ladder kit</label>
+    <thingClass>RimSiege.Raids.LadderKit</thingClass>
     <stackLimit>1</stackLimit>
     <statBases>
       <MaxHitPoints>60</MaxHitPoints>
-      <Mass>2</Mass>
       <Bulk>4</Bulk>
-      <MarketValue>20</MarketValue>
       <Flammability>1</Flammability>
     </statBases>
   </ThingDef>

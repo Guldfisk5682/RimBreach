@@ -163,8 +163,8 @@ namespace RimSiege.Raids
     {
         private static void Postfix(ThingOwner __instance, Thing item)
         {
-            if (item is LadderKit && __instance.Owner is Pawn_InventoryTracker inventory)
-                LadderInventory.Removed(inventory.pawn);
+            if (item is LadderKit kit && __instance.Owner is Pawn_InventoryTracker inventory)
+                LadderInventory.Removed(inventory.pawn, kit);
         }
     }
 

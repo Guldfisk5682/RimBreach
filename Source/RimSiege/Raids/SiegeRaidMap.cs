@@ -52,8 +52,8 @@ namespace RimSiege.Raids
     {
         private List<SiegeParty> parties = new List<SiegeParty>();
         private readonly Dictionary<Pawn, SiegeParty> membership = new Dictionary<Pawn, SiegeParty>();
-        private readonly Dictionary<Pawn, LadderKit> receivers = new Dictionary<Pawn, LadderKit>();
-        internal readonly HashSet<LadderKit> Dropped = new HashSet<LadderKit>();
+        private readonly Dictionary<Pawn, LadderKit> receivers = new();
+        private readonly HashSet<LadderKit> dropped = new();
         private int nextId = 1;
         internal int ReachEpoch;
 
@@ -115,7 +115,7 @@ namespace RimSiege.Raids
 
         private void GiveLadder(Pawn pawn, SiegeParty party)
         {
-            LadderKit kit = (LadderKit)ThingMaker.MakeThing(SiegeDefOf.RS_LadderKit);
+            var kit = (LadderKit)ThingMaker.MakeThing(SiegeDefOf.RS_AssaultLadder).MakeMinified();
             kit.RaidId = party.Id;
             if (!pawn.inventory.innerContainer.TryAdd(kit, false))
             {
@@ -140,9 +140,20 @@ namespace RimSiege.Raids
             return job;
         }
 
+        internal void RegisterDropped(LadderKit kit)
+        {
+            if (kit.RaidId != 0) dropped.Add(kit);
+        }
+
+        internal void DeregisterDropped(LadderKit kit)
+        {
+            Release(kit);
+            dropped.Remove(kit);
+        }
+
         internal LadderKit RecoveryFor(Pawn pawn) => receivers.TryGetValue(pawn, out LadderKit kit) ? kit : null;
 
-        internal void Release(LadderKit kit)
+        private void Release(LadderKit kit)
         {
             if (kit.Receiver == null) return;
             receivers.Remove(kit.Receiver);
@@ -153,10 +164,10 @@ namespace RimSiege.Raids
             Party(pawn) == party && LadderInventory.Get(pawn) == null && SiegeRoles.Eligible(pawn, party) &&
             pawn.TryGetComp<CompSuppressable>()?.isSuppressed != true;
 
-        private bool CanRecover(Pawn pawn, SiegeParty party, LadderKit kit, Dictionary<Pawn, bool> needsRoute)
+        private bool CanRecover(Pawn pawn, SiegeParty party, Thing item, Dictionary<Pawn, bool> needsRoute)
         {
-            if (!CanRecover(pawn, party) || kit.IsForbidden(pawn) ||
-                !pawn.CanReserveAndReach(kit, PathEndMode.ClosestTouch, Danger.Deadly)) return false;
+            if (!CanRecover(pawn, party) || item.IsForbidden(pawn) ||
+                !pawn.CanReserveAndReach(item, PathEndMode.ClosestTouch, Danger.Deadly)) return false;
             if (!needsRoute.TryGetValue(pawn, out bool needs))
             {
                 needs = !party.Planner.Destination(pawn, true).IsValid && !party.Planner.Destination(pawn, false).IsValid;
@@ -165,20 +176,20 @@ namespace RimSiege.Raids
             return needs;
         }
 
-        private static bool Taking(Pawn pawn, LadderKit kit) => pawn.CurJobDef == JobDefOf.TakeInventory &&
-            pawn.CurJob.targetA.Thing == kit;
+        private static bool Taking(Pawn pawn, Thing item) => pawn.CurJobDef == JobDefOf.TakeInventory &&
+            pawn.CurJob.targetA.Thing == item;
 
         public override void MapComponentTick()
         {
             int now = Find.TickManager.TicksGame;
-            bool recover = Dropped.Count != 0 && now % 60 == 0;
+            bool recover = dropped.Count != 0 && now % 60 == 0;
             bool recheckCarriers = Enabled && parties.Count != 0 && now % RaidClimb.MemoTicks == 0;
             if (!recover && !recheckCarriers) return;
             HashSet<Pawn> wake = new HashSet<Pawn>();
             if (recover)
             {
                 Dictionary<Pawn, bool> needsRoute = new Dictionary<Pawn, bool>();
-                foreach (LadderKit kit in Dropped)
+                foreach (LadderKit kit in dropped)
                 {
                     SiegeParty party = Party(kit.RaidId);
                     Pawn previous = kit.Receiver;

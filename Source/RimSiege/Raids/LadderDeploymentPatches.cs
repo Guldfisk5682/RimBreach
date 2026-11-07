@@ -49,7 +49,8 @@ namespace RimSiege.Raids
 
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, MethodBase __originalMethod)
         {
-            MethodInfo spawn = AccessTools.Method(typeof(LadderSite), nameof(LadderSite.Spawn));
+            MethodInfo spawn = AccessTools.Method(typeof(LadderSite), nameof(LadderSite.Spawn),
+                new[] { typeof(IntVec3), typeof(IntVec3), typeof(Faction), typeof(Map), typeof(bool), typeof(bool) });
             foreach (CodeInstruction c in instructions)
             {
                 if (c.Calls(spawn))
