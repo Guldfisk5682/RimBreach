@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <RimSiege.Fortress.FortressDefenseProfileDef>
+    <defName>RS_FortressDefense_Tribal</defName>
+    <machineGuns>
+      <li>CE_Turret_OrganGun</li>
+    </machineGuns>
+    <smallRoof>
+      <li><turret>CE_Turret_TwelvePounder</turret></li>
+    </smallRoof>
+    <largeRoof>
+      <li><turret>CE_Turret_TwelvePounder</turret><count>3</count></li>
+    </largeRoof>
+    <mortars>
+      <li><turret>CE_Turret_12PounderBombard</turret></li>
+    </mortars>
+  </RimSiege.Fortress.FortressDefenseProfileDef>
+
+  <RimSiege.Fortress.FortressDefenseProfileDef>
+    <defName>RS_FortressDefense_Industrial</defName>
+    <minTech>Industrial</minTech>
+    <machineGuns>
+      <li>Turret_KPV</li>
+      <li>Turret_M240B</li>
+    </machineGuns>
+    <grenadeLauncher>Turret_AGSThirty</grenadeLauncher>
+    <grenadePoints>6000</grenadePoints>
+    <cornerTurrets>
+      <li>Turret_Medium</li>
+      <li>Turret_Heavy</li>
+    </cornerTurrets>
+    <imperialCorner>Turret_Blaster</imperialCorner>
+    <hunterTrap MayRequire="Ludeon.RimWorld.Odyssey">HunterDroneTrap</hunterTrap>
+    <middleMachineGuns>true</middleMachineGuns>
+    <smallRoof>
+      <li><turret>Turret_AGSThirty</turret></li>
+    </smallRoof>
+    <largeRoof>
+      <li><turret>Turret_Flak</turret><centered>true</centered></li>
+      <li><turret>Turret_Autocannon</turret><count>2</count></li>
+      <li><turret>Turret_Sniper</turret><count>2</count></li>
+    </largeRoof>
+    <mortars>
+      <li><turret>Turret_Mortar</turret></li>
+      <li><turret>Turret_RocketswarmLauncher</turret><minPoints>5000</minPoints></li>
+      <li MayRequire="CETeam.CombatExtendedGuns">
+        <turret>CE_Artillery_Howitzer</turret><minPoints>8000</minPoints>
+      </li>
+    </mortars>
+  </RimSiege.Fortress.FortressDefenseProfileDef>
+</Defs>

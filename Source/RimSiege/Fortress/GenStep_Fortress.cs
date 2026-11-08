@@ -86,11 +86,21 @@ namespace RimSiege.Fortress
                     return;
                 }
 
+                if (site != null)
+                {
+                    if (blueprint.Stock == null) blueprint.Stock = FortressStock.Capture(map, layout.Facilities);
+                    else FortressStock.Restore(map, layout.Facilities, blueprint.Stock);
+                }
+
+                blueprint.Defenses ??= FortressDefensePlanner.Plan(map, layout, site?.OriginalPoints ?? 5000f);
+                List<ArmedEmplacement> emplacements = FortressArmament.Spawn(map, layout, blueprint.Defenses);
+                var ammunition = new FortressAmmunition(map, layout);
+                ammunition.StockEmplacements(emplacements);
+                if (!layout.Facilities.Power.IsEmpty) FortressPower.Connect(map, layout);
+
                 if (site == null) return;
-                if (blueprint.Stock == null) blueprint.Stock = FortressStock.Capture(map, layout.Facilities);
-                else FortressStock.Restore(map, layout.Facilities, blueprint.Stock);
                 site.Blueprint = blueprint;
-                FortressGarrison.Spawn(map, layout, parms.sitePart);
+                ammunition.StockInfantry(FortressGarrison.Spawn(map, layout, parms.sitePart), emplacements);
             }
             finally { Rand.PopState(); }
         }

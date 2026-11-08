@@ -26,7 +26,6 @@ namespace RimSiege.Fortress
     {
         private const int LayoutAttempts = 6;
         private const float MortarPoints = 2000f;
-        private const float StandardMortarPoints = 3500f;
         private const float SecondMortarPoints = 6000f;
 
         internal static bool TryPlace(Map map, FortressLayout layout, out FortressFacilityPlan result)
@@ -37,7 +36,10 @@ namespace RimSiege.Fortress
             var reserved = new HashSet<IntVec3>(layout.Modules.SelectMany(module => module.Ground.Cells));
             reserved.UnionWith(CellRect.FromLimits(layout.Gate, layout.Outer.CenterCell).ExpandedBy(1));
             foreach (StairGeometry stair in layout.Tiers[0].Stairs)
+            {
                 reserved.UnionWith(stair.footprint.ExpandedBy(1));
+                reserved.Add(Api.GroundCellOf(stair.exit, map));
+            }
             foreach (IntVec3 cell in courtyard)
                 if (!FortressSiting.UpperSpaceFree(Api.CellOnFloor(cell, 1, map), map)) reserved.Add(cell);
 
@@ -53,21 +55,20 @@ namespace RimSiege.Fortress
                 CellRect secondMortar = CellRect.Empty;
                 ThingDef mortarDef = null;
                 ThingDef secondMortarDef = null;
-                if (powerRequired)
+                float points = (map.Parent as FortressSite)?.OriginalPoints ?? 5000f;
+                if (points >= MortarPoints &&
+                    courtyard.TryFindRandomInnerRect(new IntVec2(6, 6), out mortar, FitsMortar))
                 {
-                    bool FitsMortar(CellRect rect) => Fits(rect, used) && rect.CenterCell.InHorDistOf(supply.Rect.CenterCell, 26f);
-                    float points = (map.Parent as FortressSite)?.DefenderPoints ?? StandardMortarPoints;
-                    if (points >= MortarPoints &&
-                        courtyard.TryFindRandomInnerRect(new IntVec2(6, 6), out mortar, FitsMortar))
-                    {
-                        mortarDef = points >= StandardMortarPoints ? ThingDefOf.Turret_Mortar :
-                            DefDatabase<ThingDef>.GetNamed("CE_Turret_PortableMortar");
-                        used.UnionWith(mortar);
-                        if (points >= SecondMortarPoints &&
-                            courtyard.TryFindRandomInnerRect(new IntVec2(6, 6), out secondMortar, FitsMortar))
-                            secondMortarDef = DefDatabase<ThingDef>.GetNamed("CE_Turret_PortableMortar");
-                    }
+                    ThingDef[] pool = FortressDefenseProfileDef.For(map.ParentFaction).mortars
+                        .Where(option => option.minPoints <= points).Select(option => option.turret).ToArray();
+                    mortarDef = pool.RandomElement();
+                    used.UnionWith(mortar);
+                    if (points >= SecondMortarPoints &&
+                        courtyard.TryFindRandomInnerRect(new IntVec2(6, 6), out secondMortar, FitsMortar))
+                        secondMortarDef = pool.Where(def => def != mortarDef).RandomElementWithFallback(mortarDef);
                 }
+
+                bool FitsMortar(CellRect rect) => Fits(rect, used) && rect.CenterCell.InHorDistOf(supply.Rect.CenterCell, 26f);
                 result = new FortressFacilityPlan(living, supply, power, mortar, industrial, mortarDef,
                     secondMortar, secondMortarDef);
                 return true;
@@ -112,32 +113,12 @@ namespace RimSiege.Fortress
         {
             FortressFacilityPlan plan = layout.Facilities;
             Faction faction = map.ParentFaction;
-            var shells = new List<Thing>();
 
             BaseGen.globalSettings.map = map;
             Push("RS_FortressBarracks", plan.Living.Interior(map, 0));
             Push("RS_FortressDining", plan.Living.Interior(map, 1));
             Push(plan.Industrial ? "RS_FortressInfirmary" : "RS_FortressBarracks", plan.Supply.Interior(map, 1));
-            AddMortar(plan.Mortar, plan.MortarDef);
-            AddMortar(plan.SecondMortar, plan.SecondMortarDef);
             BaseGen.Generate();
-
-            void AddMortar(CellRect yard, ThingDef def)
-            {
-                if (def == null) return;
-                foreach (IntVec3 cell in yard)
-                    if (cell.Roofed(map)) map.roofGrid.SetRoof(cell, null);
-                BaseGen.symbolStack.Push("mannedMortar", new ResolveParams
-                {
-                    rect = yard,
-                    faction = faction,
-                    mortarDef = def,
-                    postThingGenerate = thing =>
-                    {
-                        if (thing.def.category == ThingCategory.Item) shells.Add(thing);
-                    }
-                });
-            }
 
             ThingDef medicine = ModsConfig.RoyaltyActive && faction.def == FactionDefOf.Empire
                 ? ThingDefOf.MedicineUltratech : plan.Industrial ? ThingDefOf.MedicineIndustrial : ThingDefOf.MedicineHerbal;
@@ -146,18 +127,8 @@ namespace RimSiege.Fortress
             var storageAccess = new HashSet<IntVec3>(storage.Where(cell =>
                 cell.x == storage.CenterCell.x || cell.z == storage.CenterCell.z)) { entry };
             List<Building_Storage> supply = FortressStorage.PlaceShelves(map, storage, material.Stuff, storageAccess);
-            List<Thing> rounds = shells.Where(shell => shell.Spawned).ToList();
-            Building_Storage ammoShelf = rounds.Count > 0 && supply.Count > 1 ? supply[^1] : null;
             int componentStacks = layout.Outer.Width == FortressDimensions.Large.OuterSide ? 2 : 1;
-            FortressStorage.Fill(map, supply.Where(shelf => shelf != ammoShelf), SupplyItem);
-            if (ammoShelf != null)
-            {
-                foreach (Thing shell in rounds)
-                {
-                    shell.DeSpawn();
-                    GenPlace.TryPlaceThing(shell, ammoShelf.Position, map, ThingPlaceMode.Direct);
-                }
-            }
+            FortressStorage.Fill(map, supply, SupplyItem);
 
             if (!plan.Power.IsEmpty) FurnishPower(map, plan.Power, material.Stuff);
 

@@ -38,6 +38,11 @@ namespace RimSiege.Fortress
             BaseGen.globalSettings.map = map;
             foreach (FortressRoomFloor room in layout.Tiers[0].Interiors)
                 BaseGen.symbolStack.Push("clear", room.Cells);
+            // Facility ladders start outside the rooms. ProjectZ requires a
+            // standable foot, so a tree there blocks the link like a building.
+            foreach (FortressLadder ladder in layout.Ladders)
+                if (Api.FloorOf(ladder.Foot, map) == 0 && !ladder.Foot.Standable(map))
+                    BaseGen.symbolStack.Push("clear", CellRect.SingleCell(ladder.Foot));
             BaseGen.Generate();
             ThingDef stairs = DefDatabase<ThingDef>.GetNamed("PZ_Stairs");
             TerrainDef finish = BaseGenUtility.CorrespondingTerrainDef(material.Stuff, beautiful: false, map.ParentFaction);
@@ -104,7 +109,6 @@ namespace RimSiege.Fortress
 
             FortressFacilities.Furnish(map, layout, material);
             FortressStronghold.Furnish(map, layout, material.Stuff);
-            if (!layout.Facilities.Power.IsEmpty) FortressPower.Connect(map, layout);
 
             CellRect ground = Api.GroundRect(map);
             Log.Message($"[RimSiege] Fortress generated on tile {map.Tile}: {layout.Outer}, gate {layout.Gate}, " +

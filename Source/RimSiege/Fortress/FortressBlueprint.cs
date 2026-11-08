@@ -16,6 +16,7 @@ namespace RimSiege.Fortress
         internal List<IntVec3> NaturalBarrier;
         internal FortressFacilityPlan Facilities;
         internal List<FortressStock> Stock;
+        internal List<FortressDefensePiece> Defenses;
 
         internal FortressLayout Rebuild(Map map) => FortressLayout.Plan(map, Outer, GateSide,
             new HashSet<IntVec3>(NaturalBarrier),
@@ -32,6 +33,7 @@ namespace RimSiege.Fortress
             Scribe_Defs.Look(ref Slab, "slab");
             Scribe_Collections.Look(ref NaturalBarrier, "naturalBarrier", LookMode.Value);
             Scribe_Collections.Look(ref Stock, "stock", LookMode.Deep);
+            Scribe_Collections.Look(ref Defenses, "defenses", LookMode.Deep);
 
             FortressLot living = LookLot(Facilities.Living, "living");
             FortressLot supply = LookLot(Facilities.Supply, "supply");

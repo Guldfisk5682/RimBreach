@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using RimWorld;
 using RimWorld.BaseGen;
 using RimWorld.Planet;
@@ -8,7 +9,7 @@ namespace RimSiege.Fortress
 {
     internal static class FortressGarrison
     {
-        internal static void Spawn(Map map, FortressLayout layout, SitePart part)
+        internal static IReadOnlyList<Pawn> Spawn(Map map, FortressLayout layout, SitePart part)
         {
             Faction faction = map.ParentFaction;
             CellRect courtyard = layout.Outer.ContractedBy(FortressLayout.CurtainThickness);
@@ -32,6 +33,7 @@ namespace RimSiege.Fortress
                 }
             });
             BaseGen.Generate();
+            return lord.ownedPawns;
         }
 
         internal static void PlaceLoot(Map map, FortressBlueprint blueprint, float value)

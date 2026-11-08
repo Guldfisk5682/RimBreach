@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using ProjectZ;
 using RimWorld;
 using Verse;
@@ -7,6 +8,15 @@ namespace RimSiege.Fortress
 {
     internal static class FortressPower
     {
+        internal static float FirmCapacity(Map map, FortressLayout layout)
+        {
+            if (layout.Facilities.Power.IsEmpty) return 0f;
+            return layout.Facilities.Power.Interior(map, 0)
+                .Select(cell => cell.GetFirstBuilding(map)).OfType<Building>().Distinct()
+                .Where(building => building.def == ThingDefOf.ChemfuelPoweredGenerator)
+                .Sum(generator => -generator.GetComp<CompPowerPlant>().Props.PowerConsumption);
+        }
+
         internal static void Connect(Map map, FortressLayout layout)
         {
             CellRect trunk = layout.Outer.ContractedBy(FortressLayout.CurtainThickness - 1);

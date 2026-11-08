@@ -36,7 +36,7 @@ namespace RimSiege.Fortress
                     towerAccess.Add(ladder.Foot);
                     towerAccess.UnionWith(GenAdj.CardinalDirections.Select(direction => ladder.Foot + direction).Where(tower.Contains));
                 }
-                FortressStorage.PlaceShelves(map, tower, stuff, towerAccess, limit: 1);
+                FortressStorage.PlaceShelves(map, tower, stuff, towerAccess, limit: 2);
             }
         }
 

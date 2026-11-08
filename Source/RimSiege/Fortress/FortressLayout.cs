@@ -114,6 +114,26 @@ namespace RimSiege.Fortress
             AddFacility(map, facilities.Living, upperRoom: true);
             AddFacility(map, facilities.Supply, upperRoom: true, sterile: facilities.Industrial);
             if (!facilities.Power.IsEmpty) AddFacility(map, facilities.Power, upperRoom: false);
+            return VerticalLinksFit();
+        }
+
+        private bool VerticalLinksFit()
+        {
+            var reserved = new HashSet<IntVec3>();
+            foreach (FortressTier tier in Tiers)
+            {
+                reserved.UnionWith(tier.Openings);
+                foreach (StairGeometry stair in tier.Stairs)
+                {
+                    reserved.UnionWith(stair.footprint);
+                    reserved.Add(stair.exit);
+                }
+            }
+
+            foreach (FortressLadder ladder in Ladders)
+            {
+                if (!reserved.Add(ladder.Foot) || !reserved.Add(ladder.Landing)) return false;
+            }
             return true;
         }
 
@@ -137,7 +157,7 @@ namespace RimSiege.Fortress
                     AddInterior(map, tower, 0);
                     AddDeck(map, tower, 1);
                     AddLadder(map, 0, lowerFoot, inward.Opposite);
-                    AddPerimeter(map, tower, 1, Rot4.Invalid, embrasure);
+                    AddPerimeter(map, tower, 1, Rot4.Invalid, embrasure, centerPorts: top == 2 && side >= 7);
 
                     if (top == 1) continue;
                     AddInterior(map, tower, 1);
@@ -193,13 +213,15 @@ namespace RimSiege.Fortress
             Ladders.Add(new FortressLadder(foot, landing, facing));
         }
 
-        private void AddPerimeter(Map map, CellRect rect, int level, Rot4 gateSide, ThingDef embrasure = null)
+        private void AddPerimeter(Map map, CellRect rect, int level, Rot4 gateSide, ThingDef embrasure = null,
+            bool centerPorts = false)
         {
             IntVec3 gate = gateSide.IsValid ? rect.GetCenterCellOnEdge(gateSide) : IntVec3.Invalid;
             foreach (IntVec3 cell in rect.EdgeCells)
             {
                 ThingDef def = cell == gate ? ThingDefOf.Door :
-                    embrasure != null && Along(rect, cell) % 2 == 0 ? embrasure : ThingDefOf.Wall;
+                    embrasure != null && (centerPorts ? cell.x == rect.CenterCell.x || cell.z == rect.CenterCell.z :
+                        Along(rect, cell) % 2 == 0) ? embrasure : ThingDefOf.Wall;
                 Tiers[level].Buildings.Add(new FortressBuilding(def, Api.CellOnFloor(cell, level, map),
                     cell == gate ? gateSide : Rot4.North));
             }
