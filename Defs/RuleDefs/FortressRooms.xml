@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <RuleDef>
+    <defName>RS_FortressBarracks</defName>
+    <symbol>RS_FortressBarracks</symbol>
+    <resolvers><li Class="RimSiege.Fortress.FortressBarracksResolver" /></resolvers>
+  </RuleDef>
+  <RuleDef>
+    <defName>RS_FortressDining</defName>
+    <symbol>RS_FortressDining</symbol>
+    <resolvers><li Class="RimSiege.Fortress.FortressDiningResolver" /></resolvers>
+  </RuleDef>
+  <RuleDef>
+    <defName>RS_FortressDiningStock</defName>
+    <symbol>RS_FortressDiningStock</symbol>
+    <resolvers><li Class="RimSiege.Fortress.FortressDiningStockResolver" /></resolvers>
+  </RuleDef>
+  <RuleDef>
+    <defName>RS_FortressInfirmary</defName>
+    <symbol>RS_FortressInfirmary</symbol>
+    <resolvers><li Class="RimSiege.Fortress.FortressInfirmaryResolver" /></resolvers>
+  </RuleDef>
+</Defs>

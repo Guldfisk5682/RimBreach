@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <WorldObjectDef ParentName="Site">
+    <defName>RS_FortressSite</defName>
+    <label>fortress</label>
+    <worldObjectClass>RimSiege.Fortress.FortressSite</worldObjectClass>
+  </WorldObjectDef>
+
+  <SitePartDef ParentName="Outpost" Name="RS_FortifiedOutpostBase" Abstract="True">
+    <description>A fortified outpost with an outer curtain wall, corner towers, and a central keep.</description>
+    <workerClass>RimSiege.Fortress.SitePartWorker_Fortress</workerClass>
+    <arrivedLetter>A hostile fortress stands ahead.</arrivedLetter>
+    <disallowsAutomaticDetectionTimerStart>true</disallowsAutomaticDetectionTimerStart>
+    <minMapSize>(255, 1, 255)</minMapSize>
+    <tags Inherit="False" />
+  </SitePartDef>
+
+  <SitePartDef ParentName="RS_FortifiedOutpostBase">
+    <defName>RS_FortifiedOutpost</defName>
+    <label>fortified outpost</label>
+    <tags>
+      <li>RS_FortifiedOutpost</li>
+    </tags>
+  </SitePartDef>
+
+  <GenStepDef>
+    <defName>RS_Fortress</defName>
+    <linkWithSite>RS_FortifiedOutpost</linkWithSite>
+    <order>1400</order>
+    <genStep Class="RimSiege.Fortress.GenStep_Fortress" />
+  </GenStepDef>
+
+</Defs>
