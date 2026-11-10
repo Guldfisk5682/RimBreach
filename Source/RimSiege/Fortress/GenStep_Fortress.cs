@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using ProjectZ;
+using RimWorld;
 using Verse;
 
 namespace RimSiege.Fortress
@@ -101,6 +102,7 @@ namespace RimSiege.Fortress
                 if (site == null) return;
                 site.Blueprint = blueprint;
                 ammunition.StockInfantry(FortressGarrison.Spawn(map, layout, parms.sitePart), emplacements);
+                MapGenUtility.ForbidAllItems(map);
             }
             finally { Rand.PopState(); }
         }

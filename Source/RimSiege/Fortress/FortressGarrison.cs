@@ -13,7 +13,8 @@ namespace RimSiege.Fortress
         {
             Faction faction = map.ParentFaction;
             CellRect courtyard = layout.Outer.ContractedBy(FortressLayout.CurtainThickness);
-            Lord lord = LordMaker.MakeNewLord(faction, new LordJob_DefendBase(faction, courtyard.CenterCell, 25000), map);
+            var defense = new LordJob_FortressDefense();
+            Lord lord = LordMaker.MakeNewLord(faction, defense, map);
             TraverseParms traversal = TraverseParms.For(TraverseMode.PassDoors);
             BaseGen.globalSettings.map = map;
             BaseGen.symbolStack.Push("pawnGroup", new ResolveParams
@@ -33,6 +34,7 @@ namespace RimSiege.Fortress
                 }
             });
             BaseGen.Generate();
+            defense.Start();
             return lord.ownedPawns;
         }
 

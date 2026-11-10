@@ -14,6 +14,7 @@ namespace RimSiege.Fortress
         internal MapParent RaidTarget;
         internal bool Harassment;
         internal bool Resolved;
+        internal int NextSortieTick;
 
         private int nextRaidTick;
 
@@ -84,6 +85,7 @@ namespace RimSiege.Fortress
             Scribe_References.Look(ref RaidTarget, "fortressRaidTarget");
             Scribe_Values.Look(ref Harassment, "fortressHarassment");
             Scribe_Values.Look(ref Resolved, "fortressResolved");
+            Scribe_Values.Look(ref NextSortieTick, "fortressNextSortieTick");
             Scribe_Values.Look(ref nextRaidTick, "fortressNextRaidTick");
         }
     }

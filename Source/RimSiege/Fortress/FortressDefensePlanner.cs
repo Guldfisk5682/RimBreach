@@ -53,7 +53,8 @@ namespace RimSiege.Fortress
             plan.PlaceMortar(layout.Facilities.Mortar, layout.Facilities.MortarDef);
             plan.PlaceMortar(layout.Facilities.SecondMortar, layout.Facilities.SecondMortarDef);
             if (corner != null) plan.PlaceCorners(corner);
-            plan.PlaceWallGuns(machineGun, points >= profile.grenadePoints ? profile.grenadeLauncher : null, large);
+            FortressGunOption wallSupport = profile.wallSupport;
+            plan.PlaceWallGuns(machineGun, wallSupport != null && points >= wallSupport.minPoints ? wallSupport : null, large);
             plan.PlaceTowers(profile, machineGun, large, points);
             plan.PlaceWire();
             if (profile.hunterTrap != null) plan.PlaceTraps(profile.hunterTrap, large ? 2 : 1);
@@ -100,7 +101,7 @@ namespace RimSiege.Fortress
             }
         }
 
-        private void PlaceWallGuns(ThingDef machineGun, ThingDef grenadeLauncher, bool large)
+        private void PlaceWallGuns(ThingDef machineGun, FortressGunOption support, bool large)
         {
             CellRect wall = OnFloor(layout.Outer, 1);
             CellRect deck = wall.ContractedBy(1);
@@ -110,9 +111,9 @@ namespace RimSiege.Fortress
                 IntVec3 center = wall.GetCenterCellOnEdge(face) - face.FacingCell;
                 IntVec3 along = face.Rotated(RotationDirection.Clockwise).FacingCell;
                 int[] preferred = large ? new[] { 5, 7, 13, 15 } : new[] { 1, 5, 7 };
-                int grenadeOffset = large ? 13 : 7;
-                bool grenadePair = grenadeLauncher != null && TryPair(grenadeLauncher, grenadeOffset);
-                int machinePairLimit = grenadeLauncher != null ? pairs - 1 : pairs;
+                int supportOffset = large ? 13 : 7;
+                bool supportPair = support != null && TryPair(support.turret, supportOffset, support.ammo);
+                int machinePairLimit = support != null ? pairs - 1 : pairs;
                 int machinePairs = 0;
                 foreach (int offset in preferred)
                 {
@@ -123,9 +124,9 @@ namespace RimSiege.Fortress
                 // Keep any usable positions when one half of a pair has no deck.
                 foreach (int side in new[] { -1, 1 })
                 {
-                    int placed = machinePairs + (grenadePair ? 1 : 0);
+                    int placed = machinePairs + (supportPair ? 1 : 0);
                     if (placed == pairs) break;
-                    if (grenadeLauncher != null && !grenadePair && TrySingle(grenadeLauncher, grenadeOffset, side))
+                    if (support != null && !supportPair && TrySingle(support.turret, supportOffset, side, support.ammo))
                         placed++;
                     foreach (int offset in preferred)
                     {
@@ -134,12 +135,12 @@ namespace RimSiege.Fortress
                     }
                 }
 
-                bool TryPair(ThingDef def, int offset)
+                bool TryPair(ThingDef def, int offset, ThingDef ammo = null)
                 {
                     foreach (int candidate in Offsets(offset))
                     {
-                        FortressDefensePiece left = WallGun(def, candidate, -1);
-                        FortressDefensePiece right = WallGun(def, candidate, 1);
+                        FortressDefensePiece left = WallGun(def, candidate, -1, ammo);
+                        FortressDefensePiece right = WallGun(def, candidate, 1, ammo);
                         if (!FitsWallGun(left) || !FitsWallGun(right)) continue;
                         Add(left);
                         Add(right);
@@ -148,11 +149,11 @@ namespace RimSiege.Fortress
                     return false;
                 }
 
-                bool TrySingle(ThingDef def, int offset, int side)
+                bool TrySingle(ThingDef def, int offset, int side, ThingDef ammo = null)
                 {
                     foreach (int candidate in Offsets(offset))
                     {
-                        FortressDefensePiece gun = WallGun(def, candidate, side);
+                        FortressDefensePiece gun = WallGun(def, candidate, side, ammo);
                         if (!FitsWallGun(gun)) continue;
                         Add(gun);
                         return true;
@@ -165,12 +166,12 @@ namespace RimSiege.Fortress
                         .Where(offset => offset % 2 == 1)
                         .OrderBy(offset => Math.Abs(offset - preferredOffset));
 
-                FortressDefensePiece WallGun(ThingDef def, int offset, int side)
+                FortressDefensePiece WallGun(ThingDef def, int offset, int side, ThingDef ammo)
                 {
                     // The gun faces along the parapet and its native rear
                     // interaction cell sits beside it behind the solid merlon.
                     IntVec3 facing = along * (offset % 4 == 1 ? -side : side);
-                    return At(def, center + along * (offset * side), Rot4.FromIntVec3(facing));
+                    return At(def, center + along * (offset * side), Rot4.FromIntVec3(facing), ammo);
                 }
 
                 bool FitsWallGun(FortressDefensePiece gun) => Fits(gun, deck) &&
@@ -221,7 +222,7 @@ namespace RimSiege.Fortress
                     foreach (IntVec3 root in roots)
                     {
                         FortressDefensePiece[] row = Enumerable.Range(0, count)
-                            .Select(i => At(roof.turret, root + along * (i * stride), face)).ToArray();
+                            .Select(i => At(roof.turret, root + along * (i * stride), face, roof.ammo)).ToArray();
                         if (!row.All(gun => Fits(gun, top))) continue;
                         foreach (FortressDefensePiece gun in row) Add(gun);
                         return;
@@ -273,10 +274,10 @@ namespace RimSiege.Fortress
             }
         }
 
-        private FortressDefensePiece At(ThingDef def, IntVec3 cell, Rot4 rotation) => new()
+        private FortressDefensePiece At(ThingDef def, IntVec3 cell, Rot4 rotation, ThingDef ammo = null) => new()
         {
             Def = def,
-            Ammo = FortressArmament.DefaultAmmo(def),
+            Ammo = ammo ?? FortressArmament.DefaultAmmo(def),
             Ground = Api.GroundCellOf(cell, map),
             Floor = Api.FloorOf(cell, map),
             Rotation = rotation

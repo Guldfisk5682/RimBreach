@@ -9,8 +9,7 @@ namespace RimSiege.Fortress
     {
         public TechLevel minTech;
         public List<ThingDef> machineGuns = new();
-        public ThingDef grenadeLauncher;
-        public float grenadePoints;
+        public FortressGunOption wallSupport;
         public List<ThingDef> cornerTurrets = new();
         public ThingDef imperialCorner;
         public ThingDef hunterTrap;
@@ -28,6 +27,7 @@ namespace RimSiege.Fortress
     public sealed class FortressGunOption
     {
         public ThingDef turret;
+        public ThingDef ammo;
         public float minPoints;
         public int count = 1;
         public bool centered;

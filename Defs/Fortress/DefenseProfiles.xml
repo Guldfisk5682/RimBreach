@@ -6,10 +6,10 @@
       <li>CE_Turret_OrganGun</li>
     </machineGuns>
     <smallRoof>
-      <li><turret>CE_Turret_TwelvePounder</turret></li>
+      <li><turret>CE_Turret_TwelvePounder</turret><ammo>Ammo_CannonBall_Bursting</ammo></li>
     </smallRoof>
     <largeRoof>
-      <li><turret>CE_Turret_TwelvePounder</turret><count>3</count></li>
+      <li><turret>CE_Turret_TwelvePounder</turret><ammo>Ammo_CannonBall_Bursting</ammo><count>3</count></li>
     </largeRoof>
     <mortars>
       <li><turret>CE_Turret_12PounderBombard</turret></li>
@@ -23,8 +23,11 @@
       <li>Turret_KPV</li>
       <li>Turret_M240B</li>
     </machineGuns>
-    <grenadeLauncher>Turret_AGSThirty</grenadeLauncher>
-    <grenadePoints>6000</grenadePoints>
+    <wallSupport>
+      <turret>CE_Turret_TwelvePounder</turret>
+      <ammo>Ammo_CannonBall_Bursting</ammo>
+      <minPoints>6000</minPoints>
+    </wallSupport>
     <cornerTurrets>
       <li>Turret_Medium</li>
       <li>Turret_Heavy</li>
@@ -33,7 +36,7 @@
     <hunterTrap MayRequire="Ludeon.RimWorld.Odyssey">HunterDroneTrap</hunterTrap>
     <middleMachineGuns>true</middleMachineGuns>
     <smallRoof>
-      <li><turret>Turret_AGSThirty</turret></li>
+      <li><turret>CE_Turret_TwelvePounder</turret><ammo>Ammo_CannonBall_Bursting</ammo></li>
     </smallRoof>
     <largeRoof>
       <li><turret>Turret_Flak</turret><centered>true</centered></li>

@@ -107,7 +107,7 @@ namespace RimSiege.Fortress
                     return false;
             }
             AddPerimeter(map, keep, top, Rot4.Invalid, embrasure);
-            AddTowers(map, courtyard.ContractedBy(TowerClearance), dimensions.TowerSide, top, embrasure);
+            AddTowers(map, dimensions.TowerSide, top, embrasure);
             FortressFacilityPlan facilities = savedFacilities.GetValueOrDefault();
             if (!savedFacilities.HasValue && !FortressFacilityPlan.TryPlace(map, this, out facilities)) return false;
             Facilities = facilities;
@@ -137,39 +137,43 @@ namespace RimSiege.Fortress
             return true;
         }
 
-        private void AddTowers(Map map, CellRect area, int side, int top, ThingDef embrasure)
+        internal static IEnumerable<CellRect> TowerFootprints(CellRect outer, int side)
         {
-            foreach (bool west in new[] { true, false })
+            CellRect area = outer.ContractedBy(CurtainThickness + TowerClearance);
+            foreach (int x in new[] { area.minX, area.maxX - side + 1 })
+                foreach (int z in new[] { area.minZ, area.maxZ - side + 1 })
+                    yield return new CellRect(x, z, side, side);
+        }
+
+        private void AddTowers(Map map, int side, int top, ThingDef embrasure)
+        {
+            foreach (CellRect tower in TowerFootprints(Outer, side))
             {
-                int x = west ? area.minX : area.maxX - side + 1;
+                bool west = tower.CenterCell.x < Outer.CenterCell.x;
+                bool south = tower.CenterCell.z < Outer.CenterCell.z;
                 Rot4 inward = west ? Rot4.East : Rot4.West;
-                foreach (bool south in new[] { true, false })
-                {
-                    int z = south ? area.minZ : area.maxZ - side + 1;
-                    var tower = new CellRect(x, z, side, side);
-                    Modules.Add(new FortressModule(tower, top, FortressModuleKind.Tower));
-                    Rot4 inwardZ = south ? Rot4.North : Rot4.South;
-                    IntVec3 inwardCorner = new IntVec3(west ? tower.maxX : tower.minX, 0,
-                        south ? tower.maxZ : tower.minZ);
-                    IntVec3 lowerFoot = inwardCorner - inward.FacingCell - inwardZ.FacingCell;
+                Modules.Add(new FortressModule(tower, top, FortressModuleKind.Tower));
+                Rot4 inwardZ = south ? Rot4.North : Rot4.South;
+                IntVec3 inwardCorner = new IntVec3(west ? tower.maxX : tower.minX, 0,
+                    south ? tower.maxZ : tower.minZ);
+                IntVec3 lowerFoot = inwardCorner - inward.FacingCell - inwardZ.FacingCell;
 
-                    AddTowerBase(tower, inward, inwardZ);
-                    AddInterior(map, tower, 0);
-                    AddDeck(map, tower, 1);
-                    AddLadder(map, 0, lowerFoot, inward.Opposite);
-                    AddPerimeter(map, tower, 1, Rot4.Invalid, embrasure, centerPorts: top == 2 && side >= 7);
+                AddTowerBase(tower, inward, inwardZ);
+                AddInterior(map, tower, 0);
+                AddDeck(map, tower, 1);
+                AddLadder(map, 0, lowerFoot, inward.Opposite);
+                AddPerimeter(map, tower, 1, Rot4.Invalid, embrasure, centerPorts: top == 2 && side >= 7);
 
-                    if (top == 1) continue;
-                    AddInterior(map, tower, 1);
+                if (top == 1) continue;
+                AddInterior(map, tower, 1);
 
-                    // Turn the upper flight toward the corner, keeping both
-                    // landings inside the shell and the two shaft columns distinct.
-                    AddLadder(map, 1, lowerFoot - inwardZ.FacingCell, inwardZ);
-                    AddDeck(map, tower, 2);
-                    foreach (IntVec3 cell in tower.EdgeCells)
-                        Tiers[2].Buildings.Add(new FortressBuilding(ThingDefOf.Barricade,
-                            Api.CellOnFloor(cell, 2, map), Rot4.North));
-                }
+                // Turn the upper flight toward the corner, keeping both
+                // landings inside the shell and the two shaft columns distinct.
+                AddLadder(map, 1, lowerFoot - inwardZ.FacingCell, inwardZ);
+                AddDeck(map, tower, 2);
+                foreach (IntVec3 cell in tower.EdgeCells)
+                    Tiers[2].Buildings.Add(new FortressBuilding(ThingDefOf.Barricade,
+                        Api.CellOnFloor(cell, 2, map), Rot4.North));
             }
         }
 
