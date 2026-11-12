@@ -8,7 +8,8 @@ namespace RimSiege.Fortress
 {
     public sealed class GenStep_Fortress : GenStep
     {
-        private const string CandidateKey = "RimSiege.FortressCandidates";
+        private const string LayoutSeedKey = "RimSiege.FortressLayoutSeed";
+        private const int FallbackLayoutBudget = 64;
 
         public bool compact;
 
@@ -21,7 +22,7 @@ namespace RimSiege.Fortress
         {
             var site = map.Parent as FortressSite;
             if (site?.Blueprint != null) return;
-            MapGenerator.SetVar(CandidateKey, (FortressSiting.GroundCandidates(map, Dimensions(site).OuterSide), Rand.Int));
+            MapGenerator.SetVar(LayoutSeedKey, Rand.Int);
         }
 
         public override void PostMapInitialized(Map map, GenStepParams parms)
@@ -40,19 +41,21 @@ namespace RimSiege.Fortress
                 return;
             }
 
-            if (!MapGenerator.TryGetVar(CandidateKey, out (List<CellRect> Candidates, int Seed) draft)) return;
-            Rand.PushState(draft.Seed);
+            if (!MapGenerator.TryGetVar(LayoutSeedKey, out int seed)) return;
+            Rand.PushState(seed);
             try
             {
-                FortressDimensions dimensions = Dimensions(site);
-                FortressLayout layout = FindLayout(map, draft.Candidates, dimensions);
-                if (layout == null && dimensions == FortressDimensions.Large)
-                    layout = FindLayout(map, FortressSiting.GroundCandidates(map, FortressDimensions.Compact.OuterSide),
-                        FortressDimensions.Compact);
                 FactionMaterial material = FactionMaterial.For(map);
-                if (layout == null || material.Slab == null)
+                if (material.Slab == null)
                 {
-                    Log.Warning($"[RimSiege] No compatible fortress layout or floor material on tile {map.Tile}.");
+                    Log.Warning($"[RimSiege] No compatible fortress floor material on tile {map.Tile}.");
+                    site?.GenerationFailed();
+                    return;
+                }
+
+                FortressLayout layout = FindLayout(map, Dimensions(site), seed);
+                if (layout == null)
+                {
                     site?.GenerationFailed();
                     return;
                 }
@@ -108,11 +111,55 @@ namespace RimSiege.Fortress
             finally { Rand.PopState(); }
         }
 
-        private static FortressLayout FindLayout(Map map, List<CellRect> candidates, FortressDimensions dimensions)
+        private static FortressLayout FindLayout(Map map, FortressDimensions dimensions, int seed)
         {
-            foreach (CellRect outer in candidates)
-                if (FortressSiting.TryPlan(map, outer, dimensions, out FortressLayout layout)) return layout;
+            var attempts = new List<string>();
+            FortressDimensions[] sizes = dimensions == FortressDimensions.Large
+                ? new[] { dimensions, FortressDimensions.Compact } : new[] { dimensions };
+            foreach (FortressDimensions size in sizes)
+                if (Search(FortressSiting.GroundCandidates(map, size.OuterSide), size) is { } layout)
+                    return layout;
+
+            var survey = new FortressGroundSurvey(map);
+            foreach (FortressDimensions size in sizes)
+                if (Search(survey.AdditionalCandidates(size.OuterSide), size, fallback: true) is { } layout)
+                {
+                    Log.Message($"[RimSiege] Fortress fallback found a {size.OuterSide}-cell layout on tile " +
+                        $"{map.Tile}, layout seed {seed}: {layout.Outer}. {string.Join("; ", attempts)}");
+                    return layout;
+                }
+
+            Log.Warning($"[RimSiege] No compatible fortress layout on tile {map.Tile}, layout seed {seed}. " +
+                string.Join("; ", attempts));
             return null;
+
+            FortressLayout Search(IEnumerable<CellRect> candidates, FortressDimensions size, bool fallback = false)
+            {
+                var failures = new int[(int)FortressSitingResult.ExteriorRoute + 1];
+                int testedLayouts = 0;
+                foreach (CellRect outer in candidates)
+                {
+                    FortressSitingResult result = FortressSiting.Plan(map, outer, size, out FortressLayout layout);
+                    if (result == FortressSitingResult.Accepted)
+                    {
+                        if (fallback) Record();
+                        return layout;
+                    }
+                    failures[(int)result]++;
+                    if (fallback && result >= FortressSitingResult.Layout && ++testedLayouts == FallbackLayoutBudget)
+                        break;
+                }
+                Record();
+                return null;
+
+                void Record()
+                {
+                    string summary = string.Join(", ", failures.Select((count, index) =>
+                        count == 0 ? null : $"{(FortressSitingResult)index}={count}").Where(entry => entry != null));
+                    attempts.Add($"{size.OuterSide} {(fallback ? "fallback" : "coarse")} [{summary}]" +
+                        (testedLayouts == FallbackLayoutBudget ? " layout budget exhausted" : ""));
+                }
+            }
         }
     }
 }

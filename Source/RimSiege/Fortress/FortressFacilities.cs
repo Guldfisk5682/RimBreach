@@ -49,7 +49,10 @@ namespace RimSiege.Fortress
             {
                 var used = new HashSet<IntVec3>(reserved);
                 FortressLot power = new(CellRect.Empty, Rot4.Invalid);
-                if (powerRequired && !ReserveRoom(8, 7, used, out power)) continue;
+                // Compact courtyards can fit a 4x4 power room between the gate lanes and towers.
+                if (powerRequired && !ReserveRoom(8, 7, used, out power) &&
+                    (layout.Outer.Width != FortressDimensions.Compact.OuterSide ||
+                        !ReserveRoom(6, 6, used, out power))) continue;
                 if (!ReserveRoom(8, 6, used, out FortressLot living) ||
                     !ReserveRoom(7, 6, used, out FortressLot supply)) continue;
 
@@ -83,7 +86,7 @@ namespace RimSiege.Fortress
             {
                 bool FitsRoom(CellRect rect) => Fits(rect, used) && Facing(rect, used).IsValid;
                 bool found = courtyard.TryFindRandomInnerRect(new IntVec2(preferred, preferred), out CellRect rect, FitsRoom) ||
-                    courtyard.TryFindRandomInnerRect(new IntVec2(minimum, minimum), out rect, FitsRoom);
+                    minimum != preferred && courtyard.TryFindRandomInnerRect(new IntVec2(minimum, minimum), out rect, FitsRoom);
                 lot = found ? new FortressLot(rect, Facing(rect, used)) : default;
                 if (found)
                 {

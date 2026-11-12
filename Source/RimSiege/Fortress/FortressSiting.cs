@@ -7,11 +7,17 @@ using Verse;
 
 namespace RimSiege.Fortress
 {
+    internal enum FortressSitingResult { Accepted, Ground, Gates, Layout, UpperTerrain, ExteriorRoute }
+
     internal static class FortressSiting
     {
         private static readonly int[] CandidateOffsets = { -88, -72, -48, -24, -8, 0, 8, 24, 48, 72, 88 };
-        private const int EdgeMargin = 12;
-        private const int PreservedSkin = 2;
+        internal const int EdgeMargin = 12;
+        internal const int PreservedSkin = 2;
+
+        internal static bool IsCoarseCenter(IntVec3 offset) =>
+            Array.BinarySearch(CandidateOffsets, offset.x) >= 0 &&
+            Array.BinarySearch(CandidateOffsets, offset.z) >= 0;
 
         internal static List<CellRect> GroundCandidates(Map map, int side)
         {
@@ -26,7 +32,7 @@ namespace RimSiege.Fortress
                 {
                     IntVec3 anchor = center + new IntVec3(x, 0, z);
                     CellRect rect = CellRect.CenteredOn(anchor, side, side);
-                    if (usable.Contains(rect.Min) && usable.Contains(rect.Max) && GroundFits(map, rect))
+                    if (usable.Contains(rect.Min) && usable.Contains(rect.Max))
                         candidates.Add(rect);
                 }
             }
@@ -38,31 +44,28 @@ namespace RimSiege.Fortress
         {
             foreach (IntVec3 cell in rect)
             {
-                if (PreservesBarrier(cell, rect, map)) continue;
-
                 Building edifice = cell.GetEdifice(map);
-                if (map.roofGrid.RoofAt(cell)?.isThickRoof == true || edifice?.def.destroyable == false ||
-                    edifice?.def.building.isNaturalRock == true)
+                if (IsNaturalBarrier(cell, map))
+                {
+                    if (FortressLayout.Depth(rect, cell) < PreservedSkin) continue;
                     return false;
+                }
+                if (BlocksGround(cell, map)) return false;
 
                 if (edifice != null)
                 {
                     CellRect occupied = edifice.OccupiedRect();
                     if (!rect.Contains(occupied.Min) || !rect.Contains(occupied.Max)) return false;
                 }
-
-                TerrainDef terrain = cell.GetTerrain(map);
-                if (terrain.IsWater && terrain.passability == Traversability.Impassable) return false;
             }
             return true;
         }
 
-        internal static bool TryPlan(Map map, CellRect outer, FortressDimensions dimensions, out FortressLayout layout)
+        internal static FortressSitingResult Plan(Map map, CellRect outer, FortressDimensions dimensions,
+            out FortressLayout layout)
         {
             layout = null;
-            if (!GroundFits(map, outer)) return false;
-
-            var barrier = new HashSet<IntVec3>(outer.Where(cell => PreservesBarrier(cell, outer, map)));
+            if (!GroundFits(map, outer)) return FortressSitingResult.Ground;
             CellRect ground = Api.GroundRect(map);
             var sides = GenAdj.CardinalDirections.Select(Rot4.FromIntVec3)
                 .OrderBy(side => FortressLayout.Depth(ground, outer.GetCenterCellOnEdge(side))).ToArray();
@@ -70,24 +73,33 @@ namespace RimSiege.Fortress
             {
                 IntVec3 gate = outer.GetCenterCellOnEdge(side);
                 return !(gate + side.FacingCell).Standable(map) ||
-                    Enumerable.Range(0, FortressLayout.CurtainThickness)
-                        .Any(depth => barrier.Contains(gate - side.FacingCell * depth));
-            })) return false;
+                    Enumerable.Range(0, PreservedSkin)
+                        .Any(depth => IsNaturalBarrier(gate - side.FacingCell * depth, map));
+            })) return FortressSitingResult.Gates;
 
+            var barrier = new HashSet<IntVec3>(outer.EdgeCells.Where(cell => IsNaturalBarrier(cell, map)));
+            barrier.UnionWith(outer.ContractedBy(1).EdgeCells.Where(cell => IsNaturalBarrier(cell, map)));
+            FortressSitingResult result = FortressSitingResult.Layout;
             foreach (Rot4 side in sides)
             {
                 IntVec3 gate = outer.GetCenterCellOnEdge(side);
                 IntVec3 approach = gate + side.FacingCell;
 
                 FortressLayout candidate = FortressLayout.Plan(map, outer, side, barrier, dimensions);
-                if (candidate == null || !FitsUpperTerrain(map, candidate)) continue;
+                if (candidate == null) continue;
+                if (!FitsUpperTerrain(map, candidate))
+                {
+                    if (result == FortressSitingResult.Layout) result = FortressSitingResult.UpperTerrain;
+                    continue;
+                }
                 if (ExteriorRoute(map, ground, outer, approach))
                 {
                     layout = candidate;
-                    return true;
+                    return FortressSitingResult.Accepted;
                 }
+                result = FortressSitingResult.ExteriorRoute;
             }
-            return false;
+            return result;
         }
 
         private static bool ExteriorRoute(Map map, CellRect ground, CellRect outer, IntVec3 approach)
@@ -128,9 +140,11 @@ namespace RimSiege.Fortress
             cell.GetTerrain(map).passability != Traversability.Impassable &&
             cell.GetAffordances(map).Contains(TerrainAffordanceDefOf.Heavy);
 
-        private static bool PreservesBarrier(IntVec3 cell, CellRect outer, Map map)
+        internal static bool BlocksGround(IntVec3 cell, Map map) =>
+            map.roofGrid.RoofAt(cell)?.isThickRoof == true || cell.GetEdifice(map)?.def.destroyable == false;
+
+        internal static bool IsNaturalBarrier(IntVec3 cell, Map map)
         {
-            if (FortressLayout.Depth(outer, cell) >= PreservedSkin) return false;
             TerrainDef terrain = cell.GetTerrain(map);
             return cell.GetEdifice(map)?.def.building.isNaturalRock == true ||
                 terrain.IsWater && terrain.passability == Traversability.Impassable;
