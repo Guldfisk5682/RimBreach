@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <QuestScriptDef>
+    <defName>RS_FortressAssault</defName>
+    <rootSelectionWeight>0.5</rootSelectionWeight>
+    <rootMinPoints>2000</rootMinPoints>
+    <canGiveRoyalFavor>true</canGiveRoyalFavor>
+    <expireDaysRange>4~8</expireDaysRange>
+    <neverPossibleInSpace>true</neverPossibleInSpace>
+    <successHistoryEvent MayRequire="Ludeon.RimWorld.Ideology">Raided_BanditCamp</successHistoryEvent>
+    <questNameRules>
+      <rulesStrings>
+        <li>questName-&gt;Fortress assault</li>
+      </rulesStrings>
+    </questNameRules>
+    <questDescriptionRules>
+      <rulesStrings>
+        <li>questDescription-&gt;[asker_nameFull] of [asker_faction_name] asks you to capture a fortress held by [siteFaction_name]. The fortress is garrisoned by about [enemiesCount] [enemiesLabel]. [asker_nameFull] promises a generous reward once the outpost falls, and you may take whatever loot you find inside.</li>
+      </rulesStrings>
+    </questDescriptionRules>
+    <root Class="QuestNode_SubScript">
+      <def>RS_Util_FortressAssault</def>
+    </root>
+  </QuestScriptDef>
+
+  <QuestScriptDef>
+    <defName>RS_FortressHarassment</defName>
+    <rootSelectionWeight>0.3</rootSelectionWeight>
+    <rootMinPoints>2000</rootMinPoints>
+    <autoAccept>true</autoAccept>
+    <neverPossibleInSpace>true</neverPossibleInSpace>
+    <questAvailableLetterDef>ThreatBig</questAvailableLetterDef>
+    <questAvailableLetterTextIsDescription>true</questAvailableLetterTextIsDescription>
+    <successHistoryEvent MayRequire="Ludeon.RimWorld.Ideology">Raided_BanditCamp</successHistoryEvent>
+    <questNameRules>
+      <rulesStrings>
+        <li>questName-&gt;Hostile fortress</li>
+      </rulesStrings>
+    </questNameRules>
+    <questDescriptionRules>
+      <rulesStrings>
+        <li>questDescription-&gt;[siteFaction_name] has built a fortress near your colony. It is garrisoned by about [enemiesCount] [enemiesLabel]. The fortress will send raiders against your colony every five days and will remain until it is destroyed.</li>
+      </rulesStrings>
+    </questDescriptionRules>
+    <root Class="QuestNode_Sequence">
+      <nodes>
+        <li Class="QuestNode_Set">
+          <name>fortressHarassment</name>
+          <value>true</value>
+        </li>
+        <li Class="QuestNode_SubScript">
+          <def>RS_Util_FortressAssault</def>
+        </li>
+      </nodes>
+    </root>
+  </QuestScriptDef>
+
+  <QuestScriptDef>
+    <defName>RS_Util_FortressAssault</defName>
+    <root Class="QuestNode_Sequence">
+      <nodes>
+        <li Class="QuestNode_GetMap" />
+        <li Class="RimSiege.Fortress.QuestNode_FortressEligibility" />
+        <li Class="QuestNode_SubScript">
+          <def>Util_RandomizePointsChallengeRating</def>
+        </li>
+        <li Class="QuestNode_EvaluateSimpleCurve">
+          <value>$challengeRating</value>
+          <storeAs>fortressStarFactor</storeAs>
+          <curve>
+            <points>
+              <li>(1,0.8)</li>
+              <li>(2,1)</li>
+              <li>(3,1.2)</li>
+            </points>
+          </curve>
+        </li>
+        <li Class="QuestNode_Multiply">
+          <value1>$pointsOriginal</value1>
+          <value2>$fortressStarFactor</value2>
+          <storeAs>points</storeAs>
+        </li>
+        <li Class="QuestNode_IsSet">
+          <name>fortressHarassment</name>
+          <elseNode Class="QuestNode_GetPawn">
+            <storeAs>asker</storeAs>
+            <mustBeFactionLeader>true</mustBeFactionLeader>
+            <allowPermanentEnemyFaction>false</allowPermanentEnemyFaction>
+            <hostileWeight>0.15</hostileWeight>
+          </elseNode>
+        </li>
+        <li Class="RimSiege.Fortress.QuestNode_FortressSiteTile">
+          <storeAs>siteTile</storeAs>
+        </li>
+        <li Class="QuestNode_GetSitePartDefsByTagsAndFaction">
+          <storeAs>sitePartDefs</storeAs>
+          <storeFactionAs>siteFaction</storeFactionAs>
+          <sitePartsTags>
+            <li><tag>RS_FortifiedOutpost</tag></li>
+          </sitePartsTags>
+          <mustBeHostileToFactionOf>$asker</mustBeHostileToFactionOf>
+        </li>
+        <li Class="QuestNode_GetDefaultSitePartsParams">
+          <tile>$siteTile</tile>
+          <faction>$siteFaction</faction>
+          <sitePartDefs>$sitePartDefs</sitePartDefs>
+          <storeSitePartsParamsAs>sitePartsParams</storeSitePartsParamsAs>
+        </li>
+        <li Class="RimSiege.Fortress.QuestNode_GenerateFortressSite">
+          <sitePartsParams>$sitePartsParams</sitePartsParams>
+          <faction>$siteFaction</faction>
+          <tile>$siteTile</tile>
+          <storeAs>site</storeAs>
+          <worldObjectDef>RS_FortressSite</worldObjectDef>
+        </li>
+        <li Class="QuestNode_SpawnWorldObjects">
+          <worldObjects>$site</worldObjects>
+        </li>
+        <li Class="QuestNode_End">
+          <inSignal>site.FortressGenerationFailed</inSignal>
+          <outcome>Fail</outcome>
+        </li>
+        <li Class="QuestNode_End">
+          <inSignal>site.Destroyed</inSignal>
+          <outcome>Fail</outcome>
+        </li>
+        <li Class="QuestNode_Signal">
+          <inSignal>site.AllEnemiesDefeated</inSignal>
+          <node Class="QuestNode_Sequence">
+            <nodes>
+              <li Class="RimSiege.Fortress.QuestNode_FortressVictory" />
+              <li Class="QuestNode_Notify_PlayerRaidedSomeone">
+                <getRaidersFromMapParent>$site</getRaidersFromMapParent>
+              </li>
+              <li Class="QuestNode_IsSet">
+                <name>fortressHarassment</name>
+                <elseNode Class="QuestNode_Sequence">
+                  <nodes>
+                    <li Class="QuestNode_SubScript">
+                      <def>Util_GetDefaultRewardValueFromPoints</def>
+                      <parms>
+                        <points>$points</points>
+                      </parms>
+                    </li>
+                    <li Class="QuestNode_GiveRewards">
+                      <parms>
+                        <allowGoodwill>true</allowGoodwill>
+                        <allowRoyalFavor>true</allowRoyalFavor>
+                        <chosenPawnSignal>ChosenPawnForReward</chosenPawnSignal>
+                      </parms>
+                      <addCampLootReward>true</addCampLootReward>
+                      <nodeIfChosenPawnSignalUsed Class="QuestNode_Letter">
+                        <letterDef>ChoosePawn</letterDef>
+                        <label TKey="HonorLabel">[asker_faction_royalFavorLabel]</label>
+                        <text TKey="HonorText">Who should receive [royalFavorReward_amount] [asker_faction_royalFavorLabel] for taking the fortress?</text>
+                        <useColonistsOnMap>$site</useColonistsOnMap>
+                        <chosenPawnSignal>ChosenPawnForReward</chosenPawnSignal>
+                      </nodeIfChosenPawnSignalUsed>
+                    </li>
+                  </nodes>
+                </elseNode>
+              </li>
+            </nodes>
+          </node>
+        </li>
+        <li Class="QuestNode_End">
+          <inSignal>site.AllEnemiesDefeated</inSignal>
+          <outcome>Success</outcome>
+        </li>
+      </nodes>
+    </root>
+  </QuestScriptDef>
+</Defs>

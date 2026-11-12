@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <RS_FortressRaidSource>这批袭击者由{0}派出。</RS_FortressRaidSource>
+  <RS_FortressNextRaid>下次袭击将在{0}后到来。</RS_FortressNextRaid>
+  <RS_FortressRaidAlert>堡垒袭击将在{0}后抵达</RS_FortressRaidAlert>
+  <RS_FortressRaidAlertText>侦察兵报告，{0}正准备向{1}派出袭击者，预计{2}后抵达。</RS_FortressRaidAlertText>
+</LanguageData>

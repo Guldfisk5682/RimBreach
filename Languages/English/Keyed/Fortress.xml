@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <RS_FortressRaidSource>{0} sent these raiders.</RS_FortressRaidSource>
+  <RS_FortressNextRaid>The next raid will arrive in {0}.</RS_FortressNextRaid>
+  <RS_FortressRaidAlert>Fortress raiders arrive in {0}</RS_FortressRaidAlert>
+  <RS_FortressRaidAlertText>Scouts report that {0} is preparing to send raiders to {1}. They are expected in {2}.</RS_FortressRaidAlertText>
+</LanguageData>

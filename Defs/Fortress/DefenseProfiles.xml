@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <RimSiege.Fortress.FortressDefenseProfileDef>
+    <defName>RS_FortressDefense_Tribal</defName>
+    <machineGuns>
+      <li>CE_Turret_OrganGun</li>
+    </machineGuns>
+    <keepCorner>
+      <turret>CE_Turret_TwelvePounder</turret>
+      <ammo>Ammo_CannonBall_Bursting</ammo>
+    </keepCorner>
+    <keepEdge>
+      <turret>CE_Turret_TwelvePounder</turret>
+      <ammo>Ammo_CannonBall_Bursting</ammo>
+    </keepEdge>
+    <smallRoof>
+      <li><turret>CE_Turret_TwelvePounder</turret><ammo>Ammo_CannonBall_Bursting</ammo></li>
+    </smallRoof>
+    <largeRoof>
+      <li><turret>CE_Turret_TwelvePounder</turret><ammo>Ammo_CannonBall_Bursting</ammo><count>3</count></li>
+    </largeRoof>
+    <mortars>
+      <li><turret>CE_Turret_12PounderBombard</turret><ammo>Ammo_CannonBall_Bursting</ammo></li>
+    </mortars>
+  </RimSiege.Fortress.FortressDefenseProfileDef>
+
+  <RimSiege.Fortress.FortressDefenseProfileDef>
+    <defName>RS_FortressDefense_Industrial</defName>
+    <minTech>Industrial</minTech>
+    <machineGuns>
+      <li>Turret_KPV</li>
+      <li>Turret_M240B</li>
+    </machineGuns>
+    <wallSupport>
+      <turret>CE_Turret_TwelvePounder</turret>
+      <ammo>Ammo_CannonBall_Bursting</ammo>
+      <minPoints>6000</minPoints>
+    </wallSupport>
+    <cornerTurrets>
+      <li>Turret_Heavy</li>
+    </cornerTurrets>
+    <imperialCorner>Turret_Blaster</imperialCorner>
+    <keepCorner>
+      <turret>Turret_Heavy</turret>
+    </keepCorner>
+    <keepCornerUpgrades>
+      <li><turret>Turret_Autocannon</turret><minPoints>5000</minPoints></li>
+      <li><turret>Turret_Sniper</turret><minPoints>8000</minPoints></li>
+    </keepCornerUpgrades>
+    <keepMortars>
+      <li><turret>Turret_Mortar</turret><minPoints>5000</minPoints></li>
+      <li MayRequire="CETeam.CombatExtendedGuns">
+        <turret>CE_Artillery_Howitzer</turret><minPoints>8000</minPoints>
+      </li>
+    </keepMortars>
+    <hunterTrap MayRequire="Ludeon.RimWorld.Odyssey">HunterDroneTrap</hunterTrap>
+    <middleMachineGuns>true</middleMachineGuns>
+    <smallRoof>
+      <li><turret>CE_Turret_TwelvePounder</turret><ammo>Ammo_CannonBall_Bursting</ammo></li>
+    </smallRoof>
+    <largeRoof>
+      <li><turret>Turret_Flak</turret><centered>true</centered></li>
+      <li><turret>Turret_Autocannon</turret><count>2</count><minPoints>5000</minPoints></li>
+      <li><turret>Turret_Sniper</turret><count>2</count><minPoints>8000</minPoints></li>
+    </largeRoof>
+    <mortars>
+      <li><turret>Turret_Mortar</turret></li>
+      <li><turret>Turret_RocketswarmLauncher</turret><minPoints>5000</minPoints></li>
+      <li MayRequire="CETeam.CombatExtendedGuns">
+        <turret>CE_Artillery_Howitzer</turret><minPoints>8000</minPoints>
+      </li>
+    </mortars>
+  </RimSiege.Fortress.FortressDefenseProfileDef>
+</Defs>
