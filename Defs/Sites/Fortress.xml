@@ -7,7 +7,7 @@
   </WorldObjectDef>
 
   <SitePartDef ParentName="Outpost" Name="RS_FortifiedOutpostBase" Abstract="True">
-    <description>A fortified outpost with an outer curtain wall, corner towers, and a central keep.</description>
+    <description>A fortified outpost with outer walls, towers, and a central keep.</description>
     <workerClass>RimSiege.Fortress.SitePartWorker_Fortress</workerClass>
     <arrivedLetter>A hostile fortress stands ahead.</arrivedLetter>
     <disallowsAutomaticDetectionTimerStart>true</disallowsAutomaticDetectionTimerStart>
@@ -17,7 +17,9 @@
 
   <SitePartDef ParentName="RS_FortifiedOutpostBase">
     <defName>RS_FortifiedOutpost</defName>
-    <label>fortified outpost</label>
+    <label>enemy fortress</label>
+    <approachOrderString>Assault {0}</approachOrderString>
+    <approachingReportString>Assaulting {0}.</approachingReportString>
     <tags>
       <li>RS_FortifiedOutpost</li>
     </tags>

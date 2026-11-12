@@ -5,6 +5,14 @@
     <machineGuns>
       <li>CE_Turret_OrganGun</li>
     </machineGuns>
+    <keepCorner>
+      <turret>CE_Turret_TwelvePounder</turret>
+      <ammo>Ammo_CannonBall_Bursting</ammo>
+    </keepCorner>
+    <keepEdge>
+      <turret>CE_Turret_TwelvePounder</turret>
+      <ammo>Ammo_CannonBall_Bursting</ammo>
+    </keepEdge>
     <smallRoof>
       <li><turret>CE_Turret_TwelvePounder</turret><ammo>Ammo_CannonBall_Bursting</ammo></li>
     </smallRoof>
@@ -12,7 +20,7 @@
       <li><turret>CE_Turret_TwelvePounder</turret><ammo>Ammo_CannonBall_Bursting</ammo><count>3</count></li>
     </largeRoof>
     <mortars>
-      <li><turret>CE_Turret_12PounderBombard</turret></li>
+      <li><turret>CE_Turret_12PounderBombard</turret><ammo>Ammo_CannonBall_Bursting</ammo></li>
     </mortars>
   </RimSiege.Fortress.FortressDefenseProfileDef>
 
@@ -29,10 +37,22 @@
       <minPoints>6000</minPoints>
     </wallSupport>
     <cornerTurrets>
-      <li>Turret_Medium</li>
       <li>Turret_Heavy</li>
     </cornerTurrets>
     <imperialCorner>Turret_Blaster</imperialCorner>
+    <keepCorner>
+      <turret>Turret_Heavy</turret>
+    </keepCorner>
+    <keepCornerUpgrades>
+      <li><turret>Turret_Autocannon</turret><minPoints>5000</minPoints></li>
+      <li><turret>Turret_Sniper</turret><minPoints>8000</minPoints></li>
+    </keepCornerUpgrades>
+    <keepMortars>
+      <li><turret>Turret_Mortar</turret><minPoints>5000</minPoints></li>
+      <li MayRequire="CETeam.CombatExtendedGuns">
+        <turret>CE_Artillery_Howitzer</turret><minPoints>8000</minPoints>
+      </li>
+    </keepMortars>
     <hunterTrap MayRequire="Ludeon.RimWorld.Odyssey">HunterDroneTrap</hunterTrap>
     <middleMachineGuns>true</middleMachineGuns>
     <smallRoof>
@@ -40,8 +60,8 @@
     </smallRoof>
     <largeRoof>
       <li><turret>Turret_Flak</turret><centered>true</centered></li>
-      <li><turret>Turret_Autocannon</turret><count>2</count></li>
-      <li><turret>Turret_Sniper</turret><count>2</count></li>
+      <li><turret>Turret_Autocannon</turret><count>2</count><minPoints>5000</minPoints></li>
+      <li><turret>Turret_Sniper</turret><count>2</count><minPoints>8000</minPoints></li>
     </largeRoof>
     <mortars>
       <li><turret>Turret_Mortar</turret></li>

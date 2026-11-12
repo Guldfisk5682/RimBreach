@@ -10,12 +10,12 @@
     <successHistoryEvent MayRequire="Ludeon.RimWorld.Ideology">Raided_BanditCamp</successHistoryEvent>
     <questNameRules>
       <rulesStrings>
-        <li>questName-&gt;Assault the fortress</li>
+        <li>questName-&gt;Fortress assault</li>
       </rulesStrings>
     </questNameRules>
     <questDescriptionRules>
       <rulesStrings>
-        <li>questDescription-&gt;[asker_nameFull] of [asker_faction_name] asks you to capture a fortress held by [siteFaction_name]. Scouts report [enemiesCount] [enemiesLabel] in the garrison. Defeat the defenders to claim the payment and seize the keep's loot.</li>
+        <li>questDescription-&gt;[asker_nameFull] of [asker_faction_name] asks you to capture a fortress held by [siteFaction_name]. The fortress is garrisoned by about [enemiesCount] [enemiesLabel]. [asker_nameFull] promises a generous reward once the outpost falls, and you may take whatever loot you find inside.</li>
       </rulesStrings>
     </questDescriptionRules>
     <root Class="QuestNode_SubScript">
@@ -34,12 +34,12 @@
     <successHistoryEvent MayRequire="Ludeon.RimWorld.Ideology">Raided_BanditCamp</successHistoryEvent>
     <questNameRules>
       <rulesStrings>
-        <li>questName-&gt;A hostile fortress</li>
+        <li>questName-&gt;Hostile fortress</li>
       </rulesStrings>
     </questNameRules>
     <questDescriptionRules>
       <rulesStrings>
-        <li>questDescription-&gt;[siteFaction_name] has established a fortress near your colony. Scouts estimate [enemiesCount] [enemiesLabel] in the garrison. The fortress will send raiders every five days until its defenses are defeated.</li>
+        <li>questDescription-&gt;[siteFaction_name] has built a fortress near your colony. It is garrisoned by about [enemiesCount] [enemiesLabel]. The fortress will send raiders against your colony every five days and will remain until it is destroyed.</li>
       </rulesStrings>
     </questDescriptionRules>
     <root Class="QuestNode_Sequence">

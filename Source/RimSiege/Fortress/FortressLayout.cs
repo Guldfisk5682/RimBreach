@@ -36,16 +36,20 @@ namespace RimSiege.Fortress
         internal CellRect Outer { get; }
         internal IntVec3 Gate { get; }
         internal Rot4 GateSide { get; }
+        internal bool FourGates { get; }
+        internal static IEnumerable<Rot4> GateSides(Rot4 primary, bool fourGates) =>
+            fourGates ? GenAdj.CardinalDirections.Select(Rot4.FromIntVec3) : new[] { primary };
         internal HashSet<IntVec3> NaturalBarrier { get; }
         internal FortressTier[] Tiers { get; }
         internal readonly List<FortressLadder> Ladders = new();
         internal readonly List<FortressModule> Modules = new();
         internal FortressFacilityPlan Facilities { get; private set; }
 
-        private FortressLayout(CellRect outer, Rot4 gateSide, HashSet<IntVec3> naturalBarrier, int top)
+        private FortressLayout(CellRect outer, Rot4 gateSide, HashSet<IntVec3> naturalBarrier, int top, bool fourGates)
         {
             Outer = outer;
             GateSide = gateSide;
+            FourGates = fourGates;
             Gate = outer.GetCenterCellOnEdge(gateSide);
             NaturalBarrier = naturalBarrier;
             Tiers = Enumerable.Range(0, top + 1).Select(_ => new FortressTier()).ToArray();
@@ -53,11 +57,11 @@ namespace RimSiege.Fortress
 
         internal static FortressLayout Plan(Map map, CellRect outer, Rot4 gateSide,
             HashSet<IntVec3> naturalBarrier, FortressDimensions dimensions, int? savedTop = null,
-            FortressFacilityPlan? savedFacilities = null)
+            FortressFacilityPlan? savedFacilities = null, bool fourGates = true)
         {
             int top = savedTop ?? (Api.CellOnFloor(outer.CenterCell, 2, map).IsValid ? 2 : 1);
             if (!Api.CellOnFloor(outer.CenterCell, top, map).IsValid) return null;
-            var plan = new FortressLayout(outer, gateSide, naturalBarrier, top);
+            var plan = new FortressLayout(outer, gateSide, naturalBarrier, top, fourGates);
             return plan.Compose(map, gateSide, top, dimensions, savedFacilities) ? plan : null;
         }
 
@@ -65,6 +69,9 @@ namespace RimSiege.Fortress
             FortressFacilityPlan? savedFacilities)
         {
             ThingDef embrasure = DefDatabase<ThingDef>.GetNamed("CE_Embrasure");
+            var passages = GateSides(gateSide, FourGates).SelectMany(side => Enumerable.Range(0, CurtainThickness)
+                .Select(depth => (Cell: Outer.GetCenterCellOnEdge(side) - side.FacingCell * depth, Side: side)))
+                .ToDictionary(entry => entry.Cell, entry => entry.Side);
 
             foreach (IntVec3 cell in Outer)
             {
@@ -74,10 +81,9 @@ namespace RimSiege.Fortress
                 Tiers[1].Deck.Add(upper);
                 if (depth == 0)
                     Tiers[1].Buildings.Add(new FortressBuilding(Merlon(Outer, cell, embrasure), upper, Rot4.North));
-                if (cell == Gate - gateSide.FacingCell * depth)
+                if (passages.TryGetValue(cell, out Rot4 doorSide))
                 {
-                    // Only the selected face has a one-cell passage through the four-cell curtain.
-                    if (depth == 0) Tiers[0].Buildings.Add(new FortressBuilding(ThingDefOf.Door, cell, gateSide));
+                    if (depth == 0) Tiers[0].Buildings.Add(new FortressBuilding(ThingDefOf.Door, cell, doorSide));
                     continue;
                 }
                 Tiers[0].Buildings.Add(new FortressBuilding(ThingDefOf.Wall, cell, Rot4.North));
@@ -92,7 +98,7 @@ namespace RimSiege.Fortress
 
             CellRect keep = CellRect.CenteredOn(Outer.CenterCell, dimensions.KeepSide, dimensions.KeepSide);
             Modules.Add(new FortressModule(keep, top, FortressModuleKind.Keep));
-            AddPerimeter(map, keep, 0, gateSide);
+            AddPerimeter(map, keep, 0, gateSide, fourDoors: FourGates);
             AddInterior(map, keep, 0);
             AddDeck(map, keep, 1);
             if (!AddStair(map, 0, new IntVec3(keep.minX + 3, 0, keep.minZ + 3), Rot4.South))
@@ -100,13 +106,13 @@ namespace RimSiege.Fortress
 
             if (top == 2)
             {
-                AddPerimeter(map, keep, 1, Rot4.Invalid);
-                AddInterior(map, keep, 1);
+                AddPerimeter(map, keep, 1, Rot4.Invalid, embrasure, centerPorts: true);
+                AddInterior(map, keep, 1, roofed: true);
                 AddDeck(map, keep, 2);
                 if (!AddStair(map, 1, new IntVec3(keep.maxX - 3, 0, keep.maxZ - 3), Rot4.North))
                     return false;
             }
-            AddPerimeter(map, keep, top, Rot4.Invalid, embrasure);
+            AddParapet(map, keep, top, embrasure);
             AddTowers(map, dimensions.TowerSide, top, embrasure);
             FortressFacilityPlan facilities = savedFacilities.GetValueOrDefault();
             if (!savedFacilities.HasValue && !FortressFacilityPlan.TryPlace(map, this, out facilities)) return false;
@@ -218,16 +224,30 @@ namespace RimSiege.Fortress
         }
 
         private void AddPerimeter(Map map, CellRect rect, int level, Rot4 gateSide, ThingDef embrasure = null,
-            bool centerPorts = false)
+            bool centerPorts = false, bool fourDoors = false)
         {
-            IntVec3 gate = gateSide.IsValid ? rect.GetCenterCellOnEdge(gateSide) : IntVec3.Invalid;
+            var doors = gateSide.IsValid ? GateSides(gateSide, fourDoors)
+                .ToDictionary(side => rect.GetCenterCellOnEdge(side)) : null;
+            int portHalfWidth = rect.Width >= 9 ? 1 : 0;
             foreach (IntVec3 cell in rect.EdgeCells)
             {
-                ThingDef def = cell == gate ? ThingDefOf.Door :
-                    embrasure != null && (centerPorts ? cell.x == rect.CenterCell.x || cell.z == rect.CenterCell.z :
-                        Along(rect, cell) % 2 == 0) ? embrasure : ThingDefOf.Wall;
+                bool inPort = System.Math.Abs(cell.x - rect.CenterCell.x) <= portHalfWidth ||
+                    System.Math.Abs(cell.z - rect.CenterCell.z) <= portHalfWidth;
+                Rot4 rotation = Rot4.North;
+                bool isDoor = doors != null && doors.TryGetValue(cell, out rotation);
+                ThingDef def = isDoor ? ThingDefOf.Door :
+                    embrasure != null && (centerPorts ? inPort : Along(rect, cell) % 2 == 0) ? embrasure : ThingDefOf.Wall;
                 Tiers[level].Buildings.Add(new FortressBuilding(def, Api.CellOnFloor(cell, level, map),
-                    cell == gate ? gateSide : Rot4.North));
+                    isDoor ? rotation : Rot4.North));
+            }
+        }
+
+        private void AddParapet(Map map, CellRect rect, int level, ThingDef embrasure)
+        {
+            foreach (IntVec3 cell in rect.EdgeCells)
+            {
+                ThingDef def = Along(rect, cell) % 2 == 0 ? embrasure : ThingDefOf.Barricade;
+                Tiers[level].Buildings.Add(new FortressBuilding(def, Api.CellOnFloor(cell, level, map), Rot4.North));
             }
         }
 

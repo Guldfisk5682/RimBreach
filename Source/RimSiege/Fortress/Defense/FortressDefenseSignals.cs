@@ -8,6 +8,21 @@ using Verse.AI.Group;
 
 namespace RimSiege.Fortress
 {
+    [HarmonyPatch(typeof(FoodUtility), nameof(FoodUtility.ShouldBeFedBySomeone))]
+    internal static class FortressFeedPatientPatch
+    {
+        private static void Postfix(Pawn pawn, ref bool __result)
+        {
+            if (__result || pawn.Map?.Parent is not FortressSite ||
+                pawn.GetLord() is not { CurLordToil: LordToil_FortressDefense } lord ||
+                !FortressSupportJobs.NeedsFeeding(pawn)) return;
+            // The native job reserves its patient before checking this predicate.
+            Pawn feeder = pawn.Map.reservationManager.FirstRespectedReserver(pawn, pawn);
+            __result = feeder != null && feeder.GetLord() == lord &&
+                feeder.CurJobDef == JobDefOf.FeedPatient && feeder.CurJob.targetB.Pawn == pawn;
+        }
+    }
+
     [HarmonyPatch(typeof(JobDriver_TakeToBed), "CheckMakeTakeeGuest")]
     internal static class FortressRescueGuestPatch
     {
@@ -34,14 +49,41 @@ namespace RimSiege.Fortress
     {
         private static void Postfix(Building_TurretGunCE __instance, ref LocalTargetInfo __result)
         {
-            if (__result.IsValid || __instance.MannableComp?.ManningPawn is not Pawn gunner ||
-                gunner.mindState.duty?.focusSecond.Thing != __instance ||
-                gunner.GetLord()?.LordJob is not LordJob_FortressDefense defense ||
-                !__instance.IsHashIntervalTick(25)) return;
-            if (defense.GunContact(gunner) is not Thing target ||
-                target is Pawn pawn && (pawn.IsPsychologicallyInvisible() || pawn.RaceProps.Animal) ||
-                !__instance.AttackVerb.Available() || !FortressDefensePosts.HasShot(__instance, target)) return;
-            __result = target;
+            if (!TryGetDefense(__instance, out Pawn gunner, out LordJob_FortressDefense defense)) return;
+            bool allowed = __result.Thing is Thing native && defense.ValidateAttackTarget(gunner, native);
+            if (allowed && FortressTargeting.IsCombatTarget(__result.Thing)) return;
+            if (!allowed) __result = LocalTargetInfo.Invalid;
+            if ((!allowed && !__instance.IsHashIntervalTick(25)) || !__instance.AttackVerb.Available()) return;
+
+            Thing preferred = defense.PreferredGunTarget(__instance, gunner);
+            if (preferred != null) __result = preferred;
+            else if (!allowed && defense.GunContact(gunner) is Thing contact &&
+                (contact is not Pawn pawn || !pawn.IsPsychologicallyInvisible() && !pawn.RaceProps.Animal) &&
+                FortressDefensePosts.HasShot(__instance, contact)) __result = contact;
+        }
+
+        internal static bool TryGetDefense(Building_TurretGunCE gun, out Pawn gunner, out LordJob_FortressDefense defense)
+        {
+            gunner = gun.MannableComp?.ManningPawn;
+            defense = null;
+            if (gunner?.mindState.duty?.focusSecond.Thing != gun ||
+                gunner.GetLord() is not { CurLordToil: LordToil_FortressDefense, LordJob: LordJob_FortressDefense job })
+                return false;
+            defense = job;
+            return true;
+        }
+    }
+
+    [HarmonyPatch(typeof(Building_TurretGunCE), nameof(Building_TurretGunCE.BeginBurst))]
+    internal static class FortressGunBurstPatch
+    {
+        private static bool Prefix(Building_TurretGunCE __instance)
+        {
+            if (__instance.CurrentTarget.Thing is not Thing target ||
+                !FortressGunContactPatch.TryGetDefense(__instance, out Pawn gunner, out LordJob_FortressDefense defense) ||
+                defense.ValidateAttackTarget(gunner, target)) return true;
+            __instance.ResetCurrentTarget();
+            return false;
         }
     }
 
@@ -53,6 +95,23 @@ namespace RimSiege.Fortress
             if (__instance.CurLordToil is LordToil_FortressDefense &&
                 __instance.LordJob is LordJob_FortressDefense defense)
                 defense.Attacked(building, dinfo);
+        }
+    }
+
+    [HarmonyPatch(typeof(Verb_LaunchProjectileCE), nameof(Verb_LaunchProjectileCE.TryCastShot))]
+    internal static class FortressTurretRetaliationPatch
+    {
+        private static void Postfix(Verb_LaunchProjectileCE __instance, bool __result)
+        {
+            if (!__result || __instance.Caster is not Building_TurretGunCE gun ||
+                gun.Map?.Parent is not FortressSite || __instance.CurrentTarget.Thing is not Thing target) return;
+            foreach (Lord lord in gun.Map.lordManager.lords)
+                if (lord.faction == gun.Faction && lord.CurLordToil is LordToil_FortressDefense &&
+                    lord.LordJob is LordJob_FortressDefense defense)
+                {
+                    defense.RecordRetaliation(target);
+                    break;
+                }
         }
     }
 

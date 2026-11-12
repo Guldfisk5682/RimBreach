@@ -2,6 +2,7 @@
 <LanguageData>
   <RS_FortifiedOutpost.label>敌方堡垒</RS_FortifiedOutpost.label>
   <RS_FortifiedOutpost.description>设有外围城墙、高塔和中央主堡的坚固据点。</RS_FortifiedOutpost.description>
+  <RS_FortifiedOutpost.arrivedLetter>前方是一座敌对堡垒。</RS_FortifiedOutpost.arrivedLetter>
   <RS_FortifiedOutpost.approachOrderString>进攻{0}</RS_FortifiedOutpost.approachOrderString>
   <RS_FortifiedOutpost.approachingReportString>正在进攻{0}。</RS_FortifiedOutpost.approachingReportString>
 </LanguageData>

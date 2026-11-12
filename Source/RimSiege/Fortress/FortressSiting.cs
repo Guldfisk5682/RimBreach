@@ -65,14 +65,19 @@ namespace RimSiege.Fortress
             var barrier = new HashSet<IntVec3>(outer.Where(cell => PreservesBarrier(cell, outer, map)));
             CellRect ground = Api.GroundRect(map);
             var sides = GenAdj.CardinalDirections.Select(Rot4.FromIntVec3)
-                .OrderBy(side => FortressLayout.Depth(ground, outer.GetCenterCellOnEdge(side)));
+                .OrderBy(side => FortressLayout.Depth(ground, outer.GetCenterCellOnEdge(side))).ToArray();
+            if (sides.Any(side =>
+            {
+                IntVec3 gate = outer.GetCenterCellOnEdge(side);
+                return !(gate + side.FacingCell).Standable(map) ||
+                    Enumerable.Range(0, FortressLayout.CurtainThickness)
+                        .Any(depth => barrier.Contains(gate - side.FacingCell * depth));
+            })) return false;
 
             foreach (Rot4 side in sides)
             {
                 IntVec3 gate = outer.GetCenterCellOnEdge(side);
-                if (barrier.Contains(gate) || barrier.Contains(gate - side.FacingCell)) continue;
                 IntVec3 approach = gate + side.FacingCell;
-                if (!approach.Standable(map)) continue;
 
                 FortressLayout candidate = FortressLayout.Plan(map, outer, side, barrier, dimensions);
                 if (candidate == null || !FitsUpperTerrain(map, candidate)) continue;

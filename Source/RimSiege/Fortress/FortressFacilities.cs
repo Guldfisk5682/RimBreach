@@ -35,6 +35,8 @@ namespace RimSiege.Fortress
             CellRect courtyard = layout.Outer.ContractedBy(FortressLayout.CurtainThickness + 1);
             var reserved = new HashSet<IntVec3>(layout.Modules.SelectMany(module => module.Ground.Cells));
             reserved.UnionWith(CellRect.FromLimits(layout.Gate, layout.Outer.CenterCell).ExpandedBy(1));
+            foreach (Rot4 side in FortressLayout.GateSides(layout.GateSide, layout.FourGates))
+                reserved.UnionWith(CellRect.FromLimits(layout.Outer.GetCenterCellOnEdge(side), layout.Outer.CenterCell));
             foreach (StairGeometry stair in layout.Tiers[0].Stairs)
             {
                 reserved.UnionWith(stair.footprint.ExpandedBy(1));

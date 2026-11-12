@@ -18,16 +18,28 @@
   </DutyDef>
 
   <DutyDef>
+    <defName>RS_FortressIntercept</defName>
+    <alwaysShowWeapon>true</alwaysShowWeapon>
+    <thinkNode Class="ThinkNode_Priority">
+      <subNodes>
+        <li Class="RimSiege.Fortress.JobGiver_FortressGun" />
+        <li Class="RimSiege.Fortress.JobGiver_FortressSupport" />
+        <li Class="RimSiege.Fortress.JobGiver_FortressMobileFight">
+          <targetAcquireRadius>65</targetAcquireRadius>
+          <targetKeepRadius>75</targetKeepRadius>
+        </li>
+        <li Class="RimSiege.Fortress.JobGiver_FortressSeekIntruder" />
+      </subNodes>
+    </thinkNode>
+  </DutyDef>
+
+  <DutyDef>
     <defName>RS_FortressReserve</defName>
     <thinkNode Class="ThinkNode_Priority">
       <subNodes>
-        <li Class="ThinkNode_PrioritySorter">
-          <subNodes>
-            <li Class="JobGiver_GetFood"><maxLevelPercentage>0.30</maxLevelPercentage></li>
-            <li Class="JobGiver_GetRest"><maxLevelPercentage>0.40</maxLevelPercentage></li>
-          </subNodes>
-        </li>
+        <li Class="RimSiege.Fortress.JobGiver_FortressFood"><maxLevelPercentage>0.30</maxLevelPercentage></li>
         <li Class="RimSiege.Fortress.JobGiver_FortressSupport" />
+        <li Class="RimSiege.Fortress.JobGiver_FortressRest"><maxLevelPercentage>0.40</maxLevelPercentage></li>
         <li Class="RimSiege.Fortress.JobGiver_FortressMaintenance" />
         <li Class="RimSiege.Fortress.JobGiver_FortressFight">
           <targetAcquireRadius>65</targetAcquireRadius>
@@ -44,8 +56,8 @@
     <defName>RS_FortressRecover</defName>
     <thinkNode Class="ThinkNode_Priority">
       <subNodes>
-        <li Class="RimSiege.Fortress.JobGiver_FortressPost" />
         <li Class="RimSiege.Fortress.JobGiver_FortressSelfTend" />
+        <li Class="RimSiege.Fortress.JobGiver_FortressFood"><maxLevelPercentage>0.30</maxLevelPercentage></li>
         <li Class="RimSiege.Fortress.JobGiver_FortressMedicalRest"><respectTimetable>false</respectTimetable></li>
         <li Class="ThinkNode_Subtree"><treeDef>SatisfyBasicNeeds</treeDef></li>
         <li Class="JobGiver_WanderNearDutyLocation"><wanderRadius>4</wanderRadius></li>
@@ -59,11 +71,11 @@
     <thinkNode Class="ThinkNode_Priority">
       <subNodes>
         <li Class="RimSiege.Fortress.JobGiver_FortressPost" />
-        <li Class="JobGiver_AIFightEnemies">
+        <li Class="RimSiege.Fortress.JobGiver_FortressMobileFight">
           <targetAcquireRadius>65</targetAcquireRadius>
           <targetKeepRadius>75</targetKeepRadius>
         </li>
-        <li Class="JobGiver_AITrashDutyFocus" />
+        <li Class="RimSiege.Fortress.JobGiver_FortressSortieFallback" />
         <li Class="JobGiver_WanderNearDutyLocation"><wanderRadius>5</wanderRadius></li>
       </subNodes>
     </thinkNode>

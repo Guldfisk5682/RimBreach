@@ -31,8 +31,9 @@ namespace RimSiege.Fortress
                 // Optional DLC or CE Guns may have been removed between visits.
                 if (piece.Def == null) continue;
                 IntVec3 cell = piece.CellOn(map);
-                bool courtyardGun = layout.Facilities.Mortar.Contains(cell) || layout.Facilities.SecondMortar.Contains(cell);
-                if (courtyardGun)
+                bool unroof = piece.Def.building?.IsMortar == true ||
+                    layout.Facilities.Mortar.Contains(cell) || layout.Facilities.SecondMortar.Contains(cell);
+                if (unroof)
                 {
                     foreach (IntVec3 covered in GenAdj.OccupiedRect(cell, piece.Rotation, piece.Def.Size))
                         if (covered.Roofed(map)) map.roofGrid.SetRoof(covered, null);

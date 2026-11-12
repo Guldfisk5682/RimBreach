@@ -61,6 +61,7 @@ namespace RimSiege.Fortress
                 {
                     Outer = layout.Outer,
                     GateSide = layout.GateSide,
+                    FourGates = layout.FourGates,
                     Top = layout.Tiers.Length - 1,
                     NaturalBarrier = layout.NaturalBarrier.ToList(),
                     Stuff = material.Stuff,
@@ -95,7 +96,7 @@ namespace RimSiege.Fortress
 
                 blueprint.Defenses ??= FortressDefensePlanner.Plan(map, layout, site?.OriginalPoints ?? 5000f);
                 List<ArmedEmplacement> emplacements = FortressArmament.Spawn(map, layout, blueprint.Defenses);
-                var ammunition = new FortressAmmunition(map, layout);
+                var ammunition = new FortressAmmunition(map, layout, blueprint.Stuff);
                 ammunition.StockEmplacements(emplacements);
                 if (!layout.Facilities.Power.IsEmpty) FortressPower.Connect(map, layout);
 

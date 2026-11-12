@@ -50,9 +50,10 @@ namespace RimSiege.Fortress
                 ? profile.imperialCorner : profile.cornerTurrets.RandomElementWithFallback();
             bool large = layout.Outer.Width == FortressDimensions.Large.OuterSide;
 
-            plan.PlaceMortar(layout.Facilities.Mortar, layout.Facilities.MortarDef);
-            plan.PlaceMortar(layout.Facilities.SecondMortar, layout.Facilities.SecondMortarDef);
+            plan.PlaceMortar(layout.Facilities.Mortar, layout.Facilities.MortarDef, profile);
+            plan.PlaceMortar(layout.Facilities.SecondMortar, layout.Facilities.SecondMortarDef, profile);
             if (corner != null) plan.PlaceCorners(corner);
+            plan.PlaceKeep(profile, machineGun, large, points);
             FortressGunOption wallSupport = profile.wallSupport;
             plan.PlaceWallGuns(machineGun, wallSupport != null && points >= wallSupport.minPoints ? wallSupport : null, large);
             plan.PlaceTowers(profile, machineGun, large, points);
@@ -71,11 +72,12 @@ namespace RimSiege.Fortress
             }
         }
 
-        private void PlaceMortar(CellRect yard, ThingDef def)
+        private void PlaceMortar(CellRect yard, ThingDef def, FortressDefenseProfileDef profile)
         {
             if (def == null) return;
+            ThingDef ammo = profile.mortars.FirstOrDefault(option => option.turret == def)?.ammo;
             FortressDefensePiece piece = yard.OrderBy(cell => (cell - yard.CenterCell).LengthHorizontalSquared)
-                .Select(cell => At(def, cell, layout.GateSide))
+                .Select(cell => At(def, cell, layout.GateSide, ammo))
                 .FirstOrDefault(candidate => Fits(candidate, yard));
             if (piece != null) Add(piece);
         }
@@ -195,7 +197,6 @@ namespace RimSiege.Fortress
 
                 if (roof != null) PlaceRoof(roof, top, x, z);
                 if (!large || !profile.middleMachineGuns || tower.Top < 2) continue;
-
                 CellRect middle = OnFloor(tower.Ground.ContractedBy(1), 1);
                 foreach (Rot4 face in Faces)
                 {
@@ -205,6 +206,117 @@ namespace RimSiege.Fortress
                     if (Fits(gun, middle)) Add(gun);
                 }
             }
+        }
+
+        private void PlaceKeep(FortressDefenseProfileDef profile, ThingDef machineGun, bool large, float points)
+        {
+            FortressModule keep = layout.Modules.First(module => module.Kind == FortressModuleKind.Keep);
+            if (keep.Top >= 2)
+                PlaceCasemateGuns(OnFloor(keep.Ground.ContractedBy(1), 1), machineGun);
+
+            CellRect top = OnFloor(keep.Ground.ContractedBy(1), keep.Top);
+            bool upgraded = profile.keepCornerUpgrades
+                .Where(option => option.turret != null && points >= option.minPoints)
+                .OrderByDescending(option => option.minPoints)
+                .Any(option => PlaceKeepCorners(option, top));
+            if (!upgraded)
+            {
+                FortressGunOption baseline =
+                    ModsConfig.RoyaltyActive && map.ParentFaction.def == FactionDefOf.Empire && profile.imperialCorner != null
+                        ? new FortressGunOption { turret = profile.imperialCorner }
+                        : profile.keepCorner;
+                if (!PlaceKeepCorners(baseline, top) && baseline != profile.keepCorner)
+                    PlaceKeepCorners(profile.keepCorner, top);
+            }
+
+            if (large && profile.keepEdge?.turret != null)
+            {
+                IntVec3 edge = top.GetCenterCellOnEdge(Rot4.North);
+                foreach (int inset in Enumerable.Range(0, 3))
+                    if (TryPlaceRotated(At(profile.keepEdge.turret, edge - Rot4.North.FacingCell * inset,
+                        Rot4.North, profile.keepEdge.ammo), top, 4)) break;
+            }
+
+            if (!large) return;
+            FortressGunOption[] mortarPool = profile.keepMortars
+                .Where(option => option.turret != null && option.minPoints <= points).ToArray();
+            if (mortarPool.Length == 0) return;
+
+            CellRect centerArea = top.ContractedBy(1);
+            foreach (FortressGunOption option in mortarPool.InRandomOrder())
+            {
+                bool preferPair = Rand.Bool;
+                if (preferPair && PlaceMortarPair(option)) return;
+                FortressDefensePiece centered = centerArea
+                    .Select(cell => At(option.turret, cell, layout.GateSide, option.ammo))
+                    .FirstOrDefault(piece => Footprint(piece).CenterCell == top.CenterCell &&
+                        Footprint(piece).Width % 2 == 1 && Footprint(piece).Height % 2 == 1 && Fits(piece, centerArea));
+                if (centered != null)
+                {
+                    Add(centered);
+                    return;
+                }
+                if (!preferPair && PlaceMortarPair(option)) return;
+            }
+
+            bool PlaceMortarPair(FortressGunOption option) =>
+                centerArea.OrderBy(cell => (cell - top.CenterCell).LengthHorizontalSquared)
+                    .Any(cell => TryPlaceRotated(At(option.turret, cell, layout.GateSide, option.ammo), centerArea, 2,
+                        keepGap: true));
+        }
+
+        private bool PlaceKeepCorners(FortressGunOption option, CellRect top)
+        {
+            if (option?.turret == null) return false;
+            IntVec3 corner = new(top.maxX, 0, top.maxZ);
+            return CellRect.CenteredOn(corner, 7, 7).ClipInsideRect(top)
+                .OrderBy(cell => (cell - corner).LengthHorizontalSquared)
+                .Any(cell => TryPlaceRotated(At(option.turret, cell, Rot4.East, option.ammo), top, 4) ||
+                    TryPlaceRotated(At(option.turret, cell, Rot4.North, option.ammo), top, 4));
+        }
+
+        private void PlaceCasemateGuns(CellRect middle, ThingDef machineGun)
+        {
+            IntVec3 port = middle.GetCenterCellOnEdge(Rot4.North);
+            foreach (int offset in new[] { 0, -1, 1 })
+                for (int inset = 0; inset <= 1; inset++)
+                {
+                    IntVec3 cell = port + Rot4.East.FacingCell * offset - Rot4.North.FacingCell * inset;
+                    if (TryPlaceRotated(At(machineGun, cell, Rot4.North), middle, 4)) return;
+                }
+        }
+
+        private bool TryPlaceRotated(FortressDefensePiece seed, CellRect area, int count, bool keepGap = false)
+        {
+            var group = new List<FortressDefensePiece>(count);
+            var occupied = new HashSet<IntVec3>();
+            CellRect footprint = Footprint(seed);
+            if (PowerDraw(seed.Def) * count > powerRemaining) return false;
+            for (int i = 0; i < count; i++)
+            {
+                int turns = i * (4 / count);
+                Rot4 rotation = new((seed.Rotation.AsInt + turns) % 4);
+                IntVec3 root = RotateCell(seed.CellOn(map), area.CenterCell, turns);
+                CellRect rotatedFootprint = CellRect.FromLimits(
+                    RotateCell(footprint.Min, area.CenterCell, turns), RotateCell(footprint.Max, area.CenterCell, turns));
+                root += rotatedFootprint.Min - GenAdj.OccupiedRect(root, rotation, seed.Def.Size).Min;
+                FortressDefensePiece piece = At(seed.Def, root, rotation, seed.Ammo);
+                CellRect placed = Footprint(piece);
+                if (!Fits(piece, area) || placed.Any(cell => !occupied.Add(cell))) return false;
+                if (keepGap && i != 0 && placed.ExpandedBy(1).Overlaps(footprint)) return false;
+                if (piece.Def.hasInteractionCell && !placed.Contains(OperatorCell(piece)) &&
+                    !occupied.Add(OperatorCell(piece))) return false;
+                group.Add(piece);
+            }
+            foreach (FortressDefensePiece piece in group) Add(piece);
+            return true;
+        }
+
+        private static IntVec3 RotateCell(IntVec3 cell, IntVec3 center, int turns)
+        {
+            IntVec3 offset = cell - center;
+            for (int i = 0; i < turns; i++) offset = new IntVec3(offset.z, 0, -offset.x);
+            return center + offset;
         }
 
         private void PlaceRoof(FortressGunOption roof, CellRect top, Rot4 x, Rot4 z)

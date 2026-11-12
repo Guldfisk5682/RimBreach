@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
@@ -36,27 +37,39 @@ namespace RimSiege.Fortress
                 .Concat(map.listerBuildingsRepairable.RepairableBuildings(faction))
                 .Where(thing => thing.Faction == faction && defense.CanMaintain(thing.Position)).ToArray();
 
-        internal static Thing FindProject(Pawn builder, Thing[] projects, HashSet<IntVec3> assigned)
+        internal static Thing FindProject(Pawn builder, Thing[] projects, HashSet<IntVec3> assigned,
+            ref int cursor, out bool skipped)
         {
             Map map = builder.Map;
-            var available = projects.Where(thing => !assigned.Contains(thing.Position))
+            Thing[] available = projects.Where(thing => !assigned.Contains(thing.Position))
                 .OrderBy(thing => thing is Frame ? 0 : thing is Blueprint ? 1 : 2)
-                .ThenBy(thing => Api.Distance3D(builder.Position, thing.Position, map));
-            using var candidates = available.GetEnumerator();
-            if (!candidates.MoveNext()) return null;
+                .ThenBy(thing => Api.Distance3D(builder.Position, thing.Position, map))
+                .ToArray();
+            const int nearestCount = 4;
+            const int extraCount = 2;
+            skipped = available.Length > nearestCount + extraCount;
+            if (available.Length == 0) return null;
+            var candidates = available.Take(nearestCount);
+            int remaining = available.Length - nearestCount;
+            if (remaining > 0)
+            {
+                int offset = cursor % remaining;
+                cursor = (cursor + extraCount) & int.MaxValue;
+                candidates = candidates.Concat(Enumerable.Range(0, Math.Min(extraCount, remaining))
+                    .Select(i => available[nearestCount + (offset + i) % remaining]));
+            }
             builder.workSettings ??= new Pawn_WorkSettings(builder);
             builder.workSettings.EnableAndInitializeIfNotAlreadyInitialized();
             if (!builder.workSettings.WorkIsActive(WorkTypeDefOf.Construction))
                 builder.workSettings.SetPriority(WorkTypeDefOf.Construction, 1);
-            do
+            foreach (Thing project in candidates)
             {
-                Thing project = candidates.Current;
                 if (!builder.CanReach(project, PathEndMode.Touch, builder.NormalMaxDanger())) continue;
                 Job job = Giver.JobAt(builder, project.Position, out _);
                 if (job == null) continue;
                 JobMaker.ReturnToPool(job);
                 return project;
-            } while (candidates.MoveNext());
+            }
             return null;
         }
     }

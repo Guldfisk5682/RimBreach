@@ -31,6 +31,7 @@ namespace RimSiege.Fortress
         internal IntVec3 RestPost => Anchor(blueprint.Facilities.Living.Rect, 0);
         internal IntVec3 MedicalPost => Anchor(blueprint.Facilities.Supply.Rect, 1);
         internal bool Inside(IntVec3 cell) => courtyard.Contains(Api.GroundCellOf(cell, map));
+        internal bool InDefenseArea(IntVec3 cell) => Inside(cell) || OnCurtain(cell);
         internal bool InKeep(IntVec3 cell) => keep.Contains(Api.GroundCellOf(cell, map));
         internal bool Outside(IntVec3 cell) => !blueprint.Outer.Contains(Api.GroundCellOf(cell, map));
         internal bool OnCurtain(IntVec3 cell) => Api.FloorOf(cell, map) > 0 && IsCurtain(Api.GroundCellOf(cell, map));
@@ -39,6 +40,7 @@ namespace RimSiege.Fortress
         {
             if (blueprint.Top != 2 || Api.FloorOf(cell, map) != 1) return false;
             IntVec3 g = Api.GroundCellOf(cell, map);
+            if (keep.Contains(g)) return true;
             foreach (CellRect tower in towers)
                 if (tower.Contains(g)) return true;
             return false;

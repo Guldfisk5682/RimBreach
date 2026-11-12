@@ -12,6 +12,10 @@ namespace RimSiege.Fortress
         public FortressGunOption wallSupport;
         public List<ThingDef> cornerTurrets = new();
         public ThingDef imperialCorner;
+        public FortressGunOption keepCorner;
+        public List<FortressGunOption> keepCornerUpgrades = new();
+        public FortressGunOption keepEdge;
+        public List<FortressGunOption> keepMortars = new();
         public ThingDef hunterTrap;
         public bool middleMachineGuns;
         public List<FortressGunOption> smallRoof = new();

@@ -9,6 +9,7 @@ namespace RimSiege.Fortress
     {
         internal CellRect Outer;
         internal Rot4 GateSide;
+        internal bool FourGates;
         internal int Top;
         internal int FurnishingSeed;
         internal ThingDef Stuff;
@@ -21,12 +22,13 @@ namespace RimSiege.Fortress
         internal FortressLayout Rebuild(Map map) => FortressLayout.Plan(map, Outer, GateSide,
             new HashSet<IntVec3>(NaturalBarrier),
             Outer.Width == FortressDimensions.Large.OuterSide ? FortressDimensions.Large : FortressDimensions.Compact,
-            Top, Facilities);
+            Top, Facilities, FourGates);
 
         public void ExposeData()
         {
             Scribe_Values.Look(ref Outer, "outer");
             Scribe_Values.Look(ref GateSide, "gateSide");
+            Scribe_Values.Look(ref FourGates, "fourGates");
             Scribe_Values.Look(ref Top, "top");
             Scribe_Values.Look(ref FurnishingSeed, "furnishingSeed");
             Scribe_Defs.Look(ref Stuff, "stuff");
