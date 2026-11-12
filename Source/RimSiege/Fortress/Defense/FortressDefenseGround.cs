@@ -23,7 +23,7 @@ namespace RimSiege.Fortress
             this.blueprint = blueprint;
             var dimensions = blueprint.Outer.Width == FortressDimensions.Large.OuterSide
                 ? FortressDimensions.Large : FortressDimensions.Compact;
-            keep = CellRect.CenteredOn(blueprint.Outer.CenterCell, dimensions.KeepSide, dimensions.KeepSide);
+            keep = FortressLayout.KeepFootprint(blueprint.Outer, dimensions.KeepSide);
             courtyard = blueprint.Outer.ContractedBy(FortressLayout.CurtainThickness);
             towers = FortressLayout.TowerFootprints(blueprint.Outer, dimensions.TowerSide).ToArray();
         }

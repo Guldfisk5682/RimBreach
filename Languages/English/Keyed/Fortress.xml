@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LanguageData>
+  <RS_FortressFog>Fortress fog of war</RS_FortressFog>
+  <RS_FortressFogDescription>Conceals the interior of newly generated fortress maps until your forces reach the outer ramparts or get inside.</RS_FortressFogDescription>
   <RS_FortressRaidSource>{0} sent these raiders.</RS_FortressRaidSource>
   <RS_FortressNextRaid>The next raid will arrive in {0}.</RS_FortressNextRaid>
   <RS_FortressRaidAlert>Fortress raiders arrive in {0}</RS_FortressRaidAlert>

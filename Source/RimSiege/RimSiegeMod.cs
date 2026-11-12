@@ -16,7 +16,7 @@ namespace RimSiege
             Log.Message("[RimSiege] Siege gameplay loaded; CE geometry is provided by IsoRim CE Pack.");
         }
 
-        public override string SettingsCategory() => "RimBreach";
+        public override string SettingsCategory() => Content.Name;
 
         public override void DoSettingsWindowContents(Rect inRect)
         {
@@ -29,6 +29,8 @@ namespace RimSiege
                 listing.Label("RS_ArtilleryChance".Translate((Settings.ArtilleryChance / 10f).ToString("0.0")));
                 Settings.ArtilleryChance = Mathf.RoundToInt(listing.Slider(Settings.ArtilleryChance, 0f, 10f));
             }
+            listing.CheckboxLabeled("RS_FortressFog".Translate(), ref Settings.FortressFog,
+                "RS_FortressFogDescription".Translate());
             listing.End();
         }
     }

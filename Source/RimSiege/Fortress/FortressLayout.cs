@@ -96,7 +96,7 @@ namespace RimSiege.Fortress
                     !AddStair(map, 0, new IntVec3(x, 0, courtyard.maxZ - 2), Rot4.North)) return false;
             }
 
-            CellRect keep = CellRect.CenteredOn(Outer.CenterCell, dimensions.KeepSide, dimensions.KeepSide);
+            CellRect keep = KeepFootprint(Outer, dimensions.KeepSide);
             Modules.Add(new FortressModule(keep, top, FortressModuleKind.Keep));
             AddPerimeter(map, keep, 0, gateSide, fourDoors: FourGates);
             AddInterior(map, keep, 0);
@@ -142,6 +142,9 @@ namespace RimSiege.Fortress
             }
             return true;
         }
+
+        internal static CellRect KeepFootprint(CellRect outer, int side) =>
+            CellRect.CenteredOn(outer.CenterCell, side, side);
 
         internal static IEnumerable<CellRect> TowerFootprints(CellRect outer, int side)
         {

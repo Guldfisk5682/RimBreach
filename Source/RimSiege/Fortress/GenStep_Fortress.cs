@@ -107,6 +107,8 @@ namespace RimSiege.Fortress
                 site.Blueprint = blueprint;
                 ammunition.StockInfantry(FortressGarrison.Spawn(map, layout, parms.sitePart), emplacements);
                 MapGenUtility.ForbidAllItems(map);
+                if (RimSiegeMod.Settings.FortressFog)
+                    map.GetComponent<FortressFog>().Conceal(layout);
             }
             finally { Rand.PopState(); }
         }
