@@ -10,7 +10,7 @@
     <li>questName-&gt;敌对堡垒</li>
   </RS_FortressHarassment.questNameRules.rulesStrings>
   <RS_FortressHarassment.questDescriptionRules.rulesStrings>
-    <li>questDescription-&gt;[siteFaction_name]在你的殖民地附近建造了一座堡垒。堡垒内驻有约[enemiesCount]名[enemiesLabel]。这座堡垒每五天会派出袭击者骚扰你的殖民地，并且这座堡垒将一直存在，直到被摧毁。</li>
+    <li>questDescription-&gt;[siteFaction_name]在你的殖民地附近建造了一座堡垒。堡垒内驻有约[enemiesCount]名[enemiesLabel]。当你的部队不在堡垒时，这座堡垒每五天会派出袭击者骚扰你的殖民地。堡垒将一直存在，直到被摧毁。</li>
   </RS_FortressHarassment.questDescriptionRules.rulesStrings>
   <RS_Util_FortressAssault.HonorLabel>[asker_faction_royalFavorLabel]</RS_Util_FortressAssault.HonorLabel>
   <RS_Util_FortressAssault.HonorText>谁应该因攻占堡垒而获得[royalFavorReward_amount]点[asker_faction_royalFavorLabel]？</RS_Util_FortressAssault.HonorText>

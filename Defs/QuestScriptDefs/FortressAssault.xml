@@ -39,7 +39,7 @@
     </questNameRules>
     <questDescriptionRules>
       <rulesStrings>
-        <li>questDescription-&gt;[siteFaction_name] has built a fortress near your colony. It is garrisoned by about [enemiesCount] [enemiesLabel]. The fortress will send raiders against your colony every five days and will remain until it is destroyed.</li>
+        <li>questDescription-&gt;[siteFaction_name] has built a fortress near your colony. It is garrisoned by about [enemiesCount] [enemiesLabel]. While your forces are away from the fortress, it will send raiders against your colony every five days. The fortress will remain until it is destroyed.</li>
       </rulesStrings>
     </questDescriptionRules>
     <root Class="QuestNode_Sequence">
