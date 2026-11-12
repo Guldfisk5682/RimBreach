@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ModMetaData>
-  <name>RimSiege</name>
+  <name>RimBreach</name>
   <author>Guldfisk5682</author>
   <packageId>Guldfisk.RimSiege</packageId>
-  <modVersion>0.4.2</modVersion>
+  <modVersion>1.0.0</modVersion>
   <supportedVersions>
     <li>1.7</li>
   </supportedVersions>
@@ -47,7 +47,7 @@
     <li>Peren.IsoRimProjectZ</li>
     <li>Peren.IsoRimWaylith.CEPack</li>
   </loadAfter>
-  <description>RimSiege is a RimWorld mod built on IsoRimZ. It brings Combat Extended combat across floors to 3D RimWorld and adds optional artillery-supported raids and siege ladder mechanics.
+  <description>RimBreach is a RimWorld mod built on IsoRimZ and Combat Extended. It adds artillery-supported raids and fortress assault quests.
 
-For RimWorld 1.7 Unstable. Early in development; bug reports, issues, and pull requests are welcome.</description>
+For RimWorld 1.7 Unstable.</description>
 </ModMetaData>

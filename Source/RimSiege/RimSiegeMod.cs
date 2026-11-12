@@ -16,7 +16,7 @@ namespace RimSiege
             Log.Message("[RimSiege] Siege gameplay loaded; CE geometry is provided by IsoRim CE Pack.");
         }
 
-        public override string SettingsCategory() => "RimSiege";
+        public override string SettingsCategory() => "RimBreach";
 
         public override void DoSettingsWindowContents(Rect inRect)
         {

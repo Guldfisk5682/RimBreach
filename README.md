@@ -1,8 +1,14 @@
-# RimSiege
+# RimBreach
 
-RimSiege is a RimWorld mod built on [IsoRimZ](https://github.com/peren717/IsoRim-ProjectZ). It brings Combat Extended combat across floors to 3D RimWorld and adds new raid mechanics built around vertical warfare.
+RimBreach is a RimWorld mod built on IsoRimZ and Combat Extended. It adds artillery-supported raids and fortress assault quests for **RimWorld 1.7 Unstable**.
 
-Currently targets **RimWorld 1.7 Unstable**. RimSiege is in early development; bug reports, issues, and pull requests are welcome.
+## Artillery-supported raids
+
+Human and mechanoid raiders can establish artillery positions to support their main assault. Stronger raids can bring heavier guns, and eligible raiders can carry folding ladders to scale your walls.
+
+## Fortress assaults
+
+Take on a contract to capture a fortified outpost for a reward, or destroy a hostile fortress that sends raiders against your colony. Fight through layered defenses with manned guns, towers, and a central keep. The garrison can reinforce threatened positions, fall back to inner defenses, and repair damage during lulls.
 
 ## Requirements
 
@@ -13,21 +19,7 @@ Currently targets **RimWorld 1.7 Unstable**. RimSiege is in early development; b
 - [IsoRimZ](https://github.com/peren717/IsoRim-ProjectZ)
 - [IsoRim Waylith - Combat Extended Pack](https://github.com/peren717/IsoRimWaylith-CEPack), with extension API 1
 
-Load RimSiege after these mods.
-
-This migration branch uses CEPack for CE combat geometry and rendering. The previous standalone CE adaptation is preserved under `legacy/` and is excluded from the build.
-
-## Cross-floor Combat Extended
-
-Experience CE combat in 3D! RimSiege supports combat between floors while preserving CE's combat mechanics. Build defensive positions on upper floors and mountaintops, set up machine guns and mortars, and fight back against approaching raiders.
-
-## RimSiege
-
-Want more from vanilla sieges? RimSiege adds artillery support to human and mechanoid raids. Some raiding forces establish their own fortified artillery camps outside your colony to support their main assault. As raid strength grows, attackers can bring heavier firepower and larger-caliber guns. Vanilla siege raids also gain stronger artillery support.
-
-RimSiege also reworks IsoRimZ's siege ladder mechanics. Designated raiders carry ladder kits and deploy them to scale your defenses. Order your colonists to destroy those ladders before the attackers reach the top of your walls.
-
-These raid enhancements can be disabled in the mod settings, so you can also use RimSiege as a CE compatibility patch for combat across floors.
+Load RimBreach after these mods.
 
 ## License
 
