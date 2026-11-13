@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Runtime.CompilerServices;
 using HarmonyLib;
 using ProjectZ;
 using ProjectZ.Patches;
@@ -20,12 +21,17 @@ namespace RimSiege.Integration
     {
         [ThreadStatic] internal static IsoSiegePlanner Active;
         internal readonly Map Map;
-        internal readonly RouteGraph Graph;
+        private readonly RouteGraph routeGraph, independentGraph;
+        internal RouteGraph Graph => availableLanding == null ? routeGraph : independentGraph;
         private readonly ClimbPlans placingPlans, existingPlans;
         private bool allowNewLadders = true;
-        internal ClimbPlans Plans => allowNewLadders ? placingPlans : existingPlans;
+        private readonly ConditionalWeakTable<Pawn, ClimbPlans> independentPlans = new();
+        private Predicate<IntVec3> availableLanding;
+        internal ClimbPlans Plans => availableLanding != null
+            ? independentPlans.GetValue(Traveller, _ => new ClimbPlans(Map))
+            : allowNewLadders ? placingPlans : existingPlans;
         internal Pawn Traveller;
-        private readonly CacheImage cache = new CacheImage();
+        private readonly CacheImage cache = new CacheImage(), independentCache = new CacheImage();
         private readonly Func<int> epoch;
         private RouteGraph main;
         private int synchronizedEpoch = -1;
@@ -38,7 +44,8 @@ namespace RimSiege.Integration
         {
             Map = map;
             this.epoch = epoch;
-            Graph = new RouteGraph(map);
+            routeGraph = new RouteGraph(map);
+            independentGraph = new RouteGraph(map);
             placingPlans = new ClimbPlans(map);
             existingPlans = new ClimbPlans(map);
             this.canClearTop = canClearTop;
@@ -52,7 +59,8 @@ namespace RimSiege.Integration
             main = RouteGraph.For(Map);
             if (synchronizedEpoch != epoch())
             {
-                Graph.ClearReach2();
+                routeGraph.ClearReach2();
+                independentGraph.ClearReach2();
                 synchronizedEpoch = epoch();
             }
             Graph.anyVersion = main.anyVersion + epoch();
@@ -90,27 +98,34 @@ namespace RimSiege.Integration
             finally { selectingTarget = checkingRoute = false; Active = previous; }
         }
 
-        internal Job JobFor(Pawn pawn, bool placing = true)
+        internal Job JobFor(Pawn pawn, bool placing = true, Predicate<IntVec3> available = null)
         {
-            Synchronize(pawn);
             IsoSiegePlanner previous = Active;
             CacheImage native = new CacheImage();
+            CacheImage scopedCache = available == null ? cache : independentCache;
             native.Capture();
-            cache.Apply();
+            scopedCache.Apply();
             bool vertical = ClimbPlanner.NoVertical;
             bool previousPlacing = allowNewLadders;
+            var previousLanding = availableLanding;
             allowNewLadders = placing;
+            availableLanding = available;
             // Reuse native blocked-top ladders. Clearance bindings restrict
             // their targets and leave ceiling excavation disabled.
             ClimbPlanner.NoVertical = false;
-            Active = this;
-            try { return RaidClimb.TryGive(pawn, false, false); }
+            try
+            {
+                Synchronize(pawn);
+                Active = this;
+                return RaidClimb.TryGive(pawn, false, false);
+            }
             finally
             {
-                cache.Capture();
+                scopedCache.Capture();
                 native.Apply();
                 ClimbPlanner.NoVertical = vertical;
                 allowNewLadders = previousPlacing;
+                availableLanding = previousLanding;
                 Active = previous;
             }
         }
@@ -201,6 +216,17 @@ namespace RimSiege.Integration
                 if (Active == null || __instance != Active.Graph) return true;
                 __result = Active.main.LevelVersion(L) + Active.epoch();
                 return false;
+            }
+        }
+
+        [HarmonyPatch(typeof(RouteGraph), nameof(RouteGraph.Usable))]
+        private static class IndependentLinks
+        {
+            private static void Postfix(RouteGraph __instance, int link, ref bool __result)
+            {
+                if (__result && Active?.availableLanding != null && __instance == Active.Graph &&
+                    __instance.links[link].thing is Building_SiegeLadder)
+                    __result = false;
             }
         }
 

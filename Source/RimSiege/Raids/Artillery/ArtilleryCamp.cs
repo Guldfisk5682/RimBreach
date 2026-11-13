@@ -22,8 +22,10 @@ namespace RimSiege.Raids.Artillery
 
         internal static bool AssignOperators(ArtilleryRaid raid, Lord lord)
         {
+            var specialists = raid.WaitingForFirstGun
+                ? ArtilleryDeployment.Specialists(raid.Strategy, lord.ownedPawns) : null;
             return ReserveOperators(raid, lord.ownedPawns.Where(p =>
-                raid.IndependentCrew ? OperatorCandidate(p) : CanOperate(p)));
+                specialists?.Contains(p) != true && (raid.IndependentCrew ? OperatorCandidate(p) : CanOperate(p))));
         }
 
         internal static bool ReserveOperators(ArtilleryRaid raid, IEnumerable<Pawn> candidates)
@@ -33,7 +35,8 @@ namespace RimSiege.Raids.Artillery
             {
                 ArtilleryPlacement gun = raid.Camp.Guns[i];
                 if (!gun.NeedsOperator) continue;
-                Pawn pawn = available.OrderBy(p => p.PositionHeld.DistanceToSquared(gun.Cell)).FirstOrDefault();
+                Pawn pawn = available.OrderBy(ArtilleryDeployment.CarriesVanguardEquipment)
+                    .ThenBy(p => p.PositionHeld.DistanceToSquared(gun.Cell)).FirstOrDefault();
                 if (pawn == null)
                 {
                     raid.Camp.Guns.RemoveRange(i, raid.Camp.Guns.Count - i);
@@ -177,11 +180,11 @@ namespace RimSiege.Raids.Artillery
             raid.AssaultCreated = true;
             if (!((LordJob_Artillery)camp.LordJob).RequiresOperators) raid.InfantryReleased = true;
             SiegeRaidMap raids = camp.Map.GetComponent<SiegeRaidMap>();
-            foreach (Pawn pawn in pawns)
+            foreach (Pawn pawn in pawns.OrderBy(SiegeRoles.LadderPriority))
             {
                 SiegeParty party = raids.Party(pawn);
                 if (party == null) continue;
-                ((LordJob_Artillery)camp.LordJob).IssueAssaultKit(pawn, party);
+                raids.Issue(pawn, party);
             }
         }
 
@@ -233,20 +236,21 @@ namespace RimSiege.Raids.Artillery
             raid.InfantryReleased = true;
             raid.Phase = ArtilleryPhase.Assaulting;
             SiegeRaidMap raids = lord.Map.GetComponent<SiegeRaidMap>();
-            foreach (Pawn pawn in lord.ownedPawns)
+            foreach (Pawn pawn in lord.ownedPawns.OrderBy(SiegeRoles.LadderPriority))
             {
                 SiegeParty party = raids.Party(pawn);
                 if (party == null) continue;
-                ((LordJob_Artillery)lord.LordJob).IssueAssaultKit(pawn, party);
+                raids.Issue(pawn, party);
             }
         }
 
-        internal static void ReassignOperators(ArtilleryRaid raid, Lord camp, Pawn excluded = null)
+        internal static void ReassignOperators(ArtilleryRaid raid, Lord camp)
         {
             if (!((LordJob_Artillery)camp.LordJob).RequiresOperators) return;
             if ((raid.AssaultEnded && !raid.IndependentCrew) || camp.CurLordToil is not LordToil_Siege toil) return;
             Lord assault = raid.AssaultLord;
             if (assault != null && !camp.Map.lordManager.lords.Contains(assault)) assault = null;
+            Pawn[] nearby = ArtilleryCrew.NearbyReplacements(raid, camp).ToArray();
             foreach (ArtilleryPlacement gun in raid.Camp.Guns)
             {
                 if (!gun.NeedsOperator || gun.Operator != null) continue;
@@ -254,8 +258,7 @@ namespace RimSiege.Raids.Artillery
                     : gun.Frame?.Spawned == true ? gun.Frame : gun.Blueprint?.Spawned == true ? gun.Blueprint : null;
                 if (site == null) continue;
                 PathEndMode end = site is Blueprint or Frame ? PathEndMode.Touch : PathEndMode.InteractionCell;
-                Pawn pawn = raid.Members.Where(p => p != null && p != excluded && (p.GetLord() == camp ||
-                        !raid.IndependentCrew && p.GetLord() == assault && assault != null) &&
+                Pawn pawn = camp.ownedPawns.Concat(nearby.Where(p => p.GetLord() == assault)).Where(p =>
                         p.Map == camp.Map && p.Faction == raid.Faction && CanOperate(p) &&
                         !raid.Camp.Guns.Any(g => g.Operator == p) &&
                         p.CanReserveAndReach(site, end, Danger.Deadly))
@@ -263,14 +266,7 @@ namespace RimSiege.Raids.Artillery
                 if (pawn == null) continue;
                 gun.Operator = pawn;
                 if (pawn.GetLord() == assault && assault != null)
-                {
-                    assault.RemovePawn(pawn);
-                    if (pawn.jobs?.curJob?.lord == assault) pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
-                    // RemovePawn clears the old duty. Native Siege remembers
-                    // existing duties before assigning them, so seed its role first.
-                    NativeSiege.AssignGunnerDuty(toil, pawn);
-                    camp.AddPawns(new[] { pawn }, updateDuties: false);
-                }
+                    ArtilleryCrew.TransferReplacement(pawn, assault, toil, gunner: true);
             }
         }
 

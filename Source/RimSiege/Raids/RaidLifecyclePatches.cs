@@ -41,9 +41,11 @@ namespace RimSiege.Raids
             if (Current.Artillery != null || parms.raidStrategy.Worker is RaidStrategyWorker_ImmediateAttack ||
                 parms.raidStrategy.Worker is RaidStrategyWorker_ImmediateAttackSmart ||
                 parms.raidStrategy.Worker is RaidStrategyWorker_StageThenAttack ||
-                Current.Pawns.Exists(p => SiegeRoles.Ordinary(p.GetLord())))
+                Current.Pawns.Exists(p => SiegeRoles.Ordinary(p.GetLord()) || SiegeRoles.LadderAssaultDuty(p)))
             {
-                SiegeParty party = map.GetComponent<SiegeRaidMap>().Register(Current.Pawns, parms.faction);
+                bool deferKits = parms.faction.def.humanlikeFaction && parms.faction.def.techLevel >= TechLevel.Industrial &&
+                    Current.Grouped == null && Current.Artillery != null;
+                SiegeParty party = map.GetComponent<SiegeRaidMap>().Register(Current.Pawns, parms.faction, deferKits);
                 if (Current.Grouped != null)
                 {
                     foreach (ArtilleryRaid raid in Current.Grouped.Batteries)

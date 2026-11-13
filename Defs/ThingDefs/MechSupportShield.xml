@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <ThingDef ParentName="BuildingBase">
+    <defName>RS_MechSupportShield</defName>
+    <label>mechanoid rapid support shield</label>
+    <description>A temporary shield projector delivered to a mechanoid artillery battery. It burns out shortly after deployment and collapses on EMP contact.</description>
+    <thingClass>Building</thingClass>
+    <drawerType>MapMeshAndRealTime</drawerType>
+    <altitudeLayer>BuildingOnTop</altitudeLayer>
+    <pathCost>0</pathCost>
+    <passability>Standable</passability>
+    <fillPercent>0</fillPercent>
+    <rotatable>false</rotatable>
+    <selectable>true</selectable>
+    <tickerType>Normal</tickerType>
+    <leaveResourcesWhenKilled>false</leaveResourcesWhenKilled>
+    <killedLeavings/>
+    <graphicData>
+      <graphicClass>Graphic_Single</graphicClass>
+      <texPath>Things/Pawn/Humanlike/Apparel/ShieldBelt/ShieldBelt</texPath>
+      <drawSize>0.7</drawSize>
+      <shadowData>
+        <volume>(0.3, 0.2, 0.3)</volume>
+        <offset>(0,0,-0.1)</offset>
+      </shadowData>
+      <damageData>
+        <rect>(0.2,0.2,0.6,0.6)</rect>
+      </damageData>
+    </graphicData>
+    <statBases>
+      <MaxHitPoints>100</MaxHitPoints>
+      <Flammability>0</Flammability>
+    </statBases>
+    <building>
+      <claimable>false</claimable>
+      <destroySound>BuildingDestroyed_Metal_Small</destroySound>
+      <ai_chillDestination>false</ai_chillDestination>
+      <isEdifice>false</isEdifice>
+    </building>
+    <comps>
+      <li Class="CompProperties_ProjectileInterceptor">
+        <radius>15</radius>
+        <interceptGroundProjectiles>true</interceptGroundProjectiles>
+        <interceptAirProjectiles>true</interceptAirProjectiles>
+        <drawWithNoSelection>true</drawWithNoSelection>
+        <color>(0.55, 0.75, 1)</color>
+        <idlePulseSpeed>3</idlePulseSpeed>
+        <minIdleAlpha>0.05</minIdleAlpha>
+      </li>
+      <li Class="CompProperties_DestroyAfterDelay">
+        <compClass>RimSiege.Raids.Artillery.CompMechSupportShieldLifetime</compClass>
+        <delayTicks>1800</delayTicks>
+        <displayCountdownOnLabel>true</displayCountdownOnLabel>
+        <destroyMode>KillFinalize</destroyMode>
+      </li>
+    </comps>
+  </ThingDef>
+</Defs>

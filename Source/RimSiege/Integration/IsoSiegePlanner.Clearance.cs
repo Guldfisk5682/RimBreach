@@ -55,6 +55,12 @@ namespace RimSiege.Integration
                 __result = NoSites;
                 return false;
             }
+
+            private static void Postfix(ref List<ClimbPlanner.Site> __result)
+            {
+                if (Active?.availableLanding is { } available)
+                    __result = __result.FindAll(site => !site.existing && available(site.top));
+            }
         }
 
         [HarmonyPatch(typeof(ClimbPlanner), "BlockerSitesWithTopIn")]
@@ -63,6 +69,8 @@ namespace RimSiege.Integration
             private static void Postfix(List<ClimbPlanner.Site> into)
             {
                 if (Active != null && !Active.allowNewLadders) into.RemoveAll(site => !site.existing);
+                if (Active?.availableLanding is { } available)
+                    into.RemoveAll(site => site.existing || !available(site.top));
             }
         }
 
@@ -71,6 +79,11 @@ namespace RimSiege.Integration
         {
             private static bool Prefix(ClimbPlanner.Hop h, Map map, ref bool __result)
             {
+                if (Active?.availableLanding is { } available && (h.existing || !available(h.top)))
+                {
+                    __result = false;
+                    return false;
+                }
                 if (Active == null || Active.allowNewLadders ||
                     h.kind == 1 && ClimbPlanner.LadderAt(h.foot, h.top, map) != null) return true;
                 // A cached existing route must not become a free replacement

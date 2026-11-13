@@ -33,9 +33,6 @@ namespace RimSiege.Raids.Artillery
         internal virtual bool AssignBuilder(LordToil_Siege toil, Pawn pawn) => false;
         internal virtual void PrepareCleanup(LordToil_Siege toil) { }
 
-        internal virtual void IssueAssaultKit(Pawn pawn, SiegeParty party) =>
-            Map.GetComponent<SiegeRaidMap>().Issue(pawn, party);
-
         public override StateGraph CreateGraph()
         {
             StateGraph graph = base.CreateGraph();
@@ -64,6 +61,12 @@ namespace RimSiege.Raids.Artillery
                 siegeAssault.AddPreAction(new TransitionAction_WakeAll());
             }
 
+            var smoke = new LordToil_ArtillerySmoke();
+            graph.AddToil(smoke);
+            foreach (Transition transition in graph.transitions)
+                if (transition.sources.Contains(travel) && transition.target is LordToil_ExitMap or LordToil_PanicFlee)
+                    transition.AddSource(smoke);
+
             var raidEnded = new Transition(siege, exit);
             raidEnded.AddTrigger(new Trigger_Memo("ArtilleryRaidEnded"));
             graph.AddTransition(raidEnded);
@@ -90,16 +93,50 @@ namespace RimSiege.Raids.Artillery
             Raid.Phase = ArtilleryPhase.Travelling;
         }
 
+        internal bool FirstGunReady, InitialAmmoReady;
+
         public override void LordJobTick()
         {
             base.LordJobTick();
             ArtilleryRaid raid = Raid;
+            if (!raid.InitialAmmoRequested && lord.CurLordToil is LordToil_Siege ammoToil &&
+                (InitialAmmoReady || (GenTicks.TicksGame + raid.Key) % 60 == 0) && NativeSiege.HasCompletedGun(raid))
+            {
+                raid.InitialAmmoRequested = true;
+                NativeSiege.Supplement(ammoToil, raid);
+            }
+            if (raid.OptionalSmoke is { } optional && (GenTicks.TicksGame + raid.Key) % 15 == 0 &&
+                (lord.CurLordToil is not LordToil_Siege || GenTicks.TicksGame >= optional.Deadline ||
+                 !optional.HasActiveWork(Map, GenTicks.TicksGame)))
+            {
+                optional.RestoreWeapons();
+                raid.OptionalSmoke = null;
+                if (lord.CurLordToil is LordToil_Siege) lord.CurLordToil.UpdateAllDuties();
+            }
+            if (raid.WaitingForFirstGun && lord.CurLordToil is LordToil_Siege)
+            {
+                pendingInfantryAssault = false;
+                if (!FirstGunReady && (GenTicks.TicksGame + raid.Key) % 60 != 0) return;
+                FirstGunReady = false;
+                if (!raid.SuppliesDelivered || raid.Camp.Guns.Any(gun => gun.IsSupport && gun.Building?.Spawned == true) ||
+                    !raid.Camp.Guns.Any(gun => gun.IsSupport && ArtilleryCrew.Pending(gun)))
+                    ArtilleryDeployment.ReleaseWaitingInfantry(raid);
+                else if (!ArtilleryCrew.HasBuilder(lord) && !ArtilleryCrew.HasArrivingBuilder(raid, lord) &&
+                    !ArtilleryCrew.ReplaceBuilder(raid, (LordToil_Siege)lord.CurLordToil))
+                {
+                    ArtilleryCamp.CancelUnfinished(raid);
+                    ArtilleryDeployment.ReleaseWaitingInfantry(raid);
+                }
+                return;
+            }
             if (pendingInfantryAssault && lord.CurLordToil is LordToil_Siege)
             {
                 pendingInfantryAssault = false;
                 // A true loss of construction capability still abandons work.
                 // Being fired upon alone leaves its blueprints/materials intact.
-                if (ArtilleryCrew.HasConstruction(raid) && !ArtilleryCrew.HasBuilder(lord))
+                if (ArtilleryCrew.HasConstruction(raid) && !ArtilleryCrew.HasBuilder(lord) &&
+                    !ArtilleryCrew.HasArrivingBuilder(raid, lord) &&
+                    !ArtilleryCrew.ReplaceBuilder(raid, (LordToil_Siege)lord.CurLordToil))
                     ArtilleryCamp.CancelUnfinished(raid);
                 ArtilleryCamp.ReleaseInfantry(raid, lord, underFire: true);
             }
@@ -107,6 +144,18 @@ namespace RimSiege.Raids.Artillery
                 lord.ReceiveMemo("NoBuilders");
             else if (IsNativeAssault && !raid.InfantryReleased)
                 ArtilleryCamp.ActivateNativeAssault(raid, lord);
+        }
+
+        public override void Notify_PawnLost(Pawn pawn, PawnLostCondition condition)
+        {
+            base.Notify_PawnLost(pawn, condition);
+            if (lord.CurLordToil is not LordToil_Siege toil || Raid is not { } raid ||
+                condition is not (PawnLostCondition.Killed or PawnLostCondition.Incapped)) return;
+            // Vanilla removes the last crew member and then checks whether
+            // the lord should survive. Refill vacant duties before that check.
+            ArtilleryCamp.RefreshOperators(raid, lord);
+            if (!ArtilleryCrew.HasBuilder(lord) && !ArtilleryCrew.HasArrivingBuilder(raid, lord))
+                ArtilleryCrew.ReplaceBuilder(raid, toil);
         }
 
         public override void Notify_LordDestroyed()

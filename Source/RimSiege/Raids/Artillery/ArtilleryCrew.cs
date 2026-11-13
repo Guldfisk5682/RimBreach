@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
+using RimSiege.Integration;
+using Verse.AI;
 using Verse;
 using Verse.AI.Group;
 
@@ -33,6 +35,39 @@ namespace RimSiege.Raids.Artillery
             return raid.IndependentCrew && camp.ownedPawns.Any(p => !p.Spawned && BuilderCandidate(toil, p));
         }
 
+        internal static IEnumerable<Pawn> NearbyReplacements(ArtilleryRaid raid, Lord camp)
+        {
+            Lord assault = raid.AssaultLord;
+            if (assault == null || raid.AssaultEnded || assault.CurLordToil is LordToil_ExitMap or LordToil_PanicFlee)
+                return Enumerable.Empty<Pawn>();
+            var specialists = ArtilleryDeployment.Specialists(raid.Strategy, assault.ownedPawns);
+            return assault.ownedPawns.Where(p => p.Spawned && !p.Dead && !p.Downed && !p.InMentalState &&
+                p.Map == camp.Map && p.Faction == raid.Faction && !specialists.Contains(p) && LadderInventory.Get(p) == null &&
+                IsoFloor.Distance3D(p.Position, raid.Camp.Center, camp.Map) <= 20f);
+        }
+
+        internal static void TransferReplacement(Pawn pawn, Lord assault, LordToil_Siege toil, bool gunner)
+        {
+            assault.RemovePawn(pawn);
+            if (pawn.CurJob != null) pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
+            if (gunner) NativeSiege.AssignGunnerDuty(toil, pawn);
+            else NativeSiege.AssignBuilderDuty(toil, pawn);
+            toil.rememberedDuties[pawn] = pawn.mindState.duty.def;
+            toil.lord.AddPawns(new[] { pawn }, updateDuties: false);
+        }
+
+        internal static bool ReplaceBuilder(ArtilleryRaid raid, LordToil_Siege toil)
+        {
+            if (!raid.Faction.def.humanlikeFaction || !HasConstruction(raid)) return false;
+            Lord camp = toil.lord;
+            Pawn replacement = NearbyReplacements(raid, camp).Where(p => CanBuild(toil, p) &&
+                    p.CanReach(raid.Camp.Center, PathEndMode.Touch, Danger.Deadly))
+                .OrderBy(p => IsoFloor.Distance3D(p.Position, raid.Camp.Center, camp.Map)).FirstOrDefault();
+            if (replacement == null) return false;
+            TransferReplacement(replacement, raid.AssaultLord, toil, gunner: false);
+            return true;
+        }
+
         internal static HashSet<Pawn> Retained(ArtilleryRaid raid, Lord camp)
         {
             var crew = new HashSet<Pawn>(raid.Camp.Guns.Where(g => g.Operator != null).Select(g => g.Operator));
@@ -56,9 +91,17 @@ namespace RimSiege.Raids.Artillery
 
         internal static void RestoreBuilders(ArtilleryRaid raid, LordToil_Siege toil)
         {
-            if (!raid.InfantryReleased || !HasConstruction(raid)) return;
-            foreach (Pawn pawn in toil.lord.ownedPawns)
-                if (CanBuild(toil, pawn)) NativeSiege.AssignBuilderDuty(toil, pawn);
+            if (!raid.SuppliesDelivered || !HasConstruction(raid) ||
+                !raid.InfantryReleased && !raid.SmokeAttempted) return;
+            var builders = toil.lord.ownedPawns.Where(pawn => CanBuild(toil, pawn));
+            if (!raid.InfantryReleased)
+            {
+                if (toil.lord.ticksInToil >= 450) return;
+                int count = System.Math.Max(1, UnityEngine.Mathf.RoundToInt(
+                    toil.lord.ownedPawns.Count * NativeSiege.Data(toil).desiredBuilderFraction));
+                builders = builders.OrderBy(pawn => pawn.Position.DistanceToSquared(raid.Camp.Center)).Take(count);
+            }
+            foreach (Pawn pawn in builders) NativeSiege.AssignBuilderDuty(toil, pawn);
         }
 
         // Called by the existing siege refresh, after construction/operator state
@@ -66,7 +109,8 @@ namespace RimSiege.Raids.Artillery
         internal static void Update(ArtilleryRaid raid, Lord camp)
         {
             if (!raid.InfantryReleased) return;
-            if (HasConstruction(raid) && !HasBuilder(camp) && !HasArrivingBuilder(raid, camp))
+            if (HasConstruction(raid) && !HasBuilder(camp) && !HasArrivingBuilder(raid, camp) &&
+                !ReplaceBuilder(raid, (LordToil_Siege)camp.CurLordToil))
             {
                 ArtilleryCamp.CancelUnfinished(raid);
                 ArtilleryCamp.RefreshConstruction(raid, camp.Map);

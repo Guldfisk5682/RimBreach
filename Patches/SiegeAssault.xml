@@ -15,7 +15,19 @@
     <xpath>Defs/DutyDef[defName="AssaultColony"]/thinkNode/subNodes/li[@Class="JobGiver_AITrashColonyClose"]</xpath>
     <order>Prepend</order>
     <value>
+      <li Class="RimSiege.Raids.JobGiver_RaidAdvance" />
       <li Class="RimSiege.Raids.JobGiver_SiegeApproach" />
+    </value>
+  </Operation>
+  <Operation Class="PatchOperationInsert">
+    <xpath>Defs/DutyDef[defName="Escort"]/thinkNode/subNodes/li[1]</xpath>
+    <order>Prepend</order>
+    <value>
+      <li Class="RimSiege.Raids.ThinkNode_ConditionalLadderDuty">
+        <subNodes>
+          <li Class="RimSiege.Raids.JobGiver_SiegeApproach" />
+        </subNodes>
+      </li>
     </value>
   </Operation>
 </Patch>

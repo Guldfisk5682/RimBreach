@@ -66,7 +66,7 @@ namespace RimSiege.Raids.Artillery
                 if (!Valid(building)) continue;
                 if ((building.def.IsWall || building.def.IsDoor) && BreachingUtility.ShouldBreachBuilding(building))
                     Walls.Add(building);
-                else if (catalog.Combat.Contains(building)) Fallback.Add(building);
+                else if (building is Building_Turret || catalog.Combat.Contains(building)) Fallback.Add(building);
             }
             foreach (Pawn pawn in catalog.Pawns)
                 if (pawn.Faction == Faction.OfPlayer && !pawn.Dead) Fallback.Add(pawn);
@@ -121,8 +121,6 @@ namespace RimSiege.Raids.Artillery
             }
         }
 
-        internal ArtilleryTargetResult Find(Building_TurretGunCE gun) => Search(gun, wallsOnly: false);
-        internal ArtilleryTargetResult FindWalls(Building_TurretGunCE gun) => Search(gun, wallsOnly: true);
 
         // Keep the same two representative segments and candidate lifetime; CEPack owns the fixed geometry trace.
         internal FixedCorridorResult CheckFixedCorridor(Faction faction, EmplacementSpec placement, float? effectiveRange,
@@ -175,19 +173,24 @@ namespace RimSiege.Raids.Artillery
             return ArtilleryTargetReason.GeometryPassed;
         }
 
-        private ArtilleryTargetResult Search(Building_TurretGunCE gun, bool wallsOnly)
+        internal ArtilleryTargetResult Find(Building_TurretGunCE gun)
         {
             if (gun.AttackVerb is not Verb_LaunchProjectileCE verb)
                 return new(LocalTargetInfo.Invalid, ArtilleryTargetReason.UnavailableWeapon, false, false);
             Pawn operatorPawn = CeArtillerySight.OperatorFor(gun);
             ArtilleryTargetReason reason = ArtilleryTargetReason.NoCandidates;
             bool ceRejected = false;
-            foreach (List<Thing> group in wallsOnly ? new[] { Walls } : new[] { Walls, Fallback })
+            foreach (IEnumerable<Thing> group in new[]
+            {
+                Fallback.Where(t => t is Pawn or Building_Turret),
+                Walls.Where(t => shapes[t].OnRoute),
+                Walls.Where(t => !shapes[t].OnRoute)
+            })
             {
                 var eligible = new List<Ranked>();
                 foreach (Thing target in group)
                 {
-                    reason = Filter(gun, target, verb.EffectiveRange, !wallsOnly && group == Fallback);
+                    reason = Filter(gun, target, verb.EffectiveRange, !shapes.ContainsKey(target));
                     if (reason == ArtilleryTargetReason.GeometryPassed) eligible.Add(Rank(gun.Position, target));
                 }
                 foreach (Ranked candidate in Order(eligible))
@@ -241,11 +244,6 @@ namespace RimSiege.Raids.Artillery
                 Pawn operatorPawn = CeArtillerySight.OperatorFor(gun);
                 IAttackTargetSearcher searcher = operatorPawn != null ? operatorPawn : gun;
                 if (target is IAttackTarget attackTarget && attackTarget.ThreatDisabled(searcher))
-                    return ArtilleryTargetReason.DisabledThreat;
-                // Prototype turrets have not run SpawnSetup, so CE's cached MannableComp is still null.
-                bool mannable = gun.TryGetComp<CompMannable>() != null;
-                if (target is Pawn pawn && (mannable && pawn.RaceProps.Animal ||
-                    !mannable && GenAI.MachinesLike(gun.Faction, pawn)))
                     return ArtilleryTargetReason.DisabledThreat;
                 if (verb.IsIncendiary_Ranged() && target.IsBurning()) return ArtilleryTargetReason.DisabledThreat;
             }

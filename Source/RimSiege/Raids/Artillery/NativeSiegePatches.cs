@@ -20,7 +20,6 @@ namespace RimSiege.Raids.Artillery
         internal sealed class InitScope
         {
             internal ArtilleryRaid Raid;
-            internal Blueprint_Build Blueprint;
             internal InitScope Previous;
             internal bool Failed;
         }
@@ -54,17 +53,7 @@ namespace RimSiege.Raids.Artillery
         {
             InitScope scope = Initializing;
             if (scope == null) return SiegeBlueprintPlacer.PlaceBlueprints(center, map, faction, points);
-            return PlannedBlueprints(scope);
-        }
-
-        private static IEnumerable<Blueprint_Build> PlannedBlueprints(InitScope scope)
-        {
-            foreach (Blueprint_Build blueprint in ArtilleryCamp.Blueprints(scope.Raid, scope.Raid.CampLord))
-            {
-                scope.Blueprint = blueprint;
-                yield return blueprint;
-            }
-            scope.Blueprint = null;
+            return ArtilleryCamp.Blueprints(scope.Raid, scope.Raid.CampLord);
         }
 
         internal static ThingDef Shell(ThingDef turret, bool allowEMP, bool allowToxGas, bool mustHarmHealth,
@@ -74,7 +63,9 @@ namespace RimSiege.Raids.Artillery
             if (scope == null)
                 return TurretGunUtility.TryFindRandomShellDef(turret, allowEMP, allowToxGas, mustHarmHealth,
                     techLevel, allowAntigrainWarhead, maxMarketValue, faction);
-            return scope.Raid.Camp.Guns.FirstOrDefault(g => g.Blueprint == scope.Blueprint)?.Ammo;
+            // Construction pods contain materials only. The native ammo
+            // supplement starts once a planned emplacement has been built.
+            return null;
         }
 
         internal static void InitialSupplies(IntVec3 center, Map map, List<List<Thing>> groups, int openDelay,
@@ -86,6 +77,18 @@ namespace RimSiege.Raids.Artillery
                 DropPodUtility.DropThingGroupsNear(center, map, groups, openDelay, instaDrop, leaveSlag,
                     canRoofPunch, forbid, allowFogged, canTransfer, faction);
                 return;
+            }
+            if (scope.Raid.Kind == ArtilleryRaidKind.Mechanoid)
+            {
+                foreach (List<Thing> group in groups)
+                    for (int i = group.Count - 1; i >= 0; i--)
+                    {
+                        Thing thing = group[i];
+                        if (thing.def != ThingDefOf.MealSurvivalPack) continue;
+                        group.RemoveAt(i);
+                        thing.Destroy(DestroyMode.Vanish);
+                    }
+                groups.RemoveAll(group => group.Count == 0);
             }
             if (CampSupplies.DropGroups(map, scope.Raid.Camp, groups, openDelay, instaDrop, leaveSlag,
                 canRoofPunch, forbid, allowFogged, faction)) return;
@@ -104,7 +107,12 @@ namespace RimSiege.Raids.Artillery
                     canRoofPunch, forbid, allowFogged, faction);
                 return;
             }
-            var groups = things.Select(thing => new List<Thing> { thing }).ToList();
+            var groups = things.Where(thing =>
+            {
+                if (!raid.Camp.Guns.Any(gun => gun.Ammo == thing.def) || HasCompletedGun(raid)) return true;
+                thing.Destroy(DestroyMode.Vanish);
+                return false;
+            }).Select(thing => new List<Thing> { thing }).ToList();
             if (!CampSupplies.DropGroups(map, raid.Camp, groups, openDelay, instaDrop, leaveSlag,
                 canRoofPunch, forbid, allowFogged, faction)) CampSupplies.Discard(groups);
         }
@@ -114,7 +122,9 @@ namespace RimSiege.Raids.Artillery
             ArtilleryRaid raid = Raid(toil);
             if (raid != null)
             {
-                if (memo == "NoBuilders" && ArtilleryCrew.HasArrivingBuilder(raid, lord)) return;
+                if (raid.WaitingForFirstGun && (memo == "NoBuilders" || memo == "NoArtillery")) return;
+                if (memo == "NoBuilders" && (ArtilleryCrew.HasArrivingBuilder(raid, lord) ||
+                    ArtilleryCrew.ReplaceBuilder(raid, toil))) return;
                 if (memo == "NoArtillery" && raid.Camp.Guns.Any(g => g.IsSupport && g.Building != null && g.Building.Spawned &&
                     g.Building.Faction == raid.Faction)) return;
                 if (memo == "NoBuilders" && raid.Camp.Guns.Any(g => g.IsSupport &&
@@ -158,12 +168,15 @@ namespace RimSiege.Raids.Artillery
             pawn.workSettings.EnableAndInitialize();
         }
 
+        internal static bool HasCompletedGun(ArtilleryRaid raid) =>
+            raid.Camp.Guns.Any(gun => gun.Building is { Spawned: true } building && building.Faction == raid.Faction);
+
         // CE's common shell count cannot detect a missing calibre when another
         // calibre has stock. Only the managed shell supplement is per ammo type.
         internal static void Supplement(LordToil_Siege toil, ArtilleryRaid raid)
         {
             var defs = raid.Camp.Guns.Where(g => g.Building is Building_TurretGunCE turret && turret.Spawned &&
-                    turret.GetAmmo()?.UseAmmo == true && g.Ammo != null).Select(g => g.Ammo).Distinct().ToList();
+                    turret.Faction == raid.Faction && turret.GetAmmo()?.UseAmmo == true && g.Ammo != null).Select(g => g.Ammo).Distinct().ToList();
             if (defs.Count == 0) return;
             var counts = defs.ToDictionary(def => def, _ => 0);
             Map map = toil.lord.Map;
@@ -237,6 +250,9 @@ namespace RimSiege.Raids.Artillery
     [HarmonyPatch(typeof(LordToil_Siege), "DropSupplies")]
     internal static class NativeSiegeDropSuppliesPatch
     {
+        private static bool Prefix(LordToil_Siege __instance, ThingDef thingDef) =>
+            thingDef != ThingDefOf.MealSurvivalPack || NativeSiege.Raid(__instance)?.Kind != ArtilleryRaidKind.Mechanoid;
+
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
         {
             MethodInfo supplies = AccessTools.Method(typeof(DropPodUtility), nameof(DropPodUtility.DropThingsNear));
@@ -319,6 +335,7 @@ namespace RimSiege.Raids.Artillery
             ArtilleryRaid raid = NativeSiege.Raid(__instance);
             if (raid != null) ArtilleryCrew.RestoreBuilders(raid, __instance);
             NativeSiege.AssignGunners(__instance);
+            raid?.OptionalSmoke?.ApplyOptionalDuties(__instance.lord);
             // Remembered native Build duties are counted without rechecking
             // eligibility. The last constructoid can be downed or disabled.
             if (__instance.lord.CurLordToil == __instance &&
@@ -380,7 +397,7 @@ namespace RimSiege.Raids.Artillery
                 if (raid.InfantryReleased) __instance.UpdateAllDuties();
                 if (__instance.lord.CurLordToil != __instance) return;
             }
-            if (raid.Phase == ArtilleryPhase.Building && ArtilleryCrew.SupportReady(raid))
+            if (!raid.WaitingForFirstGun && raid.Phase == ArtilleryPhase.Building && ArtilleryCrew.SupportReady(raid))
             {
                 raid.Phase = ArtilleryPhase.Supporting;
                 if (raid.Kind != ArtilleryRaidKind.Siege) ArtilleryCamp.ReleaseInfantry(raid, __instance.lord);
@@ -419,7 +436,13 @@ namespace RimSiege.Raids.Artillery
             if (__instance.CurLordToil is not LordToil_Siege) return;
             ArtilleryRaid raid = NativeSiege.Raid(__instance);
             if (raid == null) return;
-            ArtilleryCamp.ObserveBuilding(raid, b);
+            if (ArtilleryCamp.ObserveBuilding(raid, b) && raid.Camp.Guns.Any(gun => gun.Building == b) &&
+                __instance.LordJob is LordJob_Artillery job)
+            {
+                if (raid.WaitingForFirstGun && raid.Camp.Guns.Any(gun => gun.IsSupport && gun.Building == b))
+                    job.FirstGunReady = true;
+                if (!raid.InitialAmmoRequested) job.InitialAmmoReady = true;
+            }
         }
     }
 

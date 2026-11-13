@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <JobDef>
+    <defName>RS_LayArtillerySmoke</defName>
+    <driverClass>RimSiege.Raids.Artillery.JobDriver_LayArtillerySmoke</driverClass>
+    <reportString>throwing a smoke grenade.</reportString>
+  </JobDef>
+</Defs>

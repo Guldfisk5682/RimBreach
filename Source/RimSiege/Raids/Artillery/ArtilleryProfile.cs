@@ -45,7 +45,9 @@ namespace RimSiege.Raids.Artillery
                 var choices = new List<ArtilleryGunRule>();
                 foreach (ArtilleryGunRule rule in guns)
                 {
-                    if (rule.turret == null || rule.turret.techLevel > faction.def.techLevel) continue;
+                    if (rule.turret == null || rule.turret.techLevel > faction.def.techLevel ||
+                        (rule.onlyFaction != null && rule.onlyFaction != faction.def) ||
+                        (rule.excludeFaction != null && rule.excludeFaction == faction.def)) continue;
                     if (rule.role == ArtilleryGunRole.CampDefense && !result.Exists(g => g.IsSupport)) continue;
                     float cost = rule.ResolvedCost;
                     if (cost > remaining) continue;
@@ -108,6 +110,7 @@ namespace RimSiege.Raids.Artillery
         public ArtilleryGunRole role = ArtilleryGunRole.Support;
         public ThingDef turret;
         public ThingDef ammo;
+        public FactionDef onlyFaction, excludeFaction;
         // cost <= 0 resolves to turret.building.combatPower at configure time.
         public float cost;
         public float weight = 1f;

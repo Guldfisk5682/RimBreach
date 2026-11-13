@@ -12,4 +12,7 @@
   <RS_ArtilleryRaidLabel_Mechanoid>机械炮阵{0}</RS_ArtilleryRaidLabel_Mechanoid>
   <RS_ArtilleryRaidArrival_Mechanoid>这支机械族部队配有自动炮台支援。敌对建造机将独立部署炮阵，主力部队按原有战术行动。</RS_ArtilleryRaidArrival_Mechanoid>
   <RS_ArtilleryRaidArrival_Siege>这支围攻部队配有比普通袭击更强大的火炮火力。他们将建立带掩体的炮兵阵地，持续炮击守军和防线，为突破殖民地做准备。</RS_ArtilleryRaidArrival_Siege>
+  <RS_ScaleArtilleryConstruction>按袭击点数加快炮塔施工</RS_ScaleArtilleryConstruction>
+  <RS_MechSupportShield>启用机械族快速支援护盾</RS_MechSupportShield>
+  <RS_MechShieldPoints>快速支援护盾最低袭击点数：{0}</RS_MechShieldPoints>
 </LanguageData>

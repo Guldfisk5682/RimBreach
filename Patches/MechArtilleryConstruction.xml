@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Patch>
-  <!-- Steel construction costs and work match the corresponding CE player
-       mini-turret, autocannon and mortar. No player build menu is added. -->
+  <!-- The two heavy mech guns use 40% of their prior material and work costs. -->
   <Operation Class="PatchOperationAdd">
     <xpath>Defs/ThingDef[defName="Turret_AutoMiniTurret"]</xpath>
     <value>
@@ -15,12 +14,12 @@
   <Operation Class="PatchOperationAdd">
     <xpath>Defs/ThingDef[defName="Turret_AutoInferno" or defName="Turret_AutoChargeBlaster"]</xpath>
     <value>
-      <costList><Steel>425</Steel><Plasteel>40</Plasteel><ComponentIndustrial>9</ComponentIndustrial></costList>
+      <costList><Steel>170</Steel><Plasteel>16</Plasteel><ComponentIndustrial>4</ComponentIndustrial></costList>
     </value>
   </Operation>
   <Operation Class="PatchOperationAdd">
     <xpath>Defs/ThingDef[defName="Turret_AutoInferno" or defName="Turret_AutoChargeBlaster"]/statBases</xpath>
-    <value><WorkToBuild>35000</WorkToBuild></value>
+    <value><WorkToBuild>14000</WorkToBuild></value>
   </Operation>
   <Operation Class="PatchOperationAdd">
     <xpath>Defs/ThingDef[defName="Turret_AutoMortar"]</xpath>

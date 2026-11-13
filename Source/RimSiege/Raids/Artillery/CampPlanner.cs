@@ -266,11 +266,22 @@ namespace RimSiege.Raids.Artillery
             var candidate = new CampCandidate(plan, field, templates, bearing, Sector(bearing), deviation, 0f);
             int rounds = 0;
             IntVec3 entry = field.ConstructionWorker?.Position ?? IntVec3.Invalid;
-            return ValidateAndRepair(map, raid.Faction, entry, candidate, siting, ranges, job.RequiresOperators, ref rounds);
+            if (!ValidateAndRepair(map, raid.Faction, entry, candidate, siting, ranges, job.RequiresOperators, ref rounds, allowRelocation: !raid.ScreenedDeployment))
+                return false;
+            if (ArtillerySmoke.Eligible(raid))
+            {
+                foreach (ArtilleryPlacement cover in CampGunCover.Candidates(map, plan, siting.BreachAnchor))
+                {
+                    plan.Cover.Add(cover);
+                    if (!LayoutValid(map, entry, plan, job.RequiresOperators, true, field, out _) || !CampSupplies.CanSupply(map, plan))
+                        plan.Cover.Remove(cover);
+                }
+            }
+            return true;
         }
 
         private static bool ValidateAndRepair(Map map, Faction faction, IntVec3 entry, CampCandidate candidate,
-            CampSiting siting, IReadOnlyDictionary<ArtilleryPlacement, float> ranges, bool actual, ref int rounds, int limit = MaxLayoutRounds)
+            CampSiting siting, IReadOnlyDictionary<ArtilleryPlacement, float> ranges, bool actual, ref int rounds, int limit = MaxLayoutRounds, bool allowRelocation = true)
         {
             CampPlan plan = candidate.Plan;
             List<ArtilleryPlacement> templates = candidate.Templates;
@@ -285,7 +296,7 @@ namespace RimSiege.Raids.Artillery
                 var originalTemplates = templates.ToList();
                 candidate.Remove(failed);
                 int reinserted = 0;
-                if (!lostFront && (actual || failed.Count == 1) && rounds < limit)
+                if (allowRelocation && !lostFront && (actual || failed.Count == 1) && rounds < limit)
                 {
                     for (int i = 0; i < originalGuns.Count; i++)
                     {

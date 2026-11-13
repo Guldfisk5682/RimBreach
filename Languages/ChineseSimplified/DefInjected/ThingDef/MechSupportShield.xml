@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <RS_MechSupportShield.label>机械族快速支援护盾</RS_MechSupportShield.label>
+  <RS_MechSupportShield.description>随机械族炮阵空投的临时护盾发生器。部署后很快烧毁，接触电磁脉冲时立即失效。</RS_MechSupportShield.description>
+</LanguageData>

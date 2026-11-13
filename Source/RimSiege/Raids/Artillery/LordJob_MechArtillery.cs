@@ -16,7 +16,15 @@ namespace RimSiege.Raids.Artillery
         public LordJob_MechArtillery() { }
         internal LordJob_MechArtillery(ArtilleryRaid raid) : base(raid) { }
 
+        private int nextShieldRetryTick;
+
         internal override bool RequiresOperators => false;
+
+        public override void LordJobTick()
+        {
+            base.LordJobTick();
+            MechSupportShield.Tick(Raid, lord, ref nextShieldRetryTick);
+        }
         internal override Pawn ConstructionWorker => lord.ownedPawns.FirstOrDefault(p => p.Spawned && CanConstruct(p));
         internal override bool PrepareCrew() => ConstructionWorker != null;
         internal override bool CanBeBuilder(Pawn pawn, bool nativeResult) => CanConstruct(pawn);
@@ -51,11 +59,7 @@ namespace RimSiege.Raids.Artillery
                     toil.lord.ownedBuildings.Remove(gun.Building);
         }
 
-        internal override void IssueAssaultKit(Pawn pawn, SiegeParty party)
-        {
-            if (MechBattery.IsConstructoid(pawn)) Map.GetComponent<SiegeRaidMap>().ForceIssue(pawn, party);
-            else base.IssueAssaultKit(pawn, party);
-        }
+
     }
 
     // Earlier construction candidates saved the mechanical camp as the base

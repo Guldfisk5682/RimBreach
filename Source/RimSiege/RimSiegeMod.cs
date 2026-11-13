@@ -1,4 +1,5 @@
 using HarmonyLib;
+using RimSiege.Integration;
 using UnityEngine;
 using Verse;
 
@@ -11,6 +12,7 @@ namespace RimSiege
         public RimSiegeMod(ModContentPack content) : base(content)
         {
             Settings = GetSettings<SiegeSettings>();
+            IsoSiegeModels.Register();
             Harmony harmony = new Harmony("Guld.ThreeDSiege");
             harmony.PatchAll(typeof(RimSiegeMod).Assembly);
             Log.Message("[RimSiege] Siege gameplay loaded; CE geometry is provided by IsoRim CE Pack.");
@@ -28,6 +30,19 @@ namespace RimSiege
             {
                 listing.Label("RS_ArtilleryChance".Translate((Settings.ArtilleryChance / 10f).ToString("0.0")));
                 Settings.ArtilleryChance = Mathf.RoundToInt(listing.Slider(Settings.ArtilleryChance, 0f, 10f));
+                listing.CheckboxLabeled("RS_ScaleArtilleryConstruction".Translate(), ref Settings.ScaleArtilleryConstruction);
+                if (ModsConfig.BiotechActive)
+                {
+                    listing.CheckboxLabeled("RS_MechSupportShield".Translate(), ref Settings.MechSupportShield);
+                    if (Settings.MechSupportShield)
+                    {
+                        int minimum = Mathf.CeilToInt(DefDatabase<Raids.Artillery.ArtilleryProfileDef>
+                            .GetNamed("RS_ArtilleryMechanoid").minPoints / 1000f);
+                        listing.Label("RS_MechShieldPoints".Translate(Settings.MechShieldPoints));
+                        Settings.MechShieldPoints = 1000 * Mathf.RoundToInt(
+                            listing.Slider(Settings.MechShieldPoints / 1000f, minimum, 10));
+                    }
+                }
             }
             listing.CheckboxLabeled("RS_FortressFog".Translate(), ref Settings.FortressFog,
                 "RS_FortressFogDescription".Translate());

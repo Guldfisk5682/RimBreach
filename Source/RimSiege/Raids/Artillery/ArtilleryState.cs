@@ -26,12 +26,19 @@ namespace RimSiege.Raids.Artillery
         internal IncidentParms OriginalParms;
         internal List<Pawn> Members = new List<Pawn>();
         internal CampPlan Camp;
+        internal ArtillerySmoke Smoke, OptionalSmoke;
+        internal int InitialRaidSize;
+        internal HashSet<int> ViolentLosses = new();
+        internal bool ReachedDefenses;
+        internal bool SmokeAttempted, ShieldAssigned;
         internal bool Rolled, Selected, SuppliesDelivered;
         internal bool InfantryReleased, AssaultCreated, AssaultEnded, CompletionSent, CompletionPending;
         internal bool IndependentCrew;
         internal int ConstructoidCount;
         internal List<string> CompletionTags = new List<string>();
-        internal Lord CampLord, AssaultLord;
+        internal Lord CampLord, AssaultLord, VanguardLord;
+        internal bool WaitingForFirstGun, InitialAmmoRequested;
+        internal bool ScreenedDeployment;
 
         public ArtilleryRaid() { }
 
@@ -51,6 +58,14 @@ namespace RimSiege.Raids.Artillery
             Scribe_Deep.Look(ref OriginalParms, "originalParms");
             Scribe_Collections.Look(ref Members, "members", LookMode.Reference);
             Scribe_Deep.Look(ref Camp, "camp");
+            Scribe_Deep.Look(ref Smoke, "smoke");
+            Scribe_Deep.Look(ref OptionalSmoke, "optionalSmoke");
+            Scribe_Values.Look(ref SmokeAttempted, "smokeAttempted");
+            Scribe_Values.Look(ref ShieldAssigned, "shieldAssigned");
+            Scribe_Values.Look(ref InitialRaidSize, "initialRaidSize");
+            Scribe_Collections.Look(ref ViolentLosses, "violentLossIds", LookMode.Value);
+            ViolentLosses ??= new();
+            Scribe_Values.Look(ref ReachedDefenses, "reachedDefenses");
             Scribe_Values.Look(ref Rolled, "rolled");
             Scribe_Values.Look(ref Selected, "selected");
             Scribe_Values.Look(ref SuppliesDelivered, "suppliesDelivered");
@@ -65,6 +80,9 @@ namespace RimSiege.Raids.Artillery
             CompletionTags ??= new List<string>();
             Scribe_References.Look(ref CampLord, "campLord");
             Scribe_References.Look(ref AssaultLord, "assaultLord");
+            Scribe_References.Look(ref VanguardLord, "vanguardLord");
+            Scribe_Values.Look(ref WaitingForFirstGun, "waitingForFirstGun");
+            Scribe_Values.Look(ref InitialAmmoRequested, "initialAmmoRequested");
         }
 
         internal void RegisterBuildings()

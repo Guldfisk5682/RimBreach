@@ -8,6 +8,10 @@ namespace RimSiege.Raids.Artillery
     internal sealed class ArtilleryIncident : IExposable
     {
         internal int Key;
+        internal int InitialRaidSize;
+        internal HashSet<int> ViolentLosses = new();
+        internal bool ReachedDefenses;
+        internal bool ShieldAssigned;
         internal List<Lord> NativeLords = new();
         internal List<string> CompletionTags = new();
         internal bool CompletionPending, CompletionSent;
@@ -31,6 +35,11 @@ namespace RimSiege.Raids.Artillery
         public void ExposeData()
         {
             Scribe_Values.Look(ref Key, "key");
+            Scribe_Values.Look(ref ShieldAssigned, "shieldAssigned");
+            Scribe_Values.Look(ref InitialRaidSize, "initialRaidSize");
+            Scribe_Collections.Look(ref ViolentLosses, "violentLossIds", LookMode.Value);
+            ViolentLosses ??= new();
+            Scribe_Values.Look(ref ReachedDefenses, "reachedDefenses");
             Scribe_Collections.Look(ref NativeLords, "nativeLords", LookMode.Reference);
             Scribe_Collections.Look(ref CompletionTags, "completionTags", LookMode.Value);
             Scribe_Values.Look(ref CompletionPending, "completionPending");

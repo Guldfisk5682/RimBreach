@@ -47,7 +47,7 @@ namespace RimSiege.Raids.Artillery
         private static float Speed(Thing thing, StatDef stat, bool applyPostProcess, int cacheStaleAfterTicks)
         {
             float native = thing.GetStatValue(stat, applyPostProcess, cacheStaleAfterTicks);
-            if (thing is not Pawn pawn || pawn.jobs.curDriver is not JobDriver_ConstructFinishFrame driver ||
+            if (!RimSiegeMod.Settings.ScaleArtilleryConstruction || thing is not Pawn pawn || pawn.jobs.curDriver is not JobDriver_ConstructFinishFrame driver ||
                 pawn.GetLord()?.LordJob is not LordJob_Artillery) return native;
             WorkRate rate = Rates.GetValue(driver, Resolve);
             return rate.Camp != null && pawn.GetLord() == rate.Camp && rate.Camp.CurLordToil is LordToil_Siege &&

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <DutyDef>
+    <defName>RS_ArtillerySmoke</defName>
+    <alwaysShowWeapon>true</alwaysShowWeapon>
+    <thinkNode Class="ThinkNode_Priority">
+      <subNodes>
+        <li Class="JobGiver_TakeCombatEnhancingDrug">
+          <onlyIfInDanger>true</onlyIfInDanger>
+        </li>
+        <li Class="RimSiege.Raids.Artillery.JobGiver_ArtillerySmoke" />
+        <li Class="RimSiege.Raids.Artillery.JobGiver_ArtillerySmokeCombat" />
+        <li Class="RimSiege.Raids.Artillery.JobGiver_ArtillerySmokeFollowers">
+          <locomotionUrgencyOutsideRadius>Jog</locomotionUrgencyOutsideRadius>
+          <expiryInterval>60</expiryInterval>
+        </li>
+      </subNodes>
+    </thinkNode>
+  </DutyDef>
+</Defs>

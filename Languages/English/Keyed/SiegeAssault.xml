@@ -12,4 +12,7 @@
   <RS_ArtilleryRaidLabel_Mechanoid>Mechanoid artillery {0}</RS_ArtilleryRaidLabel_Mechanoid>
   <RS_ArtilleryRaidArrival_Mechanoid>This mechanoid force has automated turret support. Hostile constructoids will deploy the battery independently while the main force follows its original tactics.</RS_ArtilleryRaidArrival_Mechanoid>
   <RS_ArtilleryRaidArrival_Siege>This siege force has stronger artillery than an ordinary raid. They will establish a fortified gun position and sustain a bombardment of your defenders and fortifications in preparation for a breakthrough.</RS_ArtilleryRaidArrival_Siege>
+  <RS_ScaleArtilleryConstruction>Scale artillery construction speed with raid points</RS_ScaleArtilleryConstruction>
+  <RS_MechSupportShield>Enable mechanoid rapid support shields</RS_MechSupportShield>
+  <RS_MechShieldPoints>Minimum raid points for rapid support shields: {0}</RS_MechShieldPoints>
 </LanguageData>

@@ -11,8 +11,9 @@ namespace RimSiege.Raids.Artillery
     internal static class CampSupplies
     {
         internal const int Radius = 16;
+        private static readonly int[] DropBands = { 8, 11, Radius };
 
-        private static HashSet<IntVec3> Reserved(Map map, CampPlan camp)
+        internal static HashSet<IntVec3> Reserved(Map map, CampPlan camp)
         {
             var cells = new HashSet<IntVec3>();
             foreach (ArtilleryPlacement item in camp.Guns.Concat(camp.Cover))
@@ -36,12 +37,31 @@ namespace RimSiege.Raids.Artillery
             IntVec3 center = camp.Center;
             bool floors = IsoFloor.HasFloors(map);
             int floor = floors ? IsoFloor.FloorOf(center, map) : 0;
-            return CellFinder.TryFindRandomCellNear(center, map, Radius, cell =>
-                cell.InBounds(map) && (cell - center).LengthHorizontalSquared <= Radius * Radius &&
+
+            bool Valid(IntVec3 cell, int radiusSq) =>
+                cell.InBounds(map) && (cell - center).LengthHorizontalSquared <= radiusSq &&
                 (!floors || IsoFloor.FloorOf(cell, map) == floor) && !reserved.Contains(cell) &&
                 DropCellFinder.IsGoodDropSpot(cell, map, allowFogged, canRoofPunch) &&
-                map.reachability.CanReach(center, cell, PathEndMode.OnCell, TraverseMode.NoPassClosedDoors, Danger.Deadly),
-                out spot);
+                map.reachability.CanReach(center, cell, PathEndMode.OnCell, TraverseMode.NoPassClosedDoors, Danger.Deadly);
+
+            for (int i = 0; i < DropBands.Length; i++)
+            {
+                int r = DropBands[i];
+                int rSq = r * r;
+                if (CellFinder.TryFindRandomCellNear(center, map, r, c => Valid(c, rSq), out spot, 48))
+                    return true;
+            }
+
+            int fullSq = Radius * Radius;
+            foreach (IntVec3 cell in GenRadial.RadialCellsAround(center, Radius, true))
+            {
+                if (!Valid(cell, fullSq)) continue;
+                spot = cell;
+                return true;
+            }
+
+            spot = IntVec3.Invalid;
+            return false;
         }
 
         internal static bool CanSupply(Map map, CampPlan camp) => camp != null && camp.Center.InBounds(map) &&

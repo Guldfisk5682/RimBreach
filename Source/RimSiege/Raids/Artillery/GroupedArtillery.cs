@@ -201,7 +201,7 @@ namespace RimSiege.Raids.Artillery
                                     (float)System.Math.Max(1, g.Raid.Camp.Guns.Count)).First();
                             unarmed.Pawns.Remove(builder); camp.Pawns.Add(builder);
                         }
-                Incident = new ArtilleryIncident();
+                Incident = new ArtilleryIncident { InitialRaidSize = allPawns.Count };
                 map.GetComponent<ArtilleryMap>().RegisterIncident(Incident);
                 foreach (ArtilleryRaid raid in Batteries) raid.IncidentKey = Incident.Key;
             }

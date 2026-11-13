@@ -25,6 +25,7 @@ namespace RimSiege.Raids.Artillery
         {
             if (raid.Key == 0) raid.Key = nextKey++;
             raid.Members = pawns.ToList();
+            raid.InitialRaidSize = raid.Members.Count;
             raids.Add(raid);
             Index(raid);
         }
@@ -72,7 +73,7 @@ namespace RimSiege.Raids.Artillery
         {
             if (lord == null) return null;
             if (lord.LordJob is LordJob_Artillery camp) return ForKey(camp.RaidKey);
-            return raids.FirstOrDefault(r => r.CampLord == lord || r.AssaultLord == lord);
+            return raids.FirstOrDefault(r => r.CampLord == lord || r.AssaultLord == lord || r.VanguardLord == lord);
         }
         internal bool HasActiveRaid(int id) => raids.Any(r => r.Id == id && r.Selected && r.Phase != ArtilleryPhase.Abandoned);
         internal bool IsOperator(Pawn pawn)
@@ -109,6 +110,7 @@ namespace RimSiege.Raids.Artillery
                 if (incident != null && !ArtilleryCompletion.InProgress(incident)) FinishIncident(incident);
                 return;
             }
+            if (raid.VanguardLord == removed) raid.VanguardLord = null;
             if (raid.AssaultLord == removed)
             {
                 raid.AssaultLord = null;
@@ -135,7 +137,8 @@ namespace RimSiege.Raids.Artillery
         {
             if (raid == null || !raids.Contains(raid) ||
                 (raid.CampLord != null && map.lordManager.lords.Contains(raid.CampLord)) ||
-                (raid.AssaultLord != null && map.lordManager.lords.Contains(raid.AssaultLord))) return;
+                (raid.AssaultLord != null && map.lordManager.lords.Contains(raid.AssaultLord)) ||
+                (raid.VanguardLord != null && map.lordManager.lords.Contains(raid.VanguardLord))) return;
             ArtilleryIncident incident = Incident(raid.IncidentKey);
             if (incident != null)
             {
@@ -173,7 +176,8 @@ namespace RimSiege.Raids.Artillery
 
         public override void MapComponentTick()
         {
-            if (Find.TickManager.TicksGame % 60 != 0 || orphanGuns.Count == 0) return;
+            if (Find.TickManager.TicksGame % 60 != 0) return;
+            ArtilleryRetreat.Review(this);
             for (int i = orphanGuns.Count - 1; i >= 0; i--)
             {
                 Building building = orphanGuns[i];
@@ -197,6 +201,7 @@ namespace RimSiege.Raids.Artillery
             {
                 ArtilleryRaid raid = raids[i];
                 Index(raid);
+                if (raid.InitialRaidSize == 0) raid.InitialRaidSize = raid.Members.Count;
                 if (raid.AssaultLord != null) raid.AssaultCreated = true;
                 if (raid.AssaultCreated && !raid.AssaultEnded &&
                     (raid.AssaultLord == null || !map.lordManager.lords.Contains(raid.AssaultLord) ||
@@ -205,7 +210,13 @@ namespace RimSiege.Raids.Artillery
                 ArtilleryDeployment.TryDeploy(raid);
                 FinishIfEnded(raid);
             }
-            foreach (ArtilleryIncident incident in incidents.ToList()) FinishIncident(incident);
+            foreach (ArtilleryIncident incident in incidents.ToList())
+            {
+                if (incident.InitialRaidSize == 0)
+                    incident.InitialRaidSize = raids.Where(raid => raid.IncidentKey == incident.Key)
+                        .Sum(raid => raid.InitialRaidSize) + incident.NativeLords.Sum(lord => lord?.numPawnsEverGained ?? 0);
+                FinishIncident(incident);
+            }
         }
 
         public override void ExposeData()

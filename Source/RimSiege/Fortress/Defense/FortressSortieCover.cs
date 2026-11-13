@@ -1,6 +1,5 @@
-using System.Linq;
 using HarmonyLib;
-using ProjectZ;
+using RimSiege.Raids;
 using RimWorld;
 using Verse;
 using Verse.AI;
@@ -31,28 +30,8 @@ namespace RimSiege.Fortress
                 pawn.CurrentEffectiveVerb?.verbProps.IsMeleeAttack != false ||
                 !defense.ValidTarget(target.Thing)) return;
 
-            Map map = pawn.Map;
-            IntVec3 heading = Api.GroundCellOf(target.Cell, map) - Api.GroundCellOf(pawn.Position, map);
-            ThingDef barricade = ThingDefOf.Barricade;
-            ThingDef steel = ThingDefOf.Steel;
-            foreach (IntVec3 direction in GenAdj.CardinalDirections.OrderByDescending(Projection))
-            {
-                if (Projection(direction) <= 0) break;
-                IntVec3 cell = pawn.Position + direction;
-                if (!cell.InBounds(map) || cell.InNoBuildEdgeArea(map) || !defense.Ground.Outside(cell) ||
-                    !cell.Standable(map) || cell.GetThingList(map).Any(BlocksPlacement) ||
-                    !GenConstruct.CanBuildOnTerrain(barricade, cell, map, Rot4.North, stuffDef: steel) ||
-                    !GenSpawn.CanSpawnAt(barricade, cell, map, Rot4.North, canWipeEdifices: false)) continue;
-
-                FortressConstruction.Spawn(barricade, cell, Rot4.North, steel, map);
-                duty.focusThird = cell;
-                return;
-            }
-
-            int Projection(IntVec3 direction) => heading.x * direction.x + heading.z * direction.z;
+            IntVec3 cover = FieldCover.TryPlace(pawn, target.Cell, defense.Ground.Outside);
+            if (cover.IsValid) duty.focusThird = cover;
         }
-
-        private static bool BlocksPlacement(Thing thing) => thing is Building or Blueprint or Frame or Pawn ||
-            thing.def.category == ThingCategory.Plant && thing.def.Fillage != FillCategory.None;
     }
 }
