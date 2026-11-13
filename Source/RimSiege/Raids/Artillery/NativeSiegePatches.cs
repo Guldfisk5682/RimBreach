@@ -397,7 +397,7 @@ namespace RimSiege.Raids.Artillery
                 if (raid.InfantryReleased) __instance.UpdateAllDuties();
                 if (__instance.lord.CurLordToil != __instance) return;
             }
-            if (!raid.WaitingForFirstGun && raid.Phase == ArtilleryPhase.Building && ArtilleryCrew.SupportReady(raid))
+            if (raid.Phase == ArtilleryPhase.Building && ArtilleryCrew.SupportReady(raid))
             {
                 raid.Phase = ArtilleryPhase.Supporting;
                 if (raid.Kind != ArtilleryRaidKind.Siege) ArtilleryCamp.ReleaseInfantry(raid, __instance.lord);
@@ -439,8 +439,6 @@ namespace RimSiege.Raids.Artillery
             if (ArtilleryCamp.ObserveBuilding(raid, b) && raid.Camp.Guns.Any(gun => gun.Building == b) &&
                 __instance.LordJob is LordJob_Artillery job)
             {
-                if (raid.WaitingForFirstGun && raid.Camp.Guns.Any(gun => gun.IsSupport && gun.Building == b))
-                    job.FirstGunReady = true;
                 if (!raid.InitialAmmoRequested) job.InitialAmmoReady = true;
             }
         }

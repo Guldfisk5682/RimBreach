@@ -93,7 +93,7 @@ namespace RimSiege.Raids.Artillery
             Raid.Phase = ArtilleryPhase.Travelling;
         }
 
-        internal bool FirstGunReady, InitialAmmoReady;
+        internal bool InitialAmmoReady;
 
         public override void LordJobTick()
         {
@@ -113,20 +113,10 @@ namespace RimSiege.Raids.Artillery
                 raid.OptionalSmoke = null;
                 if (lord.CurLordToil is LordToil_Siege) lord.CurLordToil.UpdateAllDuties();
             }
-            if (raid.WaitingForFirstGun && lord.CurLordToil is LordToil_Siege)
+            if (raid.WaitingForFirstGun && lord.CurLordToil is LordToil_Siege legacySiege)
             {
                 pendingInfantryAssault = false;
-                if (!FirstGunReady && (GenTicks.TicksGame + raid.Key) % 60 != 0) return;
-                FirstGunReady = false;
-                if (!raid.SuppliesDelivered || raid.Camp.Guns.Any(gun => gun.IsSupport && gun.Building?.Spawned == true) ||
-                    !raid.Camp.Guns.Any(gun => gun.IsSupport && ArtilleryCrew.Pending(gun)))
-                    ArtilleryDeployment.ReleaseWaitingInfantry(raid);
-                else if (!ArtilleryCrew.HasBuilder(lord) && !ArtilleryCrew.HasArrivingBuilder(raid, lord) &&
-                    !ArtilleryCrew.ReplaceBuilder(raid, (LordToil_Siege)lord.CurLordToil))
-                {
-                    ArtilleryCamp.CancelUnfinished(raid);
-                    ArtilleryDeployment.ReleaseWaitingInfantry(raid);
-                }
+                ArtilleryDeployment.ResumeLegacyHandoff(raid, legacySiege);
                 return;
             }
             if (pendingInfantryAssault && lord.CurLordToil is LordToil_Siege)
@@ -138,7 +128,7 @@ namespace RimSiege.Raids.Artillery
                     !ArtilleryCrew.HasArrivingBuilder(raid, lord) &&
                     !ArtilleryCrew.ReplaceBuilder(raid, (LordToil_Siege)lord.CurLordToil))
                     ArtilleryCamp.CancelUnfinished(raid);
-                ArtilleryCamp.ReleaseInfantry(raid, lord, underFire: true);
+                ArtilleryCamp.ReleaseInfantry(raid, lord, force: true);
             }
             if (lord.CurLordToil is LordToil_Siege && raid.Phase == ArtilleryPhase.Assaulting && !raid.SuppliesDelivered)
                 lord.ReceiveMemo("NoBuilders");

@@ -10,26 +10,39 @@ namespace RimSiege.Raids.Artillery
 {
     internal static class ArtilleryRetreat
     {
-        private const int LossPercent = 70;
+        private const float BreachedLossFraction = 0.70f;
 
         internal static void Review(ArtilleryMap artillery)
         {
-            foreach (ArtilleryRaid raid in artillery.ActiveRaids.ToArray())
+            foreach (ArtilleryRaid raid in artillery.TrackedRaids.Where(raid => raid.IncidentKey == 0).ToArray())
             {
-                if (!raid.Faction.def.humanlikeFaction) continue;
-                ArtilleryIncident incident = artillery.Incident(raid.IncidentKey);
-                if (!(incident?.ReachedDefenses ?? raid.ReachedDefenses)) continue;
-
-                int initial = incident?.InitialRaidSize ?? raid.InitialRaidSize;
-                int lost = incident?.ViolentLosses.Count ?? raid.ViolentLosses.Count;
-                if (initial == 0 || (long)lost * 100 < (long)initial * LossPercent) continue;
-
-                Review(raid.CampLord);
-                Review(raid.AssaultLord);
-                Review(raid.VanguardLord);
-                if (incident != null)
-                    foreach (Lord lord in incident.NativeLords.ToArray()) Review(lord);
+                if (ShouldRetreat(raid.Faction, raid.InitialRaidSize, raid.ViolentLosses.Count, raid.ReachedDefenses, raid.RaidSeed))
+                    ReviewWave(raid);
             }
+            foreach (ArtilleryIncident incident in artillery.TrackedIncidents.ToArray())
+            {
+                var waves = artillery.TrackedRaids.Where(raid => raid.IncidentKey == incident.Key).ToArray();
+                Faction faction = waves.FirstOrDefault()?.Faction ?? incident.NativeLords.FirstOrDefault()?.faction;
+                if (!ShouldRetreat(faction, incident.InitialRaidSize, incident.ViolentLosses.Count,
+                    incident.ReachedDefenses, incident.Key)) continue;
+                foreach (ArtilleryRaid wave in waves) ReviewWave(wave);
+                foreach (Lord lord in incident.NativeLords.ToArray()) Review(lord);
+            }
+        }
+
+        private static bool ShouldRetreat(Faction faction, int initial, int lost, bool reachedDefenses, int seed)
+        {
+            if (faction?.def.humanlikeFaction != true || initial == 0 || lost == 0) return false;
+            float fraction = reachedDefenses ? BreachedLossFraction :
+                faction.def.attackersDownPercentageRangeForAutoFlee.RandomInRangeSeeded(seed);
+            return lost >= initial * fraction;
+        }
+
+        private static void ReviewWave(ArtilleryRaid raid)
+        {
+            Review(raid.VanguardLord);
+            Review(raid.AssaultLord);
+            Review(raid.CampLord);
         }
 
         private static void Review(Lord lord)

@@ -33,7 +33,12 @@ namespace RimSiege.Raids
             if (carrier && !walkableRoute)
             {
                 Job independent = party.Plan(pawn);
-                if (independent != null) return independent;
+                if (independent != null)
+                {
+                    if (independent.def == PZJobDefOf.PZ_PlaceSiegeLadder)
+                        independent.locomotionUrgency = LocomotionUrgency.Sprint;
+                    return independent;
+                }
             }
             if (walkableRoute) return null;
             IntVec3 existingRoute = party.Planner.Destination(pawn, false);

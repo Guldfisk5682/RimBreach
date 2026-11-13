@@ -22,7 +22,7 @@ namespace RimSiege.Raids.Artillery
 
         internal static bool AssignOperators(ArtilleryRaid raid, Lord lord)
         {
-            var specialists = raid.WaitingForFirstGun
+            var specialists = raid.SmokeAttempted && !raid.InfantryReleased
                 ? ArtilleryDeployment.Specialists(raid.Strategy, lord.ownedPawns) : null;
             return ReserveOperators(raid, lord.ownedPawns.Where(p =>
                 specialists?.Contains(p) != true && (raid.IndependentCrew ? OperatorCandidate(p) : CanOperate(p))));
@@ -167,9 +167,9 @@ namespace RimSiege.Raids.Artillery
 
         internal static void TransferToAssault(ArtilleryRaid raid, Lord camp, List<Pawn> pawns)
         {
-            if (pawns.Count == 0 || (raid.AssaultEnded && !raid.IndependentCrew)) return;
+            if (pawns.Count == 0 || (raid.AssaultEnded && !raid.KeepsSeparateCrew)) return;
             if (raid.AssaultLord != null && !camp.Map.lordManager.lords.Contains(raid.AssaultLord)) raid.AssaultLord = null;
-            if (raid.AssaultLord == null && raid.IndependentCrew) raid.AssaultEnded = false;
+            if (raid.AssaultLord == null && raid.KeepsSeparateCrew) raid.AssaultEnded = false;
             camp.RemovePawns(pawns);
             foreach (Pawn pawn in pawns)
                 // Work-giver construction/hauling jobs may have no job.lord.
@@ -188,9 +188,14 @@ namespace RimSiege.Raids.Artillery
             }
         }
 
-        internal static void ReleaseInfantry(ArtilleryRaid raid, Lord camp, bool underFire = false)
+        internal static void ReleaseInfantry(ArtilleryRaid raid, Lord camp, bool force = false)
         {
-            if (raid.InfantryReleased || raid.Kind == ArtilleryRaidKind.Siege && !underFire) return;
+            if (raid.InfantryReleased || raid.Kind == ArtilleryRaidKind.Siege && !force) return;
+            if (!raid.SuppliesDelivered)
+            {
+                CancelUnfinished(raid);
+                foreach (ArtilleryPlacement gun in raid.Camp.Guns) gun.Operator = null;
+            }
             RefreshConstruction(raid, camp.Map);
             RefreshOperators(raid, camp);
             var crew = ArtilleryCrew.Retained(raid, camp);
@@ -200,7 +205,7 @@ namespace RimSiege.Raids.Artillery
                 : crew.Count == 0 ? ArtilleryPhase.Assaulting : ArtilleryPhase.Supporting;
             foreach (Pawn pawn in attackers) RestUtility.WakeUp(pawn);
             TransferToAssault(raid, camp, attackers);
-            if (camp.ownedPawns.Count != 0) camp.CurLordToil.UpdateAllDuties();
+            if (camp.ownedPawns.Count != 0 && camp.CurLordToil is LordToil_Siege toil) toil.UpdateAllDuties();
         }
 
         internal static void RefreshOperators(ArtilleryRaid raid, Lord camp)
@@ -247,7 +252,7 @@ namespace RimSiege.Raids.Artillery
         internal static void ReassignOperators(ArtilleryRaid raid, Lord camp)
         {
             if (!((LordJob_Artillery)camp.LordJob).RequiresOperators) return;
-            if ((raid.AssaultEnded && !raid.IndependentCrew) || camp.CurLordToil is not LordToil_Siege toil) return;
+            if ((raid.AssaultEnded && !raid.KeepsSeparateCrew) || camp.CurLordToil is not LordToil_Siege toil) return;
             Lord assault = raid.AssaultLord;
             if (assault != null && !camp.Map.lordManager.lords.Contains(assault)) assault = null;
             Pawn[] nearby = ArtilleryCrew.NearbyReplacements(raid, camp).ToArray();

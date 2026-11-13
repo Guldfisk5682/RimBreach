@@ -45,15 +45,17 @@ namespace RimSiege.Raids
             if (pawn.RaceProps.IsMechanoid)
                 return FireSupportMech(pawn) || MechBattery.IsConstructoid(pawn) ? 2 : 1;
             if (pawn.GetLord()?.LordJob is LordJob_Artillery || pawn.mindState.duty?.def == DutyDefOf.Build ||
-                pawn.CurJobDef == JobDefOf.ManTurret) return 2;
+                pawn.CurJobDef == JobDefOf.ManTurret) return 3;
+            if (ArtilleryDeployment.HasMeleePrimary(pawn)) return 0;
             return pawn.Faction.def.techLevel >= TechLevel.Industrial &&
-                ArtilleryDeployment.CarriesLadderPriorityEquipment(pawn) ? 0 : 1;
+                ArtilleryDeployment.CarriesLadderPriorityEquipment(pawn) ? 1 : 2;
         }
 
         private static bool Demolition(Pawn pawn)
         {
             if (pawn.mindState?.duty?.def == DutyDefOf.Breaching || pawn.mindState?.duty?.def == DutyDefOf.Sapper)
                 return true;
+            if (ArtilleryDeployment.HasMeleePrimary(pawn)) return false;
             return !(pawn.Faction.def.techLevel >= TechLevel.Industrial &&
                 ArtilleryDeployment.CarriesLadderPriorityEquipment(pawn) &&
                 (pawn.equipment?.Primary == null || !DemolitionWeapon(pawn.equipment.Primary) ||

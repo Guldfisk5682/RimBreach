@@ -43,11 +43,10 @@ namespace RimSiege.Raids.Artillery
                 if (pawn.CurJob != null) pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
             screen?.RestoreWeapons();
             if (camp.CurLordToil != camp.Graph.StartingToil) camp.GotoToil(camp.Graph.StartingToil);
-            raid.WaitingForFirstGun = true;
             var toil = camp.Graph.lordToils.OfType<LordToil_Siege>().Single();
             if (!camp.ownedPawns.Any(pawn => ArtilleryCrew.CanBuild(toil, pawn)))
             {
-                raid.WaitingForFirstGun = false;
+                ReleaseVanguard(raid, camp, toil, screen);
                 raid.InfantryReleased = true;
                 ArtilleryCamp.TransferToAssault(raid, camp, camp.ownedPawns.ToList());
                 return;
@@ -56,22 +55,22 @@ namespace RimSiege.Raids.Artillery
             raid.ScreenedDeployment = screen?.CampCovered(raid, camp.Map) == true;
             try { EnterSiege(camp); }
             finally { raid.ScreenedDeployment = false; }
-            if (!raid.SuppliesDelivered)
-            {
-                ReleaseWaitingInfantry(raid);
-                return;
-            }
+            ReleaseVanguard(raid, camp, toil, screen);
+            ArtilleryCamp.ReleaseInfantry(raid, camp, force: true);
+        }
 
+        private static void ReleaseVanguard(ArtilleryRaid raid, Lord camp, LordToil_Siege toil, ArtillerySmoke screen)
+        {
             var specialists = Specialists(raid.Strategy, camp.ownedPawns);
             var vanguard = camp.ownedPawns.Where(pawn => ArtillerySmoke.Ready(pawn) &&
-                !specialists.Contains(pawn) && !raid.Camp.Guns.Any(gun => gun.Operator == pawn) &&
-                CarriesVanguardEquipment(pawn, screen?.HasCarrier(pawn) == true)).ToList();
-            if (!camp.ownedPawns.Any(pawn => !vanguard.Contains(pawn) && ArtilleryCrew.CanBuild(toil, pawn)))
+                !specialists.Contains(pawn) && (!raid.SuppliesDelivered || !raid.Camp.Guns.Any(gun => gun.Operator == pawn)) &&
+                CarriesVanguardEquipment(pawn, screen?.AssignmentFor(pawn) != null)).ToList();
+            if (raid.SuppliesDelivered &&
+                !camp.ownedPawns.Any(pawn => !vanguard.Contains(pawn) && ArtilleryCrew.CanBuild(toil, pawn)))
             {
                 Pawn builder = vanguard.FirstOrDefault(pawn => ArtilleryCrew.CanBuild(toil, pawn));
                 if (builder != null) vanguard.Remove(builder);
             }
-            screen?.BeginOptionalCover(raid, camp);
             if (vanguard.Count == 0) return;
 
             camp.RemovePawns(vanguard);
@@ -80,8 +79,9 @@ namespace RimSiege.Raids.Artillery
             raid.VanguardLord = LordMaker.MakeNewLord(raid.Faction,
                 new LordJob_AssaultColony(raid.Faction, canKidnap: false, canTimeoutOrFlee: false, canSteal: false), camp.Map, vanguard);
             camp.Map.GetComponent<SiegeRaidMap>().IssueInOrder(vanguard);
-            toil.UpdateAllDuties();
         }
+
+        internal static bool HasMeleePrimary(Pawn pawn) => pawn.equipment?.Primary?.def.IsMeleeWeapon == true;
 
         internal static bool CarriesLadderPriorityEquipment(Pawn pawn) =>
             CarriesSmokeBelt(pawn) || CarriesWeapon(pawn, weapon => IsThrown(weapon.def) && IsExplosive(weapon.def));
@@ -91,7 +91,8 @@ namespace RimSiege.Raids.Artillery
         private static bool CarriesVanguardEquipment(Pawn pawn, bool smokeCarrier) =>
             CarriesSmokeBelt(pawn) || pawn.equipment?.Primary?.def is ThingDef weapon &&
                 (!smokeCarrier || weapon != ArtillerySmokeDefOf.CE_Weapon_GrenadeSmoke) &&
-                (IsThrown(weapon) || weapon.weaponTags?.Contains("CE_AI_Launcher") == true || IsExplosive(weapon));
+                (weapon.IsMeleeWeapon || IsThrown(weapon) || weapon.weaponTags?.Contains("CE_AI_Launcher") == true ||
+                 IsExplosive(weapon) || pawn.equipment.PrimaryEq?.PrimaryVerb?.IsIncendiary_Ranged() == true);
 
         private static bool CarriesSmokeBelt(Pawn pawn) =>
             pawn.apparel?.WornApparel.Any(apparel => apparel is SmokepopBelt) == true;
@@ -110,12 +111,13 @@ namespace RimSiege.Raids.Artillery
             (projectile.explosionRadius > 0 || projectile.damageDef.isExplosive ||
              typeof(ProjectileCE_Explosive).IsAssignableFrom(verb.defaultProjectile.thingClass))) == true;
 
-        internal static void ReleaseWaitingInfantry(ArtilleryRaid raid)
+        internal static void ResumeLegacyHandoff(ArtilleryRaid raid, LordToil_Siege toil)
         {
             raid.WaitingForFirstGun = false;
-            if (!raid.SuppliesDelivered)
-                foreach (ArtilleryPlacement gun in raid.Camp.Guns) gun.Operator = null;
-            ArtilleryCamp.ReleaseInfantry(raid, raid.CampLord, underFire: true);
+            raid.OptionalSmoke?.RestoreWeapons();
+            raid.OptionalSmoke = null;
+            if (raid.VanguardLord == null) ReleaseVanguard(raid, toil.lord, toil, null);
+            ArtilleryCamp.ReleaseInfantry(raid, toil.lord, force: true);
         }
 
         private static void Release(ArtilleryRaid raid)

@@ -68,6 +68,11 @@ namespace RimSiege.Integration
             Traveller = pawn;
         }
 
+        // Escort's focus is the friendly breacher. Use ProjectZ's hostile target
+        // selection for ladder work while preserving the native escort duty.
+        private static LocalTargetInfo RaidFocus(PawnDuty duty) =>
+            duty == null || duty.def == DutyDefOf.Escort ? LocalTargetInfo.Invalid : duty.focus;
+
         internal IntVec3 Destination(Pawn pawn, bool withoutClimbing)
         {
             Synchronize(pawn);
@@ -75,7 +80,7 @@ namespace RimSiege.Integration
             Active = this;
             try
             {
-                IntVec3 destination = pawn.mindState?.duty != null ? pawn.mindState.duty.focus.Cell : IntVec3.Invalid;
+                IntVec3 destination = RaidFocus(pawn.mindState?.duty).Cell;
                 if (!destination.IsValid)
                 {
                     Lord lord = pawn.GetLord();
@@ -108,6 +113,8 @@ namespace RimSiege.Integration
             bool vertical = ClimbPlanner.NoVertical;
             bool previousPlacing = allowNewLadders;
             var previousLanding = availableLanding;
+            PawnDuty duty = pawn.mindState?.duty;
+            LocalTargetInfo previousFocus = duty?.focus ?? LocalTargetInfo.Invalid;
             allowNewLadders = placing;
             availableLanding = available;
             // Reuse native blocked-top ladders. Clearance bindings restrict
@@ -117,10 +124,12 @@ namespace RimSiege.Integration
             {
                 Synchronize(pawn);
                 Active = this;
+                if (duty != null) duty.focus = RaidFocus(duty);
                 return RaidClimb.TryGive(pawn, false, false);
             }
             finally
             {
+                if (duty != null) duty.focus = previousFocus;
                 scopedCache.Capture();
                 native.Apply();
                 ClimbPlanner.NoVertical = vertical;

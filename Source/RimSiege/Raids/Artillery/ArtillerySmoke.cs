@@ -651,20 +651,6 @@ namespace RimSiege.Raids.Artillery
                     placement.Def, placement.Cell, placement.Rotation, map)));
         }
 
-        internal void BeginOptionalCover(ArtilleryRaid raid, Lord camp)
-        {
-            Map map = camp.Map;
-            Targets.RemoveAll(target => target.Required || target.Order != OuterOrder || target.IsDone(map));
-            Assignments.RemoveAll(assignment => !Ready(assignment.Pawn) || FindSmokeGrenade(assignment.Pawn) == null ||
-                raid.Camp.Guns.Any(gun => gun.Operator == assignment.Pawn) ||
-                assignment.Pawn.mindState.duty?.def == DutyDefOf.Build);
-            if (Targets.Count == 0 || Assignments.Count == 0) return;
-            foreach (SmokeTarget target in Targets) target.ClaimedBy = null;
-            Deadline = GenTicks.TicksGame + 600;
-            raid.OptionalSmoke = this;
-            ApplyOptionalDuties(camp);
-        }
-
         internal void ApplyOptionalDuties(Lord camp)
         {
             foreach (SmokeAssignment assignment in Assignments)
@@ -872,7 +858,7 @@ namespace RimSiege.Raids.Artillery
     {
         public JobGiver_ArtillerySmokeFollowers()
         {
-            wanderRadius = 14f;
+            wanderRadius = Region.GridSize;
             wanderDestValidator = (pawn, _, cell) =>
                 pawn.GetLord()?.LordJob is LordJob_Artillery { Raid.Smoke: { } screen } &&
                 screen.CanAdvance(cell, pawn.Map) && screen.CanFollowInto(pawn, cell);
@@ -884,7 +870,7 @@ namespace RimSiege.Raids.Artillery
             if (lord?.LordJob is not LordJob_Artillery job || (job.Raid.Smoke ?? job.Raid.OptionalSmoke) is not ArtillerySmoke screen) return null;
             IntVec3 follow = screen.FollowCell(lord, job.Raid.Camp.Center);
             pawn.mindState.duty.focus = pawn.mindState.duty.focusSecond = follow.IsValid ? follow : pawn.Position;
-            pawn.mindState.duty.wanderRadius = 14f;
+            pawn.mindState.duty.wanderRadius = wanderRadius;
             if (follow.IsValid && !pawn.Position.InHorDistOf(follow, 14f) &&
                 pawn.CanReach(follow, PathEndMode.OnCell, Danger.Deadly))
                 return JobMaker.MakeJob(JobDefOf.Goto, follow, 60, checkOverrideOnExpiry: true);
@@ -896,9 +882,10 @@ namespace RimSiege.Raids.Artillery
     internal static class ArtillerySmokeEquipmentOwnership
     {
         private static bool Prefix(Pawn pawn) =>
-            pawn.mindState.duty?.def != ArtillerySmokeDefOf.RS_ArtillerySmoke ||
+            !ArtilleryWeaponSwitch.InProgress(pawn) &&
+            (pawn.mindState.duty?.def != ArtillerySmokeDefOf.RS_ArtillerySmoke ||
             pawn.GetLord()?.LordJob is not LordJob_Artillery job ||
-            (job.Raid.Smoke ?? job.Raid.OptionalSmoke)?.HasCarrier(pawn) != true;
+            (job.Raid.Smoke ?? job.Raid.OptionalSmoke)?.HasCarrier(pawn) != true);
     }
 
     [HarmonyPatch(typeof(Pawn_PathFollower), "TryEnterNextPathCell")]

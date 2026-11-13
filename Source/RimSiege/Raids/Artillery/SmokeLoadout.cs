@@ -39,9 +39,10 @@ namespace RimSiege.Raids.Artillery
         {
             Pawn pawn = assignment.Pawn;
             if (pawn is not { Spawned: true, Dead: false, Downed: false }) return;
+            var inventory = pawn.TryGetComp<CompInventory>();
             if (assignment.OriginalWeapon is { Destroyed: false } weapon &&
-                pawn.equipment.Primary != weapon)
-                pawn.TryGetComp<CompInventory>()?.TrySwitchToWeapon(weapon, stopJob: false);
+                inventory?.container.Contains(weapon) == true)
+                inventory.TrySwitchToWeapon(weapon, stopJob: false);
         }
 
         [HarmonyPatch(typeof(Verb_ShootCEOneUse), "SelfConsume")]
@@ -56,6 +57,32 @@ namespace RimSiege.Raids.Artillery
                 if (!grenade.Destroyed) grenade.Destroy(DestroyMode.Vanish);
                 return false;
             }
+        }
+    }
+
+    [HarmonyPatch(typeof(CompInventory), nameof(CompInventory.TrySwitchToWeapon))]
+    internal static class ArtilleryWeaponSwitch
+    {
+        // Unequipping can finish an attack job and run the constant think tree
+        // before CE has taken the replacement weapon out of the inventory.
+        private static readonly HashSet<Pawn> Switching = new();
+
+        internal static bool InProgress(Pawn pawn) => Switching.Contains(pawn);
+
+        private static bool Prefix(CompInventory __instance, out Pawn __state)
+        {
+            __state = null;
+            if (__instance.parent is not Pawn { Spawned: true } pawn) return true;
+            if (InProgress(pawn)) return false;
+            if (pawn.Map.GetComponent<ArtilleryMap>().ForPawn(pawn) == null) return true;
+            Switching.Add(pawn);
+            __state = pawn;
+            return true;
+        }
+
+        private static void Finalizer(Pawn __state)
+        {
+            if (__state != null) Switching.Remove(__state);
         }
     }
 

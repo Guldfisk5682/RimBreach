@@ -34,6 +34,7 @@ namespace RimSiege.Raids.Artillery
         internal bool Rolled, Selected, SuppliesDelivered;
         internal bool InfantryReleased, AssaultCreated, AssaultEnded, CompletionSent, CompletionPending;
         internal bool IndependentCrew;
+        internal bool KeepsSeparateCrew => IndependentCrew || SmokeAttempted;
         internal int ConstructoidCount;
         internal List<string> CompletionTags = new List<string>();
         internal Lord CampLord, AssaultLord, VanguardLord;

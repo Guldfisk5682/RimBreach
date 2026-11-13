@@ -65,6 +65,8 @@ namespace RimSiege.Raids.Artillery
         }
 
         internal ArtilleryRaid ForKey(int key) => raids.FirstOrDefault(r => r.Key == key);
+        internal IEnumerable<ArtilleryRaid> TrackedRaids => raids;
+        internal IEnumerable<ArtilleryIncident> TrackedIncidents => incidents;
         internal IEnumerable<ArtilleryRaid> ActiveRaids => raids.Where(r => r.Phase != ArtilleryPhase.Abandoned);
         internal ArtilleryRaid ForPawn(Pawn pawn) => pawn != null && members.TryGetValue(pawn, out ArtilleryRaid raid) ? raid : null;
         internal ArtilleryRaid ForGun(Thing gun) => gun != null && guns.TryGetValue(gun, out GunOwner owner) ? owner.Raid : null;
@@ -127,7 +129,7 @@ namespace RimSiege.Raids.Artillery
             raid.AssaultEnded = true;
             // A completed first wave does not cancel independent construction or
             // manning. Crew retain their own native retreat/non-hostility paths.
-            if (raid.IndependentCrew) return;
+            if (raid.KeepsSeparateCrew) return;
             Lord camp = raid.CampLord;
             if (camp != null && map.lordManager.lords.Contains(camp)) camp.ReceiveMemo("ArtilleryRaidEnded");
             else ArtilleryCamp.Abandon(raid, map);
@@ -247,7 +249,7 @@ namespace RimSiege.Raids.Artillery
             if (newLordToil is not LordToil_ExitMap && newLordToil is not LordToil_PanicFlee) return;
             ArtilleryMap raids = __instance.Map?.GetComponent<ArtilleryMap>();
             ArtilleryRaid raid = raids?.ForLord(__instance);
-            if (raid != null && raid.AssaultLord == __instance && raid.Kind != ArtilleryRaidKind.Siege)
+            if (raid != null && raid.AssaultLord == __instance)
                 raids.NotifyAssaultEnded(raid);
         }
     }

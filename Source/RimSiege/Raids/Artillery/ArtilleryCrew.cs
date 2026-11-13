@@ -71,37 +71,32 @@ namespace RimSiege.Raids.Artillery
         internal static HashSet<Pawn> Retained(ArtilleryRaid raid, Lord camp)
         {
             var crew = new HashSet<Pawn>(raid.Camp.Guns.Where(g => g.Operator != null).Select(g => g.Operator));
-            if (!HasConstruction(raid)) return crew;
+            int projects = ArtilleryCamp.Placements(raid.Camp).Count(Pending);
+            if (projects == 0) return crew;
             var toil = (LordToil_Siege)camp.CurLordToil;
-            bool autonomous = !((LordJob_Artillery)camp.LordJob).RequiresOperators;
-            foreach (Pawn pawn in camp.ownedPawns)
-                if (CanBuild(toil, pawn) && (autonomous || pawn.mindState.duty?.def == DutyDefOf.Build)) crew.Add(pawn);
-            // Before vanilla's initial builder assignment, the reserved human
-            // gunners can build; retain one native-eligible helper if none can.
-            if (!crew.Any(p => CanBuild(toil, p)))
+            var manning = raid.Camp.Guns.Where(g => g.Building?.Spawned == true && g.Operator != null)
+                .Select(g => g.Operator).ToHashSet();
+            // Each unfinished emplacement or cover segment needs at most one
+            // builder slot. Operators with unfinished guns can fill those slots.
+            int helpers = projects - crew.Count(pawn => !manning.Contains(pawn) && CanBuild(toil, pawn));
+            if (helpers > 0)
             {
-                Pawn builder = camp.ownedPawns.Where(p => CanBuild(toil, p))
-                    .OrderBy(p => p.Position.DistanceToSquared(raid.Camp.Center)).FirstOrDefault();
-                if (builder != null) crew.Add(builder);
+                var specialists = ArtilleryDeployment.Specialists(raid.Strategy, camp.ownedPawns);
+                crew.UnionWith(camp.ownedPawns.Where(pawn => !crew.Contains(pawn) && CanBuild(toil, pawn))
+                    .OrderBy(pawn => specialists.Contains(pawn))
+                    .ThenByDescending(pawn => pawn.CurJob?.workGiverDef?.workType == WorkTypeDefOf.Construction)
+                    .ThenByDescending(pawn => pawn.mindState.duty?.def == DutyDefOf.Build)
+                    .ThenBy(pawn => pawn.Position.DistanceToSquared(raid.Camp.Center))
+                    .Take(helpers));
             }
-            foreach (Pawn pawn in crew)
-                if (CanBuild(toil, pawn)) NativeSiege.AssignBuilderDuty(toil, pawn);
             return crew;
         }
 
         internal static void RestoreBuilders(ArtilleryRaid raid, LordToil_Siege toil)
         {
-            if (!raid.SuppliesDelivered || !HasConstruction(raid) ||
-                !raid.InfantryReleased && !raid.SmokeAttempted) return;
-            var builders = toil.lord.ownedPawns.Where(pawn => CanBuild(toil, pawn));
-            if (!raid.InfantryReleased)
-            {
-                if (toil.lord.ticksInToil >= 450) return;
-                int count = System.Math.Max(1, UnityEngine.Mathf.RoundToInt(
-                    toil.lord.ownedPawns.Count * NativeSiege.Data(toil).desiredBuilderFraction));
-                builders = builders.OrderBy(pawn => pawn.Position.DistanceToSquared(raid.Camp.Center)).Take(count);
-            }
-            foreach (Pawn pawn in builders) NativeSiege.AssignBuilderDuty(toil, pawn);
+            if (!raid.SuppliesDelivered || !raid.InfantryReleased || !HasConstruction(raid)) return;
+            foreach (Pawn pawn in Retained(raid, toil.lord))
+                if (CanBuild(toil, pawn)) NativeSiege.AssignBuilderDuty(toil, pawn);
         }
 
         // Called by the existing siege refresh, after construction/operator state
@@ -116,10 +111,10 @@ namespace RimSiege.Raids.Artillery
                 ArtilleryCamp.RefreshConstruction(raid, camp.Map);
                 ArtilleryCamp.RefreshOperators(raid, camp);
             }
-            if (HasConstruction(raid)) return;
-            var operators = new HashSet<Pawn>(raid.Camp.Guns.Where(g => g.Operator != null).Select(g => g.Operator));
-            raid.Phase = operators.Count != 0 ? ArtilleryPhase.Supporting : ArtilleryPhase.Assaulting;
-            var attackers = camp.ownedPawns.Where(p => !operators.Contains(p)).ToList();
+            HashSet<Pawn> crew = Retained(raid, camp);
+            if (!HasConstruction(raid))
+                raid.Phase = crew.Count != 0 ? ArtilleryPhase.Supporting : ArtilleryPhase.Assaulting;
+            var attackers = camp.ownedPawns.Where(p => !crew.Contains(p)).ToList();
             foreach (Pawn pawn in attackers) RestUtility.WakeUp(pawn);
             ArtilleryCamp.TransferToAssault(raid, camp, attackers);
         }
