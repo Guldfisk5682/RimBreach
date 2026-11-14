@@ -27,6 +27,7 @@ namespace RimSiege.Raids.Artillery
         internal Pawn Pawn;
         internal ThingWithComps Grenade, OriginalWeapon;
         internal bool Fighting;
+        internal bool LoadoutRestored;
         internal IntVec3 Stand, Target;
         internal int RetryAt;
 
@@ -36,6 +37,7 @@ namespace RimSiege.Raids.Artillery
             Scribe_References.Look(ref Grenade, "grenade");
             Scribe_References.Look(ref OriginalWeapon, "originalWeapon");
             Scribe_Values.Look(ref Fighting, "fighting");
+            Scribe_Values.Look(ref LoadoutRestored, "loadoutRestored");
             Scribe_Values.Look(ref RetryAt, "retryAt");
             Scribe_Values.Look(ref Stand, "stand");
             Scribe_Values.Look(ref Target, "target");
@@ -180,6 +182,7 @@ namespace RimSiege.Raids.Artillery
         internal static bool Eligible(ArtilleryRaid raid) => raid.Faction.def.humanlikeFaction && raid.RaidPoints >= 2000f;
 
         internal static bool Ready(Pawn pawn) => pawn is { Spawned: true, Downed: false, Dead: false, InMentalState: false } &&
+            pawn.RaceProps.Humanlike &&
             !pawn.WorkTagIsDisabled(WorkTags.Violent) && pawn.health.capacities.CapableOf(PawnCapacityDefOf.Manipulation) &&
             pawn.health.capacities.CapableOf(PawnCapacityDefOf.Moving);
 
@@ -654,7 +657,8 @@ namespace RimSiege.Raids.Artillery
         internal void ApplyOptionalDuties(Lord camp)
         {
             foreach (SmokeAssignment assignment in Assignments)
-                if (assignment.Pawn?.GetLord() == camp && assignment.Pawn.mindState.duty?.def == DutyDefOf.Defend)
+                if (assignment.Pawn?.RaceProps?.Humanlike == true && assignment.Pawn.GetLord() == camp &&
+                    assignment.Pawn.mindState.duty?.def == DutyDefOf.Defend)
                     assignment.Pawn.mindState.duty = new PawnDuty(ArtillerySmokeDefOf.RS_ArtillerySmoke, camp.CurLordToil.FlagLoc);
         }
 
@@ -664,7 +668,13 @@ namespace RimSiege.Raids.Artillery
 
         internal void RestoreWeapons()
         {
-            foreach (SmokeAssignment assignment in Assignments) SmokeLoadout.Restore(assignment);
+            foreach (SmokeAssignment assignment in Assignments)
+            {
+                Pawn pawn = assignment.Pawn;
+                if (pawn?.CurJobDef == ArtillerySmokeDefOf.RS_LayArtillerySmoke)
+                    pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
+                SmokeLoadout.Restore(assignment);
+            }
         }
 
         private static float Length(List<IntVec3> nodes, Map map)
@@ -704,6 +714,11 @@ namespace RimSiege.Raids.Artillery
             foreach (Pawn pawn in lord.ownedPawns)
             {
                 if (pawn?.mindState == null) continue;
+                if (!pawn.RaceProps.Humanlike)
+                {
+                    SiegeRoles.AssignMainForceEscortDuty(lord, pawn, focus, Raid);
+                    continue;
+                }
                 pawn.mindState.duty = new PawnDuty(ArtillerySmokeDefOf.RS_ArtillerySmoke, focus)
                 {
                     focusSecond = focus,
@@ -750,6 +765,7 @@ namespace RimSiege.Raids.Artillery
     {
         protected override Job TryGiveJob(Pawn pawn)
         {
+            if (pawn?.RaceProps?.Humanlike != true) return null;
             if (pawn.GetLord()?.LordJob is not LordJob_Artillery job || (job.Raid.Smoke ?? job.Raid.OptionalSmoke) is not ArtillerySmoke screen)
                 return null;
             if (!screen.StartedScreen || !ArtillerySmoke.Ready(pawn)) return null;
@@ -760,6 +776,8 @@ namespace RimSiege.Raids.Artillery
                 pawn.mindState.lastHarmTick >= GenTicks.TicksGame - 90;
             if (grenade == null || fighting)
             {
+                // An override query can run while the smoke driver is still casting.
+                if (pawn.CurJobDef == ArtillerySmokeDefOf.RS_LayArtillerySmoke) return null;
                 assignment.Fighting = true;
                 SmokeLoadout.Restore(assignment);
                 return null;
@@ -866,6 +884,7 @@ namespace RimSiege.Raids.Artillery
 
         protected override Job TryGiveJob(Pawn pawn)
         {
+            if (pawn?.RaceProps?.Humanlike != true) return null;
             Lord lord = pawn.GetLord();
             if (lord?.LordJob is not LordJob_Artillery job || (job.Raid.Smoke ?? job.Raid.OptionalSmoke) is not ArtillerySmoke screen) return null;
             IntVec3 follow = screen.FollowCell(lord, job.Raid.Camp.Center);
@@ -882,10 +901,7 @@ namespace RimSiege.Raids.Artillery
     internal static class ArtillerySmokeEquipmentOwnership
     {
         private static bool Prefix(Pawn pawn) =>
-            !ArtilleryWeaponSwitch.InProgress(pawn) &&
-            (pawn.mindState.duty?.def != ArtillerySmokeDefOf.RS_ArtillerySmoke ||
-            pawn.GetLord()?.LordJob is not LordJob_Artillery job ||
-            (job.Raid.Smoke ?? job.Raid.OptionalSmoke)?.HasCarrier(pawn) != true);
+            !ArtilleryWeaponSwitch.InProgress(pawn) && !SmokeLoadout.IsSmokeLocked(pawn);
     }
 
     [HarmonyPatch(typeof(Pawn_PathFollower), "TryEnterNextPathCell")]

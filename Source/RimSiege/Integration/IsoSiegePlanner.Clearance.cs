@@ -4,7 +4,9 @@ using System.Reflection;
 using HarmonyLib;
 using ProjectZ;
 using ProjectZ.Patches;
+using RimWorld;
 using Verse;
+using Verse.AI;
 
 namespace RimSiege.Integration
 {
@@ -13,6 +15,16 @@ namespace RimSiege.Integration
         private readonly Func<Thing, bool> canClearTop;
         private bool readingTopComponents;
         private static readonly List<ClimbPlanner.Site> NoSites = new();
+
+        internal bool HasUsableSiegeLadder(Faction faction)
+        {
+            if (StairGrid.For(Map) is not { } grid) return false;
+            foreach (VLink link in grid.links)
+                if (link.thing is Building_SiegeLadder ladder && (faction == null || ladder.Faction == faction) &&
+                    !link.topBlocker && StairGrid.UsableIn(link, Map))
+                    return true;
+            return false;
+        }
 
         internal bool HasClearance
         {
@@ -23,6 +35,37 @@ namespace RimSiege.Integration
                         canClearTop(ladder.top.GetEdifice(Map))) return true;
                 return false;
             }
+        }
+
+        internal bool HasUnclaimedClearance(Pawn pawn, IReadOnlyCollection<Pawn> members)
+        {
+            if (StairGrid.For(Map) is not { } grid) return false;
+            foreach (VLink link in grid.links)
+            {
+                if (link.thing is not Building_SiegeLadder ladder || !ladder.topBlocker ||
+                    !canClearTop(ladder.top.GetEdifice(Map))) continue;
+                if (!LadderPerch.Busy(ladder, pawn) && !ClearanceClaimed(ladder, pawn, members))
+                    return true;
+            }
+            return false;
+        }
+
+        private bool ClearanceClaimed(Building_SiegeLadder ladder, Pawn self, IReadOnlyCollection<Pawn> members)
+        {
+            if (members == null) return false;
+            foreach (Pawn member in members)
+            {
+                if (member == null || member == self || !member.Spawned || member.Dead || member.Downed ||
+                    member.Map != Map) continue;
+                if (member.CurJobDef == PZVJobDefOf.PZ_LadderPerch && member.CurJob?.targetA.Thing == ladder)
+                    return true;
+                JobQueue queue = member.jobs?.jobQueue;
+                if (queue == null) continue;
+                foreach (QueuedJob queued in queue)
+                    if (queued.job.def == PZVJobDefOf.PZ_LadderPerch && queued.job.targetA.Thing == ladder)
+                        return true;
+            }
+            return false;
         }
 
         [HarmonyPatch(typeof(RaidVertical), nameof(RaidVertical.ClearableTop))]

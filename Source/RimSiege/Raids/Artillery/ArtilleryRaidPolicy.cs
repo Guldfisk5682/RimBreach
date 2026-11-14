@@ -54,26 +54,15 @@ namespace RimSiege.Raids.Artillery
                 !Rand.Chance(RimSiegeMod.Settings.ArtilleryChance / 10f)) return null;
 
             float personnel = profile.PersonnelPoints(raidPoints, pawnPoints);
+            bool breaching = parms.raidStrategy.Worker is RaidStrategyWorker_ImmediateAttackBreaching;
+            List<ArtilleryPlacement> guns = profile.Configure(raidPoints, personnel, parms.faction, out _, breaching);
+            if (!guns.Any(g => g.IsSupport)) return null;
             int constructoids = 0;
             if (kind == "Mechanoid")
             {
-                constructoids = MechBattery.RollConstructoids();
+                constructoids = MechBattery.CountFor(guns, IsGrouped(parms.raidArrivalMode));
                 personnel = UnityEngine.Mathf.Max(0f, personnel - MechBattery.ConstructoidCombatPower * constructoids);
             }
-            List<ArtilleryPlacement> guns = profile.Configure(raidPoints, personnel, parms.faction, out float share);
-            if (IsGrouped(parms.raidArrivalMode) && kind == "Mechanoid")
-            {
-                // Reserve enough of the existing global builder budget for every possible armed group.
-                int minimum = System.Math.Min(3, guns.Count(g => g.IsSupport));
-                if (constructoids < minimum)
-                {
-                    personnel -= MechBattery.ConstructoidCombatPower * (minimum - constructoids);
-                    constructoids = minimum;
-                    float Cost(ArtilleryPlacement gun) => profile.guns.First(rule => rule.turret == gun.Def).ResolvedCost;
-                    while (guns.Count > 0 && guns.Sum(Cost) > personnel * share) guns.RemoveAt(guns.Count - 1);
-                }
-            }
-            if (!guns.Any(g => g.IsSupport)) return null;
             var raid = new ArtilleryRaid
             {
                 Kind = (ArtilleryRaidKind)System.Enum.Parse(typeof(ArtilleryRaidKind), kind),

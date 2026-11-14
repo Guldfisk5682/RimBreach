@@ -17,7 +17,11 @@ namespace RimSiege.Raids.Artillery
         internal const int GunAreaRadius = 8;
         internal const int SiteSurveyRadius = 12;
         private const int GunClearance = 1;
+        private const int MechanoidGunClearance = 2;
         private const int MaxLayoutRounds = 3;
+
+        private static int ClearanceFor(Faction faction) =>
+            faction == Faction.OfMechanoids ? MechanoidGunClearance : GunClearance;
         private const int MaxCoarseLayouts = 6;
         private const int MaxDirections = 3;
         private const int DirectionSectors = 8;
@@ -42,6 +46,7 @@ namespace RimSiege.Raids.Artillery
             var direct = new HashSet<ArtilleryPlacement>(templates.Where(g => g.IsDirectSupport));
             float? retreat = direct.Count == 0 ? null : direct.Min(g => effectiveRanges[g]) - CampSiting.RangeMargin;
             templates = templates.OrderBy(g => g.FormationGroup)
+                .ThenBy(ArtilleryProfileDef.IsEmpGun)
                 .ThenBy(g => direct.Contains(g) ? effectiveRanges[g] : 0f)
                 .ThenByDescending(g => g.Def.Size.x * g.Def.Size.z).ToList();
             var placements = new Dictionary<(ThingDef, ThingDef, Rot4, IntVec3), bool>();
@@ -139,6 +144,8 @@ namespace RimSiege.Raids.Artillery
             var retained = new List<ArtilleryPlacement>();
             foreach (ArtilleryPlacement template in site.Possible)
             {
+                if (ArtilleryProfileDef.IsEmpGun(template) && !plan.Guns.Any(ArtilleryProfileDef.IsNonEmpMortar))
+                    continue;
                 int ordinal = retained.Count(g => g.FormationGroup == template.FormationGroup);
                 int count = site.Possible.Count(g => g.FormationGroup == template.FormationGroup);
                 ArtilleryPlacement gun = FindPlacement(map, faction, entry, plan, template, siting,
@@ -194,6 +201,7 @@ namespace RimSiege.Raids.Artillery
             var front = plan.Guns.Where(g => g.IsDirectSupport).ToList();
             lostFront = front.Count > 0 && front.All(blocked.Contains);
             MarkRetreatFailures(plan, siting, candidate.Templates, ranges, failed);
+            MarkUnpairedEmpGuns(plan, failed);
         }
 
         private static ArtilleryPlacement FindPlacement(Map map, Faction faction, IntVec3 entry, CampPlan camp,
@@ -204,28 +212,29 @@ namespace RimSiege.Raids.Artillery
             foreach (CampField.Slot slot in field.Candidates(template, ordinal, count))
             {
                 var gun = new ArtilleryPlacement { Def = template.Def, Stuff = template.Stuff, Ammo = template.Ammo,
-                    Cell = slot.Cell, Rotation = slot.Rotation, Operator = template.Operator, Role = template.Role };
+                    Cell = slot.Cell, Rotation = slot.Rotation, Operator = template.Operator, Role = template.Role,
+                    ConstructionWorkFactor = template.ConstructionWorkFactor };
                 if (excluded != null && excluded.Cell == gun.Cell && excluded.Rotation == gun.Rotation) continue;
-                if (!Fits(camp, gun) || gun.IsSupport &&
+                if (!Fits(camp, gun, ClearanceFor(faction)) || gun.IsSupport &&
                     (!InRange(map, gun.Cell, gun.Def, siting.TargetsFor(direct), 2f, range) ||
                     !siting.DeploymentTarget(faction, Spec(gun), range).HasTarget)) continue;
                 int index = insertAt ?? camp.Guns.Count;
                 camp.Guns.Insert(index, gun);
-                bool valid = LayoutValid(map, entry, camp, gun.Operator != null, false, field, out _);
+                bool valid = LayoutValid(map, entry, camp, gun.Operator != null, false, field, ClearanceFor(faction), out _);
                 camp.Guns.RemoveAt(index);
                 if (valid) return gun;
             }
             return null;
         }
 
-        private static bool Fits(CampPlan camp, ArtilleryPlacement gun)
+        private static bool Fits(CampPlan camp, ArtilleryPlacement gun, int gunClearance)
         {
             CellRect rect = GenAdj.OccupiedRect(gun.Cell, gun.Rotation, gun.Def.Size);
             foreach (ArtilleryPlacement cover in camp.Cover)
                 if (rect.Overlaps(GenAdj.OccupiedRect(cover.Cell, cover.Rotation, cover.Def.Size))) return false;
-            // Leave a clear cell between complete footprints, including 3x3 guns.
+            // Leave clear cells between complete footprints, widening separation for mechanoid turrets.
             foreach (ArtilleryPlacement existing in camp.Guns)
-                if (rect.ExpandedBy(GunClearance).Overlaps(GenAdj.OccupiedRect(existing.Cell, existing.Rotation, existing.Def.Size))) return false;
+                if (rect.ExpandedBy(gunClearance).Overlaps(GenAdj.OccupiedRect(existing.Cell, existing.Rotation, existing.Def.Size))) return false;
             return true;
         }
 
@@ -268,14 +277,12 @@ namespace RimSiege.Raids.Artillery
             IntVec3 entry = field.ConstructionWorker?.Position ?? IntVec3.Invalid;
             if (!ValidateAndRepair(map, raid.Faction, entry, candidate, siting, ranges, job.RequiresOperators, ref rounds, allowRelocation: !raid.ScreenedDeployment))
                 return false;
-            if (ArtillerySmoke.Eligible(raid))
+            foreach (ArtilleryPlacement cover in CampGunCover.Candidates(map, raid, plan, siting.BreachAnchor))
             {
-                foreach (ArtilleryPlacement cover in CampGunCover.Candidates(map, plan, siting.BreachAnchor))
-                {
-                    plan.Cover.Add(cover);
-                    if (!LayoutValid(map, entry, plan, job.RequiresOperators, true, field, out _) || !CampSupplies.CanSupply(map, plan))
-                        plan.Cover.Remove(cover);
-                }
+                plan.Cover.Add(cover);
+                if (!LayoutValid(map, entry, plan, job.RequiresOperators, true, field, ClearanceFor(raid.Faction), out _) ||
+                    !CampSupplies.CanSupply(map, plan))
+                    plan.Cover.Remove(cover);
             }
             return true;
         }
@@ -332,14 +339,22 @@ namespace RimSiege.Raids.Artillery
             // Failed static pieces must not obstruct the surviving pieces' paths.
             candidate.Remove(failed);
             bool valid = LayoutFailures(map, entry, candidate.Plan, actual, true, candidate.Field,
-                out HashSet<ArtilleryPlacement> pathFailures, candidate.ApproachCosts);
+                ClearanceFor(faction), out HashSet<ArtilleryPlacement> pathFailures, candidate.ApproachCosts);
             candidate.Plan.Guns.Clear();
             candidate.Plan.Guns.AddRange(guns);
             candidate.Templates.Clear();
             candidate.Templates.AddRange(templates);
             failed.UnionWith(pathFailures);
             MarkRetreatFailures(candidate.Plan, siting, candidate.Templates, ranges, failed);
+            MarkUnpairedEmpGuns(candidate.Plan, failed);
             return valid;
+        }
+
+        private static void MarkUnpairedEmpGuns(CampPlan plan, HashSet<ArtilleryPlacement> failed)
+        {
+            if (plan.Guns.Any(gun => !failed.Contains(gun) && ArtilleryProfileDef.IsNonEmpMortar(gun))) return;
+            foreach (ArtilleryPlacement gun in plan.Guns)
+                if (ArtilleryProfileDef.IsEmpGun(gun)) failed.Add(gun);
         }
 
         // These pieces have already passed this round's geometry and paths.
@@ -371,6 +386,7 @@ namespace RimSiege.Raids.Artillery
                     if (retained.Contains(i)) { plan.Guns.Add(guns[i]); templates.Add(originals[i]); }
                 var failed = new HashSet<ArtilleryPlacement>();
                 MarkRetreatFailures(plan, siting, templates, ranges, failed);
+                MarkUnpairedEmpGuns(plan, failed);
                 for (int i = plan.Guns.Count - 1; i >= 0; i--)
                     if (failed.Contains(plan.Guns[i])) { plan.Guns.RemoveAt(i); templates.RemoveAt(i); }
                 return plan.Guns.Any(g => g.IsSupport) && CampSupplies.CanSupply(map, plan);
@@ -394,9 +410,10 @@ namespace RimSiege.Raids.Artillery
             GenConstruct.CanPlaceBlueprintAt_NewTemp(item.Def, item.Cell, item.Rotation, map,
                 false, null, null, item.Stuff, ignoreEdgeArea: true).Accepted;
 
-        private static bool LayoutValid(Map map, IntVec3 entry, CampPlan plan, bool actual, bool precise, CampField field, out ArtilleryPlacement failed)
+        private static bool LayoutValid(Map map, IntVec3 entry, CampPlan plan, bool actual, bool precise,
+            CampField field, int gunClearance, out ArtilleryPlacement failed)
         {
-            if (!LayoutFailures(map, entry, plan, actual, precise, field, out HashSet<ArtilleryPlacement> failures))
+            if (!LayoutFailures(map, entry, plan, actual, precise, field, gunClearance, out HashSet<ArtilleryPlacement> failures))
             { failed = null; return false; }
             failed = failures.FirstOrDefault();
             return failed == null;
@@ -405,7 +422,7 @@ namespace RimSiege.Raids.Artillery
         // A bad cover makes the entire layout invalid; gun failures are collected
         // together, so one round can retain every independently valid piece.
         private static bool LayoutFailures(Map map, IntVec3 entry, CampPlan plan, bool actual, bool precise,
-            CampField field, out HashSet<ArtilleryPlacement> failed,
+            CampField field, int gunClearance, out HashSet<ArtilleryPlacement> failed,
             Dictionary<ArtilleryPlacement, float> approachCosts = null)
         {
             failed = new HashSet<ArtilleryPlacement>();
@@ -434,7 +451,7 @@ namespace RimSiege.Raids.Artillery
             {
                 if (failed.Contains(gun)) continue;
                 if (!GenAdj.OccupiedRect(gun.Cell, gun.Rotation, gun.Def.Size).All(field.Contains) ||
-                    gun.Cell.Roofed(map) || !FitsOtherGuns(plan, gun)) { failed.Add(gun); continue; }
+                    gun.Cell.Roofed(map) || !FitsOtherGuns(plan, gun, gunClearance)) { failed.Add(gun); continue; }
                 IntVec3 interaction = ThingUtility.InteractionCellWhenAt(gun.Def, gun.Cell, gun.Rotation, map);
                 if (!field.Contains(interaction) || !interaction.Walkable(map) ||
                     (occupied.Contains(interaction) && !GenAdj.OccupiedRect(gun.Cell, gun.Rotation, gun.Def.Size).Contains(interaction)) || !reserved.Add(interaction))
@@ -461,9 +478,9 @@ namespace RimSiege.Raids.Artillery
             return true;
         }
 
-        private static bool FitsOtherGuns(CampPlan plan, ArtilleryPlacement gun)
+        private static bool FitsOtherGuns(CampPlan plan, ArtilleryPlacement gun, int gunClearance)
         {
-            CellRect rect = GenAdj.OccupiedRect(gun.Cell, gun.Rotation, gun.Def.Size).ExpandedBy(GunClearance);
+            CellRect rect = GenAdj.OccupiedRect(gun.Cell, gun.Rotation, gun.Def.Size).ExpandedBy(gunClearance);
             return plan.Guns.All(other => other == gun ||
                 !rect.Overlaps(GenAdj.OccupiedRect(other.Cell, other.Rotation, other.Def.Size)));
         }

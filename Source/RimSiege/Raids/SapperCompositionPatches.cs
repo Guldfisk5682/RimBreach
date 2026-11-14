@@ -141,7 +141,8 @@ namespace RimSiege.Raids
         private static void Postfix(PawnGenerationRequest request, Pawn __result, SapperGeneration.Context __state)
         {
             if (__state == null || __state.GroupDepth != 1 || __state.PawnDepth != 1 || __result == null ||
-                request.Faction != __state.Parms.faction || __result.Faction != __state.Parms.faction) return;
+                request.Faction != __state.Parms.faction || __result.Faction != __state.Parms.faction ||
+                !__result.RaceProps.Humanlike) return;
             __state.Total++;
             if (SiegeRoles.HasDemolitionWeapon(__result)) __state.Demolition++;
         }

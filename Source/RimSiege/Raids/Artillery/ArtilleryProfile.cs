@@ -18,6 +18,7 @@ namespace RimSiege.Raids.Artillery
         public float constructionSpeedScale = 1f;
         public float constructionSpeedCap = 10f;
         public FloatRange budgetShare;
+        public FloatRange breachingBudgetShare;
         public SimpleCurve totalPieces;
         public int mortarClassLimit = 5;
         public List<ArtilleryGunRule> guns = new List<ArtilleryGunRule>();
@@ -31,15 +32,19 @@ namespace RimSiege.Raids.Artillery
         internal bool BelowGate(float raidPoints) =>
             raidPoints < minPoints || (totalPieces != null && totalPieces.Evaluate(raidPoints) < 1f);
 
-        internal List<ArtilleryPlacement> Configure(float raidPoints, float pawnPoints, Faction faction, out float share)
+        internal List<ArtilleryPlacement> Configure(float raidPoints, float pawnPoints, Faction faction, out float share,
+            bool breaching = false)
         {
             var result = new List<ArtilleryPlacement>();
             var used = new Dictionary<ArtilleryGunRule, int>();
-            share = budgetShare.max > 0f || budgetShare.min > 0f
-                ? budgetShare.RandomInRange : equipmentFraction;
+            FloatRange activeShare = breaching && (breachingBudgetShare.max > 0f || breachingBudgetShare.min > 0f)
+                ? breachingBudgetShare : budgetShare;
+            share = activeShare.max > 0f || activeShare.min > 0f
+                ? activeShare.RandomInRange : equipmentFraction;
             float remaining = pawnPoints * share;
             int limit = totalPieces == null ? int.MaxValue : Mathf.FloorToInt(totalPieces.Evaluate(raidPoints));
             int mortarCount = 0;
+            int nonEmpMortars = 0;
             while (result.Count < limit)
             {
                 var choices = new List<ArtilleryGunRule>();
@@ -63,9 +68,16 @@ namespace RimSiege.Raids.Artillery
                 }
                 if (choices.Count == 0) break;
                 ArtilleryGunRule selected = choices.RandomElementByWeight(g => g.weight);
-                ThingDef ammo = selected.ammo ?? SelectAmmo(selected.turret, faction, selected.defaultAmmo);
+                bool selectedIsMortar = selected.role == ArtilleryGunRole.Support &&
+                    !CeArtillerySight.IsDirectFire(selected.turret,
+                        selected.ammo ?? (selected.defaultAmmo ? SelectAmmo(selected.turret, faction, true) : null));
+                bool allowsEmp = selectedIsMortar && nonEmpMortars >= 1;
+                ThingDef ammo = selected.ammo ?? SelectAmmo(selected.turret, faction, selected.defaultAmmo, allowsEmp);
+                if (!allowsEmp && IsEmpAmmo(selected.turret, ammo))
+                    ammo = SelectAmmo(selected.turret, faction, defaultAmmo: false);
                 CompProperties_AmmoUser ammoProps = selected.turret.building.turretGunDef.GetCompProperties<CompProperties_AmmoUser>();
-                if (ammo == null && ammoProps?.ammoSet != null && AmmoUtility.IsAmmoSystemActive(ammoProps.ammoSet))
+                if ((!allowsEmp && IsEmpAmmo(selected.turret, ammo)) ||
+                    (ammo == null && ammoProps?.ammoSet != null && AmmoUtility.IsAmmoSystemActive(ammoProps.ammoSet)))
                 {
                     used[selected] = selected.count == null
                         ? int.MaxValue : Mathf.FloorToInt(selected.count.Evaluate(raidPoints));
@@ -76,17 +88,42 @@ namespace RimSiege.Raids.Artillery
                     Def = selected.turret,
                     Stuff = selected.turret.MadeFromStuff ? ThingDefOf.Steel : null,
                     Ammo = ammo,
-                    Role = selected.role
+                    Role = selected.role,
+                    ConstructionWorkFactor = selected.constructionWorkFactor
                 });
                 used.TryGetValue(selected, out int previous);
                 used[selected] = previous + 1;
                 remaining -= selected.ResolvedCost;
-                if (selected.role == ArtilleryGunRole.Support && !CeArtillerySight.IsDirectFire(selected.turret, ammo)) mortarCount++;
+                if (selected.role == ArtilleryGunRole.Support && !CeArtillerySight.IsDirectFire(selected.turret, ammo))
+                {
+                    mortarCount++;
+                    if (!IsEmpAmmo(selected.turret, ammo)) nonEmpMortars++;
+                }
             }
             return result;
         }
 
-        internal static ThingDef SelectAmmo(ThingDef turret, Faction faction, bool defaultAmmo)
+        internal static bool IsNonEmpMortar(ArtilleryPlacement gun) =>
+            gun != null && gun.IsSupport && !gun.IsDirectSupport && !IsEmpGun(gun);
+
+        internal static bool IsEmpGun(ArtilleryPlacement gun) =>
+            gun != null && IsEmpAmmo(gun.Def, gun.Ammo);
+
+        internal static bool IsEmpAmmo(ThingDef turret, ThingDef ammo)
+        {
+            if (ammo == null) return false;
+            ThingDef projectile = null;
+            CompProperties_AmmoUser props = turret?.building?.turretGunDef?.GetCompProperties<CompProperties_AmmoUser>();
+            if (props?.ammoSet?.ammoTypes != null)
+            {
+                foreach (AmmoLink link in props.ammoSet.ammoTypes)
+                    if (link.ammo == ammo) { projectile = link.projectile; break; }
+            }
+            projectile ??= ammo.projectileWhenLoaded;
+            return CeSiegeAmmo.IsEmpProjectile(projectile);
+        }
+
+        internal static ThingDef SelectAmmo(ThingDef turret, Faction faction, bool defaultAmmo, bool allowEMP = false)
         {
             if (defaultAmmo)
             {
@@ -97,8 +134,8 @@ namespace RimSiege.Raids.Artillery
                 return null;
             }
             CompProperties_AmmoUser ammo = turret.building.turretGunDef.GetCompProperties<CompProperties_AmmoUser>();
-            if (ammo != null && !TurretGunUtility.NeedsShells(turret)) return CeSiegeAmmo.Select(ammo, faction);
-            return TurretGunUtility.TryFindRandomShellDef(turret, allowEMP: false,
+            if (ammo != null && !TurretGunUtility.NeedsShells(turret)) return CeSiegeAmmo.Select(ammo, faction, allowEMP);
+            return TurretGunUtility.TryFindRandomShellDef(turret, allowEMP: allowEMP,
                 allowToxGas: ModsConfig.BiotechActive && faction.def == FactionDefOf.PirateWaster,
                 mustHarmHealth: true, techLevel: faction.def.techLevel,
                 allowAntigrainWarhead: false, faction: faction);
@@ -114,6 +151,7 @@ namespace RimSiege.Raids.Artillery
         // cost <= 0 resolves to turret.building.combatPower at configure time.
         public float cost;
         public float weight = 1f;
+        public float constructionWorkFactor = 1f;
         public bool defaultAmmo;
         // null = unlimited of this type (subject to budget / total / mortar caps).
         public SimpleCurve count;

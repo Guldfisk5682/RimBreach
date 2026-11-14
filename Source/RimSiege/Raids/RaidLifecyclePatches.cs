@@ -3,6 +3,7 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
+using CombatExtended.AI;
 using HarmonyLib;
 using RimSiege.Integration;
 using RimSiege.Raids.Artillery;
@@ -176,7 +177,7 @@ namespace RimSiege.Raids
         private static void Postfix(Pawn ___pawn, Job newJob)
         {
             Pawn pawn = ___pawn;
-            if (!SiegeRaidMap.Enabled || pawn.Map == null || pawn.CurJob != newJob || pawn.CurJobDef != JobDefOf.ManTurret) return;
+            if (!SiegeRaidMap.Enabled || pawn.RaceProps?.Humanlike != true || pawn.Map == null || pawn.CurJob != newJob || pawn.CurJobDef != JobDefOf.ManTurret) return;
             ArtilleryMap artillery = pawn.Map.GetComponent<ArtilleryMap>();
             ArtilleryRaid raid = artillery.ForPawn(pawn);
             if (raid != null && pawn.GetLord() == raid.CampLord && pawn.CurJob.targetA.Thing is Building gun && artillery.ForGun(gun) == raid)
@@ -203,6 +204,32 @@ namespace RimSiege.Raids
         {
             if (___pawn.Map != null && ___pawn.CurJobDef == JobDefOf.ManTurret)
                 ___pawn.Map.GetComponent<SiegeRaidMap>().Party(___pawn)?.Operators.Remove(___pawn);
+        }
+    }
+
+    [HarmonyPatch(typeof(CompTend), nameof(CompTend.TryGiveTacticalJob))]
+    internal static class RaidSelfTendSuppressionPatch
+    {
+        private static bool Prefix(CompTend __instance, ref Job __result)
+        {
+            if (!IsActiveHostileRaid(__instance.SelPawn)) return true;
+            __result = null;
+            return false;
+        }
+
+        private static bool IsActiveHostileRaid(Pawn pawn)
+        {
+            if (!SiegeRaidMap.Enabled || pawn is not { Spawned: true, Dead: false, Downed: false, InMentalState: false }) return false;
+            if (pawn.Faction == null || !pawn.Faction.HostileTo(Faction.OfPlayer)) return false;
+            if (pawn.GetLord() is not { } lord || lord.CurLordToil is not { } toil) return false;
+            ArtilleryMap artillery = pawn.Map.GetComponent<ArtilleryMap>();
+            ArtilleryRaid raid = artillery.ForPawn(pawn);
+            if (toil is LordToil_ArtillerySmoke or LordToil_Siege)
+                return raid?.CampLord == lord;
+            if (toil is not (LordToil_AssaultColony or LordToil_AssaultColonyBreaching or LordToil_AssaultColonySappers))
+                return false;
+            return artillery.ForLord(lord) != null || artillery.IncidentForLord(lord) != null ||
+                pawn.Map.GetComponent<SiegeRaidMap>().Party(pawn) != null;
         }
     }
 }

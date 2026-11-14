@@ -20,7 +20,7 @@ namespace RimSiege.Raids
         internal static void Assign(SiegeParty party, Lord lord, Pawn lead)
         {
             if (!party.PlannedAdvances.Add(lord)) return;
-            List<Pawn> roster = lord.ownedPawns.Where(p => !p.Dead && !p.Downed).ToList();
+            List<Pawn> roster = lord.ownedPawns.Where(SiegeRoles.CanParticipateInTacticalAssault).ToList();
             int limit = Math.Min(5 - party.Advances.Count, Math.Clamp(roster.Count / 4, 3, 5));
             if (roster.Count < 9 || limit < 3) return;
 
@@ -77,8 +77,9 @@ namespace RimSiege.Raids
     public sealed class JobGiver_RaidAdvance : ThinkNode_JobGiver
     {
         internal static bool Eligible(Pawn pawn, SiegeRaidMap map) => SiegeRaidMap.Enabled &&
+            SiegeRoles.CanParticipateInTacticalAssault(pawn) &&
             map.Party(pawn) != null && pawn.mindState.duty?.def == DutyDefOf.AssaultColony &&
-            pawn.GetLord()?.CurLordToil is LordToil_AssaultColony && !pawn.Dead && !pawn.Downed;
+            pawn.GetLord()?.CurLordToil is LordToil_AssaultColony;
 
         protected override Job TryGiveJob(Pawn pawn)
         {

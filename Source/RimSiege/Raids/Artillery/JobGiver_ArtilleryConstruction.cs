@@ -13,6 +13,7 @@ namespace RimSiege.Raids.Artillery
     {
         public override ThinkResult TryIssueJobPackage(Pawn pawn, JobIssueParams jobParams)
         {
+            if (SiegeRoles.IsMainForceOnly(pawn, allowConstructoid: true)) return ThinkResult.NoJob;
             if (pawn.GetLord()?.LordJob is not LordJob_Artillery artillery ||
                 pawn.GetLord().CurLordToil is not LordToil_Siege ||
                 pawn.mindState.duty?.def != DutyDefOf.Build) return ThinkResult.NoJob;

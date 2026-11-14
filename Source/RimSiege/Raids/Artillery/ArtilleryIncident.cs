@@ -11,6 +11,7 @@ namespace RimSiege.Raids.Artillery
         internal int InitialRaidSize;
         internal HashSet<int> ViolentLosses = new();
         internal bool ReachedDefenses;
+        internal bool Breaches;
         internal bool ShieldAssigned;
         internal List<Lord> NativeLords = new();
         internal List<string> CompletionTags = new();
@@ -40,6 +41,7 @@ namespace RimSiege.Raids.Artillery
             Scribe_Collections.Look(ref ViolentLosses, "violentLossIds", LookMode.Value);
             ViolentLosses ??= new();
             Scribe_Values.Look(ref ReachedDefenses, "reachedDefenses");
+            Scribe_Values.Look(ref Breaches, "breaches");
             Scribe_Collections.Look(ref NativeLords, "nativeLords", LookMode.Reference);
             Scribe_Collections.Look(ref CompletionTags, "completionTags", LookMode.Value);
             Scribe_Values.Look(ref CompletionPending, "completionPending");

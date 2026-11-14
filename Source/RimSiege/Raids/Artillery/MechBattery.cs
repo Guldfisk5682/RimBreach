@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
+using UnityEngine;
 using Verse;
 
 namespace RimSiege.Raids.Artillery
@@ -9,10 +10,23 @@ namespace RimSiege.Raids.Artillery
     internal static class MechBattery
     {
         internal const float ConstructoidCombatPower = 10f;
-        internal const int ConstructoidMin = 1;
-        internal const int ConstructoidMax = 10;
+        internal const int ConstructoidMin = 2;
+        internal const int ConstructoidMax = 8;
 
-        internal static int RollConstructoids() => Rand.RangeInclusive(ConstructoidMin, ConstructoidMax);
+        internal static int CountFor(IReadOnlyList<ArtilleryPlacement> guns, bool grouped)
+        {
+            if (guns == null || guns.Count == 0) return 0;
+            float weighted = 0f;
+            int support = 0;
+            foreach (ArtilleryPlacement gun in guns)
+            {
+                weighted += gun.Def.Size.x > 1 || gun.Def.Size.z > 1 ? 1f : 0.5f;
+                if (gun.IsSupport) support++;
+            }
+            int min = grouped ? Mathf.Max(ConstructoidMin, Mathf.Min(3, support)) : ConstructoidMin;
+            int target = Mathf.CeilToInt(weighted * 0.6f) + Rand.RangeInclusive(-1, 1);
+            return Mathf.Clamp(target, min, ConstructoidMax);
+        }
 
         // Must run before PawnsArrivalModeWorker.Arrive — TryGenerateRaidInfo
         // arrives the roster before its Postfix, so a postfix inject never lands.

@@ -12,6 +12,32 @@ namespace RimSiege.Raids.Artillery
     // Native duties, construction and paths own all work after the handoff.
     internal static class ArtilleryDeployment
     {
+        private const int FirstGunWaitTicks = 7500;
+
+        private static bool HasCompletedSupportGun(ArtilleryRaid raid) =>
+            raid.Camp.Guns.Any(g => g.IsSupport && g.Building is { Spawned: true } building && building.Faction == raid.Faction);
+
+        private static bool HasPendingSupportGun(ArtilleryRaid raid) =>
+            raid.Camp.Guns.Any(g => g.IsSupport && ArtilleryCrew.Pending(g));
+
+        private static bool ShouldWaitForFirstGun(ArtilleryRaid raid, Lord camp) =>
+            raid.HoldsForFirstGun && !raid.InfantryReleased && camp.CurLordToil is LordToil_Siege &&
+            raid.Phase == ArtilleryPhase.Building && !HasCompletedSupportGun(raid) &&
+            HasPendingSupportGun(raid) && camp.ticksInToil < FirstGunWaitTicks;
+
+        internal static void ReviewInfantryRelease(ArtilleryRaid raid, Lord camp)
+        {
+            if (!raid.InfantryReleased && raid.HoldsForFirstGun && !ShouldWaitForFirstGun(raid, camp))
+                ArtilleryCamp.ReleaseInfantry(raid, camp, force: true);
+        }
+
+        internal static void NotifyGunCompleted(ArtilleryRaid raid, ArtilleryPlacement gun, LordJob_Artillery job)
+        {
+            if (!raid.InitialAmmoRequested) job.InitialAmmoReady = true;
+            if (!raid.InfantryReleased && raid.HoldsForFirstGun && gun.IsSupport)
+                job.RequestInfantryAssault();
+        }
+
         internal static void Begin(ArtilleryRaid raid)
         {
             if (raid.InfantryReleased || raid.Smoke != null || raid.CampLord == null ||
@@ -31,6 +57,13 @@ namespace RimSiege.Raids.Artillery
                 EndSmoke(raid);
                 return;
             }
+            if (raid.HoldsForFirstGun)
+            {
+                if (raid.CampLord.CurLordToil == raid.CampLord.Graph.StartingToil &&
+                    !raid.CampLord.ownedPawns.Any(p => !p.Dead && !p.Spawned && p.SpawnedOrAnyParentSpawned))
+                    EndSmoke(raid);
+                return;
+            }
             if (raid.IndependentCrew) Release(raid);
         }
 
@@ -46,7 +79,7 @@ namespace RimSiege.Raids.Artillery
             var toil = camp.Graph.lordToils.OfType<LordToil_Siege>().Single();
             if (!camp.ownedPawns.Any(pawn => ArtilleryCrew.CanBuild(toil, pawn)))
             {
-                ReleaseVanguard(raid, camp, toil, screen);
+                if (!raid.HoldsForFirstGun) ReleaseVanguard(raid, camp, toil, screen);
                 raid.InfantryReleased = true;
                 ArtilleryCamp.TransferToAssault(raid, camp, camp.ownedPawns.ToList());
                 return;
@@ -55,14 +88,15 @@ namespace RimSiege.Raids.Artillery
             raid.ScreenedDeployment = screen?.CampCovered(raid, camp.Map) == true;
             try { EnterSiege(camp); }
             finally { raid.ScreenedDeployment = false; }
-            ReleaseVanguard(raid, camp, toil, screen);
+            if (ShouldWaitForFirstGun(raid, camp)) return;
+            if (!raid.HoldsForFirstGun) ReleaseVanguard(raid, camp, toil, screen);
             ArtilleryCamp.ReleaseInfantry(raid, camp, force: true);
         }
 
         private static void ReleaseVanguard(ArtilleryRaid raid, Lord camp, LordToil_Siege toil, ArtillerySmoke screen)
         {
             var specialists = Specialists(raid.Strategy, camp.ownedPawns);
-            var vanguard = camp.ownedPawns.Where(pawn => ArtillerySmoke.Ready(pawn) &&
+            var vanguard = camp.ownedPawns.Where(pawn => SiegeRoles.IsHumanlikeRaider(pawn) && ArtillerySmoke.Ready(pawn) &&
                 !specialists.Contains(pawn) && (!raid.SuppliesDelivered || !raid.Camp.Guns.Any(gun => gun.Operator == pawn)) &&
                 CarriesVanguardEquipment(pawn, screen?.AssignmentFor(pawn) != null)).ToList();
             if (raid.SuppliesDelivered &&
@@ -89,10 +123,11 @@ namespace RimSiege.Raids.Artillery
         internal static bool CarriesVanguardEquipment(Pawn pawn) => CarriesVanguardEquipment(pawn, false);
 
         private static bool CarriesVanguardEquipment(Pawn pawn, bool smokeCarrier) =>
-            CarriesSmokeBelt(pawn) || pawn.equipment?.Primary?.def is ThingDef weapon &&
+            pawn?.RaceProps?.Humanlike == true &&
+            (CarriesSmokeBelt(pawn) || pawn.equipment?.Primary?.def is ThingDef weapon &&
                 (!smokeCarrier || weapon != ArtillerySmokeDefOf.CE_Weapon_GrenadeSmoke) &&
                 (weapon.IsMeleeWeapon || IsThrown(weapon) || weapon.weaponTags?.Contains("CE_AI_Launcher") == true ||
-                 IsExplosive(weapon) || pawn.equipment.PrimaryEq?.PrimaryVerb?.IsIncendiary_Ranged() == true);
+                 IsExplosive(weapon) || pawn.equipment.PrimaryEq?.PrimaryVerb?.IsIncendiary_Ranged() == true));
 
         private static bool CarriesSmokeBelt(Pawn pawn) =>
             pawn.apparel?.WornApparel.Any(apparel => apparel is SmokepopBelt) == true;
@@ -158,7 +193,7 @@ namespace RimSiege.Raids.Artillery
 
         internal static HashSet<Pawn> Specialists(RaidStrategyDef strategy, IEnumerable<Pawn> roster)
         {
-            var pawns = roster.ToList();
+            var pawns = roster.Where(p => p != null && p.RaceProps.Humanlike).ToList();
             var specialists = new HashSet<Pawn>();
             if (strategy.Worker is RaidStrategyWorker_ImmediateAttackBreaching)
                 specialists.UnionWith(pawns.Where(p => p.kindDef.isGoodBreacher));

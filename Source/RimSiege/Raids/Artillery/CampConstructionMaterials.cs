@@ -15,14 +15,16 @@ namespace RimSiege.Raids.Artillery
         private const float MaterialRadius = 25f;
         [ThreadStatic] internal static Pawn Current;
 
-        internal static bool Applies(Pawn pawn, Thing target)
+        internal static bool Applies(Pawn pawn, Thing target) => PlacementFor(pawn, target) != null;
+
+        internal static ArtilleryPlacement PlacementFor(Pawn pawn, Thing target)
         {
             Lord lord = pawn?.GetLord();
             if (pawn?.mindState?.duty?.def != DutyDefOf.Build || lord?.CurLordToil is not LordToil_Siege ||
                 lord.LordJob is not LordJob_Artillery artillery || target == null || target.Faction != pawn.Faction ||
-                (target is not Frame && target is not Blueprint_Build)) return false;
+                (target is not Frame && target is not Blueprint_Build)) return null;
             ArtilleryRaid raid = artillery.Raid;
-            return raid?.Camp != null && ArtilleryCamp.Placements(raid.Camp).Any(item =>
+            return raid?.Camp == null ? null : ArtilleryCamp.Placements(raid.Camp).FirstOrDefault(item =>
                 item.Frame == target || item.Blueprint == target ||
                 (item.Cell == target.Position && item.Def == target.def.entityDefToBuild));
         }
@@ -109,6 +111,55 @@ namespace RimSiege.Raids.Artillery
         {
             private static void Prefix(Pawn p, out float? __state) => __state = Expand(p);
             private static void Finalizer(Pawn p, float? __state) => Restore(p, __state);
+        }
+
+        // Deliver the held stack if a queued stack no longer fits or cannot merge.
+        [HarmonyPatch(typeof(JobDriver_HaulToContainer), "MakeNewToils")]
+        private static class CarrySpaceDropGuard
+        {
+            private static IEnumerable<Toil> Postfix(IEnumerable<Toil> toils)
+            {
+                foreach (Toil toil in toils)
+                {
+                    if (toil.debugName == "StartCarryThing" && toil.initAction != null)
+                    {
+                        Action inner = toil.initAction;
+                        toil.initAction = () =>
+                        {
+                            if (!TryFinishWithHeldStack(toil.actor))
+                                inner();
+                        };
+                    }
+                    yield return toil;
+                }
+            }
+
+            private static bool TryFinishWithHeldStack(Pawn actor)
+            {
+                Job curJob = actor?.jobs?.curJob;
+                Thing carried = actor?.carryTracker?.CarriedThing;
+                Thing thing = curJob?.GetTarget(TargetIndex.A).Thing;
+                if (carried == null || thing == null || carried == thing || carried.def != thing.def ||
+                    !Applies(actor, curJob.GetTarget(TargetIndex.B).Thing) ||
+                    (actor.carryTracker.AvailableStackSpace(thing.def) > 0 && carried.CanStackWith(thing))) return false;
+                Map map = actor.Map;
+                if (map != null)
+                {
+                    if (map.reservationManager.ReservedBy(thing, actor, curJob))
+                        map.reservationManager.Release(thing, actor, curJob);
+                    if (curJob.targetQueueA != null)
+                    {
+                        foreach (LocalTargetInfo queued in curJob.targetQueueA)
+                        {
+                            if (queued.IsValid && map.reservationManager.ReservedBy(queued, actor, curJob))
+                                map.reservationManager.Release(queued, actor, curJob);
+                        }
+                        curJob.targetQueueA.Clear();
+                    }
+                }
+                curJob.SetTarget(TargetIndex.A, carried);
+                return true;
+            }
         }
     }
 }

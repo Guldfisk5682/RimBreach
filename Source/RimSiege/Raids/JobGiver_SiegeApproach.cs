@@ -1,3 +1,4 @@
+using RimSiege.Integration;
 using RimWorld;
 using ProjectZ;
 using Verse;
@@ -10,6 +11,21 @@ namespace RimSiege.Raids
         protected override bool Satisfied(Pawn pawn) => LadderPerch.Get(pawn) != null ||
             !SiegeRoles.FireSupportMech(pawn) && (LadderInventory.Get(pawn) != null ||
                 pawn.Map?.GetComponent<SiegeRaidMap>().RecoveryFor(pawn) != null);
+    }
+
+    public sealed class ThinkNode_ConditionalLadderAssault : ThinkNode_Conditional
+    {
+        protected override bool Satisfied(Pawn pawn)
+        {
+            if (!SiegeRaidMap.Enabled || pawn.Map == null || pawn.mindState?.duty is not { } duty ||
+                duty.def != DutyDefOf.Escort) return false;
+            SiegeRaidMap raids = pawn.Map.GetComponent<SiegeRaidMap>();
+            if (!raids.Applies(pawn) || raids.Party(pawn) is not { } party) return false;
+            if (duty.focus.Thing is not Pawn escortee || !escortee.Spawned || escortee.Dead || escortee.Downed ||
+                !IsoFloor.SameFloor(pawn.Position, escortee.PositionHeld, pawn.Map))
+                return true;
+            return party.HasLadderRoute(pawn);
+        }
     }
 
     public sealed class JobGiver_SiegeApproach : ThinkNode_JobGiver
@@ -51,10 +67,10 @@ namespace RimSiege.Raids
             }
 
             if (carrier) return null;
-            if (party.Planner.HasClearance)
+            if (party.Planner.HasUnclaimedClearance(pawn, party.Members))
             {
                 Job clearing = party.Plan(pawn, placing: false);
-                if (clearing != null) return clearing;
+                if (clearing != null && clearing.def != JobDefOf.Wait) return clearing;
             }
             return raids.Recovery(pawn, party);
         }

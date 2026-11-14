@@ -90,7 +90,7 @@ namespace RimSiege.Raids.Artillery
                     }
                 groups.RemoveAll(group => group.Count == 0);
             }
-            if (CampSupplies.DropGroups(map, scope.Raid.Camp, groups, openDelay, instaDrop, leaveSlag,
+            if (CampSupplies.DropGroups(map, scope.Raid, groups, openDelay, instaDrop, leaveSlag,
                 canRoofPunch, forbid, allowFogged, faction)) return;
             scope.Failed = true;
             CampSupplies.Discard(groups);
@@ -113,7 +113,7 @@ namespace RimSiege.Raids.Artillery
                 thing.Destroy(DestroyMode.Vanish);
                 return false;
             }).Select(thing => new List<Thing> { thing }).ToList();
-            if (!CampSupplies.DropGroups(map, raid.Camp, groups, openDelay, instaDrop, leaveSlag,
+            if (!CampSupplies.DropGroups(map, raid, groups, openDelay, instaDrop, leaveSlag,
                 canRoofPunch, forbid, allowFogged, faction)) CampSupplies.Discard(groups);
         }
 
@@ -275,6 +275,13 @@ namespace RimSiege.Raids.Artillery
         {
             ArtilleryRaid raid = NativeSiege.Raid(__instance);
             if (__instance.lord.LordJob is LordJob_Artillery job && job.AssignBuilder(__instance, p)) return false;
+            if (raid != null && (SiegeRoles.IsMainForceOnly(p, __instance.lord.LordJob is LordJob_MechArtillery) ||
+                p.skills == null || p.workSettings == null))
+            {
+                SiegeRoles.AssignMainForceEscortDuty(__instance.lord, p, __instance.FlagLoc, raid);
+                __instance.rememberedDuties.Remove(p);
+                return false;
+            }
             if (raid == null || !p.WorkTypeIsDisabled(WorkTypeDefOf.Construction) ||
                 !raid.Camp.Guns.Any(g => g.Operator == p)) return true;
             NativeSiege.SetManningDuty(__instance, p);
@@ -336,6 +343,22 @@ namespace RimSiege.Raids.Artillery
             if (raid != null) ArtilleryCrew.RestoreBuilders(raid, __instance);
             NativeSiege.AssignGunners(__instance);
             raid?.OptionalSmoke?.ApplyOptionalDuties(__instance.lord);
+            if (__instance.lord.LordJob is LordJob_Artillery { RequiresOperators: true })
+            {
+                if (raid != null && raid.InfantryReleased && raid.AssaultLord != null &&
+                    __instance.lord.Map.lordManager.lords.Contains(raid.AssaultLord))
+                {
+                    var mainForceOnly = __instance.lord.ownedPawns.Where(p => SiegeRoles.IsMainForceOnly(p)).ToList();
+                    if (mainForceOnly.Count > 0)
+                        ArtilleryCamp.TransferToAssault(raid, __instance.lord, mainForceOnly);
+                }
+                foreach (Pawn pawn in __instance.lord.ownedPawns)
+                {
+                    if (!SiegeRoles.IsMainForceOnly(pawn)) continue;
+                    SiegeRoles.AssignMainForceEscortDuty(__instance.lord, pawn, __instance.FlagLoc, raid);
+                    __instance.rememberedDuties.Remove(pawn);
+                }
+            }
             // Remembered native Build duties are counted without rechecking
             // eligibility. The last constructoid can be downed or disabled.
             if (__instance.lord.CurLordToil == __instance &&
@@ -402,6 +425,8 @@ namespace RimSiege.Raids.Artillery
                 raid.Phase = ArtilleryPhase.Supporting;
                 if (raid.Kind != ArtilleryRaidKind.Siege) ArtilleryCamp.ReleaseInfantry(raid, __instance.lord);
             }
+            else ArtilleryDeployment.ReviewInfantryRelease(raid, __instance.lord);
+            if (__instance.lord.CurLordToil != __instance) return;
             ArtilleryCrew.Update(raid, __instance.lord);
             if (__instance.lord.ownedPawns.Count == 0 || __instance.lord.CurLordToil != __instance) return;
             if (!NativeSiege.SupplementalDrop) NativeSiege.Supplement(__instance, raid);
@@ -436,11 +461,9 @@ namespace RimSiege.Raids.Artillery
             if (__instance.CurLordToil is not LordToil_Siege) return;
             ArtilleryRaid raid = NativeSiege.Raid(__instance);
             if (raid == null) return;
-            if (ArtilleryCamp.ObserveBuilding(raid, b) && raid.Camp.Guns.Any(gun => gun.Building == b) &&
+            if (ArtilleryCamp.ObserveBuilding(raid, b) && raid.Camp.Guns.Find(gun => gun.Building == b) is { } gun &&
                 __instance.LordJob is LordJob_Artillery job)
-            {
-                if (!raid.InitialAmmoRequested) job.InitialAmmoReady = true;
-            }
+                ArtilleryDeployment.NotifyGunCompleted(raid, gun, job);
         }
     }
 

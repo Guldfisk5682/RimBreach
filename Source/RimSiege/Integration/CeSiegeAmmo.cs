@@ -10,7 +10,13 @@ namespace RimSiege.Integration
     // predicates and weights for those turrets, without changing their defs.
     internal static class CeSiegeAmmo
     {
-        internal static ThingDef Select(CompProperties_AmmoUser props, Faction faction)
+        internal static bool IsEmpProjectile(ThingDef projectile) =>
+            projectile != null && (
+                (projectile.GetCompProperties<CompProperties_ExplosiveCE>()?.explosiveDamageType ??
+                 projectile.GetCompProperties<CompProperties_Explosive>()?.explosiveDamageType) == DamageDefOf.EMP ||
+                projectile.projectile?.damageDef == DamageDefOf.EMP);
+
+        internal static ThingDef Select(CompProperties_AmmoUser props, Faction faction, bool allowEmp)
         {
             if (props?.ammoSet?.ammoTypes == null) return null;
             bool allowToxGas = ModsConfig.BiotechActive && faction.def == FactionDefOf.PirateWaster;
@@ -21,7 +27,8 @@ namespace RimSiege.Integration
                     DamageDef explosive = link.projectile.GetCompProperties<CompProperties_ExplosiveCE>()?.explosiveDamageType ??
                         link.projectile.GetCompProperties<CompProperties_Explosive>()?.explosiveDamageType;
                     DamageDef direct = link.projectile.projectile.damageDef;
-                    return (explosive != null || direct != null) && explosive != DamageDefOf.EMP && direct != DamageDefOf.EMP &&
+                    return (explosive != null || direct != null) &&
+                        (allowEmp || (explosive != DamageDefOf.EMP && direct != DamageDefOf.EMP)) &&
                         (allowToxGas || !ModsConfig.BiotechActive || (explosive != DamageDefOf.ToxGas && direct != DamageDefOf.ToxGas)) &&
                         link.ammo != ThingDefOf.Shell_AntigrainWarhead && link.ammo.techLevel <= faction.def.techLevel;
                 })

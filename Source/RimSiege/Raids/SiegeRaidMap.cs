@@ -27,7 +27,21 @@ namespace RimSiege.Raids
 
         internal RaidAdvance AdvanceFor(Pawn pawn) => Advances.Find(group => group.Members.Contains(pawn));
         private readonly Dictionary<Pawn, PlanStatus> jobs = new Dictionary<Pawn, PlanStatus>();
+        private readonly Dictionary<Pawn, RouteStatus> ladderRoutes = new Dictionary<Pawn, RouteStatus>();
         private struct PlanStatus { internal int tick, version; internal bool available, placing; }
+        private struct RouteStatus { internal int tick, version; internal bool available; }
+
+        internal bool HasLadderRoute(Pawn pawn)
+        {
+            if (!Planner.HasUsableSiegeLadder(pawn.Faction)) return false;
+            int now = Find.TickManager.TicksGame, version = Planner.Version;
+            if (ladderRoutes.TryGetValue(pawn, out RouteStatus cached) && cached.version == version &&
+                now - cached.tick < RaidClimb.MemoTicks)
+                return cached.available;
+            bool available = !Planner.Destination(pawn, true).IsValid && Planner.Destination(pawn, false).IsValid;
+            ladderRoutes[pawn] = new RouteStatus { tick = now, version = version, available = available };
+            return available;
+        }
 
         internal Job Plan(Pawn pawn, bool placing = true)
         {
@@ -88,7 +102,32 @@ namespace RimSiege.Raids
         internal SiegeParty Party(Pawn pawn) => membership.TryGetValue(pawn, out SiegeParty party) ? party : null;
         internal SiegeParty Party(int id) => parties.FirstOrDefault(p => p.Id == id);
 
-        internal bool Applies(Pawn pawn) => Enabled && Party(pawn) != null && SiegeRoles.LadderAssaultDuty(pawn) && !pawn.Dead && !pawn.Downed;
+        internal bool Applies(Pawn pawn) => Enabled && SiegeRoles.CanParticipateInTacticalAssault(pawn) &&
+            Party(pawn) != null && SiegeRoles.LadderAssaultDuty(pawn);
+
+        internal void WakeForLadder(Faction faction)
+        {
+            if (!Enabled || faction == null || parties.Count == 0) return;
+            var wake = new List<Pawn>();
+            foreach (SiegeParty party in parties)
+                foreach (Pawn pawn in party.Members)
+                    if (pawn != null && pawn.Faction == faction && pawn.Spawned && pawn.Map == map &&
+                        Party(pawn) == party && Applies(pawn) && !SiegeRoles.FireSupportMech(pawn) &&
+                        SiegeRoles.Eligible(pawn, party) && ShouldWakeForLadder(pawn))
+                        wake.Add(pawn);
+            foreach (Pawn pawn in wake) pawn.jobs.CheckForJobOverride();
+        }
+
+        private static bool ShouldWakeForLadder(Pawn pawn)
+        {
+            if (LadderPerch.Get(pawn) != null) return false;
+            Job cur = pawn.CurJob;
+            if (cur == null) return true;
+            if (cur.jobGiver is JobGiver_SiegeApproach) return false;
+            JobDef def = cur.def;
+            return def == JobDefOf.Wait || def == JobDefOf.Wait_Wander || def == JobDefOf.FollowClose ||
+                def == JobDefOf.Goto || def == JobDefOf.Wait_Combat;
+        }
 
         private void Index(SiegeParty party)
         {
@@ -109,15 +148,17 @@ namespace RimSiege.Raids
                     if (former != null) membership.Remove(former);
                 parties.RemoveAt(i);
             }
+            var tacticalMembers = pawns.Where(p => p != null &&
+                (p.RaceProps.Humanlike || (faction == Faction.OfMechanoids && p.RaceProps.IsMechanoid))).ToList();
             SiegeParty party = new SiegeParty
             {
-                Id = nextId++, InitialCount = pawns.Count, Members = new List<Pawn>(pawns),
+                Id = nextId++, InitialCount = tacticalMembers.Count, Members = tacticalMembers,
                 LadderQuotaPercent = LadderQuotaFor(faction)
             };
             parties.Add(party);
             Index(party);
             if (deferKits) return party;
-            List<Pawn> eligible = pawns.Where(p => SiegeRoles.Eligible(p, party)).ToList();
+            List<Pawn> eligible = tacticalMembers.Where(p => SiegeRoles.Eligible(p, party)).ToList();
             eligible.Shuffle();
             foreach (Pawn pawn in eligible.OrderBy(SiegeRoles.LadderPriority)) Issue(pawn, party);
             return party;

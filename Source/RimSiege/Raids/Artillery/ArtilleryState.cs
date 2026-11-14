@@ -35,6 +35,7 @@ namespace RimSiege.Raids.Artillery
         internal bool InfantryReleased, AssaultCreated, AssaultEnded, CompletionSent, CompletionPending;
         internal bool IndependentCrew;
         internal bool KeepsSeparateCrew => IndependentCrew || SmokeAttempted;
+        internal bool HoldsForFirstGun => Kind == ArtilleryRaidKind.Breaching;
         internal int ConstructoidCount;
         internal List<string> CompletionTags = new List<string>();
         internal Lord CampLord, AssaultLord, VanguardLord;
@@ -123,6 +124,7 @@ namespace RimSiege.Raids.Artillery
         internal bool NeedsOperator => Def.HasComp(typeof(CompMannable));
         internal int FormationGroup => !IsSupport ? 2 : IsDirectSupport ? 0 : 1;
         internal ThingDef Def, Stuff, Ammo;
+        internal float ConstructionWorkFactor = 1f;
         internal IntVec3 Cell = IntVec3.Invalid;
         internal Rot4 Rotation = Rot4.North;
         internal Pawn Operator;
@@ -137,6 +139,7 @@ namespace RimSiege.Raids.Artillery
             Scribe_Defs.Look(ref Def, "def");
             Scribe_Defs.Look(ref Stuff, "stuff");
             Scribe_Defs.Look(ref Ammo, "ammo");
+            Scribe_Values.Look(ref ConstructionWorkFactor, "constructionWorkFactor", 1f);
             Scribe_Values.Look(ref Role, "role", ArtilleryGunRole.Support);
             Scribe_Values.Look(ref Cell, "cell");
             Scribe_Values.Look(ref Rotation, "rotation", Rot4.North);

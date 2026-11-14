@@ -13,8 +13,8 @@ namespace RimSiege.Raids.Artillery
     {
         internal static IEnumerable<ArtilleryPlacement> Placements(CampPlan camp) => camp.Guns.Concat(camp.Cover);
 
-        internal static bool OperatorCandidate(Pawn pawn) => !pawn.Dead && !pawn.Downed && !pawn.InMentalState &&
-            pawn.RaceProps.Humanlike && !pawn.WorkTagIsDisabled(WorkTags.Violent) &&
+        internal static bool OperatorCandidate(Pawn pawn) => SiegeRoles.IsHumanlikeRaider(pawn) &&
+            pawn.skills != null && pawn.workSettings != null && !pawn.WorkTagIsDisabled(WorkTags.Violent) &&
             pawn.health.capacities.CapableOf(PawnCapacityDefOf.Manipulation) && LadderInventory.Get(pawn) == null &&
             pawn.CurJobDef != JobDefOf.ManTurret && !SiegeRoles.HasDemolitionWeapon(pawn);
 
@@ -22,7 +22,7 @@ namespace RimSiege.Raids.Artillery
 
         internal static bool AssignOperators(ArtilleryRaid raid, Lord lord)
         {
-            var specialists = raid.SmokeAttempted && !raid.InfantryReleased
+            var specialists = !raid.InfantryReleased
                 ? ArtilleryDeployment.Specialists(raid.Strategy, lord.ownedPawns) : null;
             return ReserveOperators(raid, lord.ownedPawns.Where(p =>
                 specialists?.Contains(p) != true && (raid.IndependentCrew ? OperatorCandidate(p) : CanOperate(p))));
@@ -175,8 +175,20 @@ namespace RimSiege.Raids.Artillery
                 // Work-giver construction/hauling jobs may have no job.lord.
                 // They must end too when this pawn leaves the construction group.
                 if (pawn.jobs?.curJob != null) pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
-            if (raid.AssaultLord == null) raid.AssaultLord = ArtilleryRaidPatches.MakeOriginalLord(raid, camp.Map, pawns);
-            else raid.AssaultLord.AddPawns(pawns);
+            if (raid.AssaultLord == null)
+            {
+                raid.AssaultLord = ArtilleryRaidPatches.MakeOriginalLord(raid, camp.Map, pawns);
+                // Fresh lords start with lastPawnHarmTick = -99999; seed from the camp/now so
+                // Trigger_HighValueThingsAround does not evaluate immediately on leaving camp.
+                if (raid.AssaultLord != null && raid.AssaultLord.lastPawnHarmTick < 0)
+                    raid.AssaultLord.lastPawnHarmTick = System.Math.Max(camp.lastPawnHarmTick, GenTicks.TicksGame);
+            }
+            else
+            {
+                raid.AssaultLord.AddPawns(pawns);
+                raid.AssaultLord.lastPawnHarmTick = System.Math.Max(raid.AssaultLord.lastPawnHarmTick,
+                    System.Math.Max(camp.lastPawnHarmTick, GenTicks.TicksGame));
+            }
             raid.AssaultCreated = true;
             if (!((LordJob_Artillery)camp.LordJob).RequiresOperators) raid.InfantryReleased = true;
             SiegeRaidMap raids = camp.Map.GetComponent<SiegeRaidMap>();

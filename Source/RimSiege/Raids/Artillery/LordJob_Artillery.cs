@@ -28,7 +28,8 @@ namespace RimSiege.Raids.Artillery
         internal virtual bool RequiresOperators => true;
         internal virtual Pawn ConstructionWorker => null;
         internal virtual bool PrepareCrew() => ArtilleryCamp.AssignOperators(Raid, lord);
-        internal virtual bool CanBeBuilder(Pawn pawn, bool nativeResult) => nativeResult;
+        internal virtual bool CanBeBuilder(Pawn pawn, bool nativeResult) =>
+            nativeResult && SiegeRoles.CanBuildHumanlikeCamp(pawn);
         // Return true when the subclass has assigned the duty itself.
         internal virtual bool AssignBuilder(LordToil_Siege toil, Pawn pawn) => false;
         internal virtual void PrepareCleanup(LordToil_Siege toil) { }

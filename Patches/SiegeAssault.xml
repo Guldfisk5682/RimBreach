@@ -30,4 +30,29 @@
       </li>
     </value>
   </Operation>
+  <Operation Class="PatchOperationInsert">
+    <xpath>Defs/DutyDef[defName="Escort"]/thinkNode/subNodes/li[@Class="JobGiver_AIDefendEscortee"]</xpath>
+    <order>Prepend</order>
+    <value>
+      <li Class="RimSiege.Raids.ThinkNode_ConditionalLadderAssault">
+        <subNodes>
+          <li Class="JobGiver_AIFightEnemies">
+            <targetAcquireRadius>65</targetAcquireRadius>
+            <targetKeepRadius>72</targetKeepRadius>
+          </li>
+          <li Class="RimSiege.Raids.JobGiver_SiegeApproach" />
+          <li Class="JobGiver_AITrashColonyClose" />
+          <li Class="JobGiver_AITrashBuildingsDistant" />
+          <li Class="JobGiver_AIGotoNearestHostile" />
+        </subNodes>
+      </li>
+    </value>
+  </Operation>
+  <Operation Class="PatchOperationInsert">
+    <xpath>Defs/DutyDef[defName="Escort"]/thinkNode/subNodes/li[@Class="JobGiver_WanderNearDutyLocation"]</xpath>
+    <order>Prepend</order>
+    <value>
+      <li Class="RimSiege.Raids.JobGiver_SiegeApproach" />
+    </value>
+  </Operation>
 </Patch>

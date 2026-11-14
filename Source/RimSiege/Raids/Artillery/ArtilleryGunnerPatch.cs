@@ -16,7 +16,7 @@ namespace RimSiege.Raids.Artillery
     [HarmonyPatch]
     internal static class ArtilleryGunnerPatch
     {
-        private static readonly Func<Pawn, Thing, Thing> FindAmmo = AccessTools.MethodDelegate<Func<Pawn, Thing, Thing>>(
+        internal static readonly Func<Pawn, Thing, Thing> FindAmmo = AccessTools.MethodDelegate<Func<Pawn, Thing, Thing>>(
             AccessTools.Method(typeof(JobGiver_ManTurretsNearPointCE), "FindAmmoForTurret"));
         private static IEnumerable<MethodBase> TargetMethods() => CeAccess.Methods(typeof(JobGiver_ManTurrets), "TryGiveJob");
 

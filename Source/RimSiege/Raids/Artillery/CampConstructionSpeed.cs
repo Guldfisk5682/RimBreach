@@ -20,6 +20,7 @@ namespace RimSiege.Raids.Artillery
             internal Lord Camp;
             internal Frame Frame;
             internal float Multiplier = 1f;
+            internal float WorkFactor = 1f;
         }
 
         // Resolve the planned worksite once per native job. No raid/map scan is
@@ -35,24 +36,26 @@ namespace RimSiege.Raids.Artillery
         {
             Pawn pawn = driver.pawn;
             var frame = driver.job.targetA.Thing as Frame;
-            if (!CampConstructionMaterials.Applies(pawn, frame)) return new WorkRate();
+            if (CampConstructionMaterials.PlacementFor(pawn, frame) is not { } placement) return new WorkRate();
             Lord camp = pawn.GetLord();
+            float multiplier = ((LordJob_Artillery)camp.LordJob).Raid.ConstructionSpeedMultiplier;
             return new WorkRate
             {
                 Camp = camp, Frame = frame,
-                Multiplier = ((LordJob_Artillery)camp.LordJob).Raid.ConstructionSpeedMultiplier
+                Multiplier = multiplier, WorkFactor = placement.ConstructionWorkFactor
             };
         }
 
         private static float Speed(Thing thing, StatDef stat, bool applyPostProcess, int cacheStaleAfterTicks)
         {
             float native = thing.GetStatValue(stat, applyPostProcess, cacheStaleAfterTicks);
-            if (!RimSiegeMod.Settings.ScaleArtilleryConstruction || thing is not Pawn pawn || pawn.jobs.curDriver is not JobDriver_ConstructFinishFrame driver ||
+            if (thing is not Pawn pawn || pawn.jobs.curDriver is not JobDriver_ConstructFinishFrame driver ||
                 pawn.GetLord()?.LordJob is not LordJob_Artillery) return native;
             WorkRate rate = Rates.GetValue(driver, Resolve);
             return rate.Camp != null && pawn.GetLord() == rate.Camp && rate.Camp.CurLordToil is LordToil_Siege &&
                 pawn.Faction == rate.Frame.Faction && pawn.HostileTo(Faction.OfPlayer)
-                ? native * rate.Multiplier : native;
+                ? native * (RimSiegeMod.Settings.ScaleArtilleryConstruction ? rate.Multiplier : 1f) / rate.WorkFactor
+                : native;
         }
 
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)

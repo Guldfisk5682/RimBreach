@@ -67,9 +67,10 @@ namespace RimSiege.Raids.Artillery
         internal static bool CanSupply(Map map, CampPlan camp) => camp != null && camp.Center.InBounds(map) &&
             FindSpot(map, camp, Reserved(map, camp), allowFogged: true, canRoofPunch: true, out _);
 
-        internal static bool DropGroups(Map map, CampPlan camp, List<List<Thing>> groups, int openDelay,
+        internal static bool DropGroups(Map map, ArtilleryRaid raid, List<List<Thing>> groups, int openDelay,
             bool instaDrop, bool leaveSlag, bool canRoofPunch, bool forbid, bool allowFogged, Faction faction)
         {
+            CampPlan camp = raid.Camp;
             var reserved = Reserved(map, camp);
             var spots = new List<IntVec3>(groups.Count);
             foreach (List<Thing> group in groups)
@@ -81,6 +82,7 @@ namespace RimSiege.Raids.Artillery
             for (int i = 0; i < groups.Count; i++)
             {
                 List<Thing> group = groups[i];
+                foreach (Thing thing in group) CampSupplyOwnership.Record(map, raid, thing);
                 if (forbid)
                     foreach (Thing thing in group) thing.SetForbidden(true, warnOnFail: false);
                 if (instaDrop)

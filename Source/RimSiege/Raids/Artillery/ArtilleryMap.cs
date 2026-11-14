@@ -18,6 +18,7 @@ namespace RimSiege.Raids.Artillery
         private readonly Dictionary<Thing, GunOwner> guns = new();
         private List<Building> orphanGuns = new List<Building>();
         private int nextKey = 1;
+        internal readonly CampSupplyOwnership SupplyOwnership = new();
 
         public ArtilleryMap(Map map) : base(map) { }
 
@@ -54,6 +55,7 @@ namespace RimSiege.Raids.Artillery
                 incident.CompletionSent = true;
                 QuestUtility.SendQuestTargetSignals(incident.CompletionTags, "AllEnemiesDefeated");
             }
+            SupplyOwnership.Release(-incident.Key);
             incidents.Remove(incident);
         }
 
@@ -100,6 +102,7 @@ namespace RimSiege.Raids.Artillery
             if (raid.Camp != null)
                 foreach (ArtilleryPlacement gun in raid.Camp.Guns)
                     if (gun.Building != null) ForgetGun(gun.Building);
+            if (raid.IncidentKey == 0) SupplyOwnership.Release(raid.Key);
             raids.Remove(raid);
         }
 
@@ -223,6 +226,7 @@ namespace RimSiege.Raids.Artillery
 
         public override void ExposeData()
         {
+            SupplyOwnership.ExposeData();
             Scribe_Collections.Look(ref raids, "rimSiegeArtilleryRaids", LookMode.Deep);
             raids ??= new List<ArtilleryRaid>();
             Scribe_Collections.Look(ref incidents, "rimSiegeArtilleryIncidents", LookMode.Deep);

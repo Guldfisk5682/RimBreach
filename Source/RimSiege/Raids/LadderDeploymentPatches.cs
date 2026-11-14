@@ -82,4 +82,15 @@ namespace RimSiege.Raids
             }
         }
     }
+
+    [HarmonyPatch(typeof(StairGrid), nameof(StairGrid.Register), typeof(VLink))]
+    internal static class SiegeLadderOpenedPatch
+    {
+        private static void Postfix(StairGrid __instance, VLink l)
+        {
+            if (Scribe.mode != LoadSaveMode.Inactive || Current.ProgramState != ProgramState.Playing) return;
+            if (!SiegeRaidMap.Enabled || l.thing is not Building_SiegeLadder ladder || l.topBlocker) return;
+            __instance.map?.GetComponent<SiegeRaidMap>()?.WakeForLadder(ladder.Faction);
+        }
+    }
 }

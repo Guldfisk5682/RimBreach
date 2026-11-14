@@ -20,8 +20,10 @@ namespace RimSiege.Raids.Artillery
         internal static bool SupportReady(ArtilleryRaid raid) => raid.Camp.Guns.Any(g => g.IsSupport) &&
             raid.Camp.Guns.Where(g => g.IsSupport).All(g => g.Building?.Spawned == true);
 
-        internal static bool BuilderCandidate(LordToil_Siege toil, Pawn pawn) => !pawn.Dead &&
-            !pawn.Downed && !pawn.InMentalState && pawn.health.capacities.CapableOf(PawnCapacityDefOf.Manipulation) &&
+        internal static bool BuilderCandidate(LordToil_Siege toil, Pawn pawn) =>
+            !SiegeRoles.IsMainForceOnly(pawn, toil?.lord?.LordJob is LordJob_MechArtillery) &&
+            !pawn.Dead && !pawn.Downed && !pawn.InMentalState &&
+            pawn.health.capacities.CapableOf(PawnCapacityDefOf.Manipulation) &&
             NativeSiege.CanBuild(toil, pawn);
 
         internal static bool CanBuild(LordToil_Siege toil, Pawn pawn) => pawn.Spawned && BuilderCandidate(toil, pawn);
@@ -41,7 +43,7 @@ namespace RimSiege.Raids.Artillery
             if (assault == null || raid.AssaultEnded || assault.CurLordToil is LordToil_ExitMap or LordToil_PanicFlee)
                 return Enumerable.Empty<Pawn>();
             var specialists = ArtilleryDeployment.Specialists(raid.Strategy, assault.ownedPawns);
-            return assault.ownedPawns.Where(p => p.Spawned && !p.Dead && !p.Downed && !p.InMentalState &&
+            return assault.ownedPawns.Where(p => SiegeRoles.IsHumanlikeRaider(p) && p.Spawned &&
                 p.Map == camp.Map && p.Faction == raid.Faction && !specialists.Contains(p) && LadderInventory.Get(p) == null &&
                 IsoFloor.Distance3D(p.Position, raid.Camp.Center, camp.Map) <= 20f);
         }
@@ -89,6 +91,7 @@ namespace RimSiege.Raids.Artillery
                     .ThenBy(pawn => pawn.Position.DistanceToSquared(raid.Camp.Center))
                     .Take(helpers));
             }
+            crew.RemoveWhere(p => SiegeRoles.IsMainForceOnly(p, camp.LordJob is LordJob_MechArtillery));
             return crew;
         }
 

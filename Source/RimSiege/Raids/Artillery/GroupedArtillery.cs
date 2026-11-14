@@ -64,8 +64,7 @@ namespace RimSiege.Raids.Artillery
         // Native siege's roster eligibility, before a real spawned traveller/lord exists.
         // Its actual CanBeBuilder and reach checks still run at camp initialization.
         private bool Builder(Pawn pawn) => Healthy(pawn) && (reservation.Kind == ArtilleryRaidKind.Mechanoid
-            ? MechBattery.IsConstructoid(pawn) : pawn.RaceProps.Humanlike && !pawn.WorkTypeIsDisabled(WorkTypeDefOf.Construction) &&
-                !pawn.WorkTypeIsDisabled(WorkTypeDefOf.Firefighter));
+            ? MechBattery.IsConstructoid(pawn) : SiegeRoles.CanBuildHumanlikeCamp(pawn));
 
         private bool EnsureCrew(Group target, ArtilleryPlacement gun)
         {
@@ -107,13 +106,25 @@ namespace RimSiege.Raids.Artillery
         private void Allocate(Map map, List<Pawn> allPawns)
         {
             var pool = reservation.Camp.Guns;
-            var supported = pool.Where(g => g.IsSupport).ToList();
+            var supported = pool.Where(g => g.IsSupport).OrderBy(ArtilleryProfileDef.IsEmpGun).ToList();
             // A first pass gives one piece per staffed group; only surplus uses proportional allocation.
             foreach (ArtilleryPlacement gun in supported)
             {
+                bool emp = ArtilleryProfileDef.IsEmpGun(gun);
                 Group target = groups.OrderBy(g => g.Guns.Any(p => p.IsSupport) ? 1 : 0)
                     .ThenBy(g => g.Guns.Count / System.Math.Max(1f, g.Power)).ThenByDescending(g => g.Power)
-                    .FirstOrDefault(g => EnsureCrew(g, gun));
+                    .FirstOrDefault(g => (!emp || HasNonEmpMortar(g.Guns)) && EnsureCrew(g, gun));
+                if (target == null && emp)
+                {
+                    ThingDef fallback = ArtilleryProfileDef.SelectAmmo(gun.Def, reservation.Faction, false, allowEMP: false);
+                    if (fallback != null && !ArtilleryProfileDef.IsEmpAmmo(gun.Def, fallback))
+                    {
+                        gun.Ammo = fallback;
+                        target = groups.OrderBy(g => g.Guns.Any(p => p.IsSupport) ? 1 : 0)
+                            .ThenBy(g => g.Guns.Count / System.Math.Max(1f, g.Power)).ThenByDescending(g => g.Power)
+                            .FirstOrDefault(g => EnsureCrew(g, gun));
+                    }
+                }
                 if (target != null) target.Guns.Add(gun);
             }
             foreach (ArtilleryPlacement gun in pool.Where(g => !g.IsSupport))
@@ -128,8 +139,10 @@ namespace RimSiege.Raids.Artillery
             var unused = new List<ArtilleryPlacement>();
             foreach (Group group in groups.OrderByDescending(g => g.Guns.Any(p => p.IsSupport)).ThenByDescending(g => g.Power))
             {
-                foreach (ArtilleryPlacement gun in unused.ToList())
-                    if ((group.Guns.Any(g => g.IsSupport) || gun.IsSupport) && EnsureCrew(group, gun))
+                foreach (ArtilleryPlacement gun in unused.OrderBy(ArtilleryProfileDef.IsEmpGun).ToList())
+                    if ((group.Guns.Any(g => g.IsSupport) || gun.IsSupport) &&
+                        (!ArtilleryProfileDef.IsEmpGun(gun) || HasNonEmpMortar(group.Guns)) &&
+                        EnsureCrew(group, gun))
                     { group.Guns.Add(gun); unused.Remove(gun); }
                 if (!group.Guns.Any(g => g.IsSupport)) continue;
                 IncidentParms parms = reservation.OriginalParms.ShallowCopy();
@@ -201,7 +214,7 @@ namespace RimSiege.Raids.Artillery
                                     (float)System.Math.Max(1, g.Raid.Camp.Guns.Count)).First();
                             unarmed.Pawns.Remove(builder); camp.Pawns.Add(builder);
                         }
-                Incident = new ArtilleryIncident { InitialRaidSize = allPawns.Count };
+                Incident = new ArtilleryIncident { InitialRaidSize = allPawns.Count, Breaches = reservation.Breaches };
                 map.GetComponent<ArtilleryMap>().RegisterIncident(Incident);
                 foreach (ArtilleryRaid raid in Batteries) raid.IncidentKey = Incident.Key;
             }
@@ -221,6 +234,9 @@ namespace RimSiege.Raids.Artillery
                 string.Join("; ", groups.Select(g => "entry=" + g.Entry + " pawns=" + g.Pawns.Count +
                     " guns=" + (g.Raid?.Camp.Guns.Count ?? 0))));
         }
+
+        private static bool HasNonEmpMortar(IEnumerable<ArtilleryPlacement> guns) =>
+            guns.Any(ArtilleryProfileDef.IsNonEmpMortar);
 
         [HarmonyPatch(typeof(PawnsArrivalModeWorkerUtility), nameof(PawnsArrivalModeWorkerUtility.SplitIntoRandomGroupsNearMapEdge))]
         private static class ActualGroups
