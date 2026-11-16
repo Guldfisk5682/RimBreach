@@ -15,13 +15,15 @@ namespace RimSiege.Raids.Artillery
         private const float BreachedLossFraction = 0.70f;
         private const float ActiveBatteryLossFraction = 0.85f;
 
+        private static bool Stubborn => RimSiegeMod.Settings?.StubbornEnemies == true;
+
         internal static void Review(ArtilleryMap artillery)
         {
             foreach (ArtilleryRaid raid in artillery.TrackedRaids.Where(raid => raid.IncidentKey == 0).ToArray())
             {
                 if (ShouldRetreat(raid.Faction, raid.InitialRaidSize, raid.ViolentLosses.Count,
                     raid.ReachedDefenses, raid.Breaches, raid.RaidSeed) is { } loss &&
-                    (loss >= ActiveBatteryLossFraction || !HasActiveBattery(raid)))
+                    (!Stubborn || !raid.Breaches || loss >= ActiveBatteryLossFraction || !HasActiveBattery(raid)))
                     ReviewWave(raid);
             }
             foreach (ArtilleryIncident incident in artillery.TrackedIncidents.ToArray())
@@ -31,7 +33,7 @@ namespace RimSiege.Raids.Artillery
                 bool breaches = incident.Breaches || waves.Any(w => w.Breaches);
                 if (ShouldRetreat(faction, incident.InitialRaidSize, incident.ViolentLosses.Count,
                     incident.ReachedDefenses, breaches, incident.Key) is not { } loss ||
-                    (loss < ActiveBatteryLossFraction && waves.Any(HasActiveBattery))) continue;
+                    (Stubborn && breaches && loss < ActiveBatteryLossFraction && waves.Any(HasActiveBattery))) continue;
                 foreach (ArtilleryRaid wave in waves) ReviewWave(wave);
                 foreach (Lord lord in incident.NativeLords.ToArray()) Review(lord);
             }
@@ -72,7 +74,7 @@ namespace RimSiege.Raids.Artillery
             bool breaches, int seed)
         {
             if (faction?.def.humanlikeFaction != true || initial == 0 || lost == 0) return null;
-            float threshold = reachedDefenses || breaches ? BreachedLossFraction
+            float threshold = Stubborn && (reachedDefenses || breaches) ? BreachedLossFraction
                 : faction.def.attackersDownPercentageRangeForAutoFlee.RandomInRangeSeeded(seed);
             return lost >= initial * threshold ? (float)lost / initial : null;
         }
@@ -107,6 +109,32 @@ namespace RimSiege.Raids.Artillery
             lord.Graph.transitions.FirstOrDefault(transition => transition.target is LordToil_PanicFlee &&
                 transition.sources.Contains(lord.CurLordToil) &&
                 transition.triggers.Any(trigger => trigger is Trigger_FractionPawnsLost))?.Execute(lord);
+        }
+
+        [HarmonyPatch(typeof(TransitionAction_Message), nameof(TransitionAction_Message.DoAction))]
+        private static class RetreatMessage
+        {
+            private static bool Prefix(TransitionAction_Message __instance, Transition trans)
+            {
+                if (trans.target is not LordToil_PanicFlee { lord: { faction: { } faction } lord } ||
+                    __instance.message != (string)"MessageFightersFleeing".Translate(
+                        faction.def.pawnsPlural.CapitalizeFirst(), faction.Name))
+                    return true;
+
+                ArtilleryMap artillery = lord.Map.GetComponent<ArtilleryMap>();
+                if (artillery.IncidentForLord(lord) is { } incident)
+                    return FirstNotice(ref incident.RetreatAnnounced);
+                if (artillery.ForLord(lord) is { } raid)
+                    return FirstNotice(ref raid.RetreatAnnounced);
+                return true;
+            }
+
+            private static bool FirstNotice(ref bool announced)
+            {
+                if (announced) return false;
+                announced = true;
+                return true;
+            }
         }
 
         [HarmonyPatch(typeof(Transition), nameof(Transition.CheckSignal))]
@@ -169,8 +197,11 @@ namespace RimSiege.Raids.Artillery
         private static readonly AccessTools.FieldRef<LordJob_AssaultColony, bool> Breachers =
             AccessTools.FieldRefAccess<LordJob_AssaultColony, bool>("breachers");
 
-        private static readonly AccessTools.FieldRef<Trigger_FractionPawnsLost, float> LossFraction =
-            AccessTools.FieldRefAccess<Trigger_FractionPawnsLost, float>("fraction");
+        private sealed class BreacherLossTrigger(Trigger_FractionPawnsLost native) : Trigger_FractionPawnsLost(BreachedLossFraction)
+        {
+            public override bool ActivateOn(Lord lord, TriggerSignal signal) =>
+                Stubborn ? base.ActivateOn(lord, signal) : native.ActivateOn(lord, signal);
+        }
 
         [HarmonyPatch(typeof(Lord), nameof(Lord.SetJob))]
         private static class BreacherLossThreshold
@@ -185,9 +216,10 @@ namespace RimSiege.Raids.Artillery
                 foreach (Transition transition in __instance.Graph.transitions)
                 {
                     if (transition.target is not LordToil_PanicFlee) continue;
-                    foreach (Trigger trigger in transition.triggers)
-                        if (trigger is Trigger_FractionPawnsLost lost)
-                            LossFraction(lost) = BreachedLossFraction;
+                    for (int i = 0; i < transition.triggers.Count; i++)
+                        if (transition.triggers[i] is Trigger_FractionPawnsLost lost &&
+                            lost.GetType() == typeof(Trigger_FractionPawnsLost))
+                            transition.triggers[i] = new BreacherLossTrigger(lost) { filters = lost.filters };
                 }
             }
         }

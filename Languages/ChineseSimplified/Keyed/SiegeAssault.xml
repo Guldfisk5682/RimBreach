@@ -2,7 +2,9 @@
 <LanguageData>
   <RS_EnhancedAssault>增强攻城行为</RS_EnhancedAssault>
   <RS_EnhancedAssaultDescription>袭击者携带并接替有限梯具；合格的集中袭击可能部署防御炮阵，工兵队伍增加爆破兵比例。优先利用已有入口与共享通路。</RS_EnhancedAssaultDescription>
-  <RS_ArtilleryChance>炮兵支援／部落铺烟概率：{0}</RS_ArtilleryChance>
+  <RS_ArtilleryChance>特殊强化袭击出现概率：{0}</RS_ArtilleryChance>
+  <RS_StubbornEnemies>顽固的敌人</RS_StubbornEnemies>
+  <RS_StubbornEnemiesDescription>开启后，人类敌人在取得袭击进度时将更难被击退。</RS_StubbornEnemiesDescription>
   <RS_LadderCarrier>〔架梯手〕</RS_LadderCarrier>
   <RS_ArtilleryRaidLabel_Ordinary>炮兵增援的{0}</RS_ArtilleryRaidLabel_Ordinary>
   <RS_ArtilleryRaidLabel_Breaching>炮兵增援的{0}</RS_ArtilleryRaidLabel_Breaching>

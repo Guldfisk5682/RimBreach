@@ -28,6 +28,8 @@ namespace RimSiege
                 "RS_EnhancedAssaultDescription".Translate());
             if (Settings.EnhancedAssault)
             {
+                listing.CheckboxLabeled("RS_StubbornEnemies".Translate(), ref Settings.StubbornEnemies,
+                    "RS_StubbornEnemiesDescription".Translate());
                 listing.Label("RS_ArtilleryChance".Translate((Settings.ArtilleryChance / 10f).ToString("0.0")));
                 Settings.ArtilleryChance = Mathf.RoundToInt(listing.Slider(Settings.ArtilleryChance, 0f, 10f));
                 listing.CheckboxLabeled("RS_ScaleArtilleryConstruction".Translate(), ref Settings.ScaleArtilleryConstruction);

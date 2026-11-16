@@ -30,6 +30,7 @@ namespace RimSiege.Raids.Artillery
         internal int InitialRaidSize;
         internal HashSet<int> ViolentLosses = new();
         internal bool ReachedDefenses;
+        internal bool RetreatAnnounced;
         internal bool SmokeAttempted, ShieldAssigned;
         internal bool Rolled, Selected, SuppliesDelivered;
         internal bool InfantryReleased, AssaultCreated, AssaultEnded, CompletionSent, CompletionPending;
@@ -68,6 +69,7 @@ namespace RimSiege.Raids.Artillery
             Scribe_Collections.Look(ref ViolentLosses, "violentLossIds", LookMode.Value);
             ViolentLosses ??= new();
             Scribe_Values.Look(ref ReachedDefenses, "reachedDefenses");
+            Scribe_Values.Look(ref RetreatAnnounced, "retreatAnnounced");
             Scribe_Values.Look(ref Rolled, "rolled");
             Scribe_Values.Look(ref Selected, "selected");
             Scribe_Values.Look(ref SuppliesDelivered, "suppliesDelivered");
