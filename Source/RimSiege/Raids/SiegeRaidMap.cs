@@ -24,6 +24,7 @@ namespace RimSiege.Raids
         internal HashSet<Lord> PlannedAdvances = new();
         internal HashSet<Pawn> Advanced = new();
         internal HashSet<Pawn> CoverBuilders = new();
+        internal TribalSmokeState TribalSmoke;
 
         internal RaidAdvance AdvanceFor(Pawn pawn) => Advances.Find(group => group.Members.Contains(pawn));
         private readonly Dictionary<Pawn, PlanStatus> jobs = new Dictionary<Pawn, PlanStatus>();
@@ -84,12 +85,14 @@ namespace RimSiege.Raids
             Advanced ??= new();
             Scribe_Collections.Look(ref CoverBuilders, "coverBuilders", LookMode.Reference);
             CoverBuilders ??= new();
+            Scribe_Deep.Look(ref TribalSmoke, "tribalSmoke");
         }
     }
 
     public sealed class SiegeRaidMap : MapComponent
     {
         private List<SiegeParty> parties = new List<SiegeParty>();
+        private List<SmokeAssignment> pendingSmokeRestores = new();
         private readonly Dictionary<Pawn, SiegeParty> membership = new Dictionary<Pawn, SiegeParty>();
         private readonly Dictionary<Pawn, LadderKit> receivers = new();
         private readonly HashSet<LadderKit> dropped = new();
@@ -143,11 +146,15 @@ namespace RimSiege.Raids
             {
                 SiegeParty old = parties[i];
                 if (map.GetComponent<ArtilleryMap>().HasActiveRaid(old.Id) ||
-                    old.Members.Any(p => p != null && !p.Dead && p.SpawnedOrAnyParentSpawned && (SiegeRoles.Ordinary(p.GetLord()) || SiegeRoles.LadderAssaultDuty(p)))) continue;
+                    old.Members.Any(p => p != null && !p.Dead && p.SpawnedOrAnyParentSpawned &&
+                        (SiegeRoles.Ordinary(p.GetLord()) || SiegeRoles.LadderAssaultDuty(p) ||
+                         (old.TribalSmoke != null && p.GetLord() is { } lord && map.lordManager.lords.Contains(lord))))) continue;
+                old.TribalSmoke?.Stop();
                 foreach (Pawn former in old.Members)
                     if (former != null) membership.Remove(former);
                 parties.RemoveAt(i);
             }
+            PrunePendingSmoke();
             var tacticalMembers = pawns.Where(p => p != null &&
                 (p.RaceProps.Humanlike || (faction == Faction.OfMechanoids && p.RaceProps.IsMechanoid))).ToList();
             SiegeParty party = new SiegeParty
@@ -164,9 +171,12 @@ namespace RimSiege.Raids
             return party;
         }
 
+        internal static bool IsTribalHumanlike(Faction faction) =>
+            faction?.def.humanlikeFaction == true && faction.def.categoryTag == "Tribal";
+
         private static int LadderQuotaFor(Faction faction)
         {
-            if (faction.def.humanlikeFaction && faction.def.categoryTag == "Tribal") return 35;
+            if (IsTribalHumanlike(faction)) return 35;
             if (faction == Faction.OfMechanoids ||
                 faction.def.humanlikeFaction && faction.def.techLevel >= TechLevel.Industrial) return 20;
             return 10;
@@ -254,6 +264,11 @@ namespace RimSiege.Raids
         public override void MapComponentTick()
         {
             int now = Find.TickManager.TicksGame;
+            if (pendingSmokeRestores.Count != 0 && now % 300 == 0)
+                PrunePendingSmoke();
+            if (Enabled && now % 60 == 0) ArtilleryRetreat.ReviewTribal(this);
+            for (int i = 0; i < parties.Count; i++)
+                parties[i].TribalSmoke?.Tick(now);
             bool recover = dropped.Count != 0 && now % 60 == 0;
             bool recheckCarriers = Enabled && parties.Count != 0 && now % RaidClimb.MemoTicks == 0;
             if (!recover && !recheckCarriers) return;
@@ -310,10 +325,67 @@ namespace RimSiege.Raids
             }
         }
 
+        internal TribalSmokeState TribalSmokeFor(Lord lord) =>
+            Enabled && lord != null ? TribalSmokeStates.FirstOrDefault(state => state.Owns(lord)) : null;
+
+        internal IEnumerable<TribalSmokeState> TribalSmokeStates
+        {
+            get
+            {
+                for (int i = 0; i < parties.Count; i++)
+                    if (parties[i].TribalSmoke != null)
+                        yield return parties[i].TribalSmoke;
+            }
+        }
+
+        internal static bool StillApplicableForRestore(Pawn pawn) =>
+            pawn != null && !pawn.Dead && !pawn.Destroyed && !pawn.Discarded &&
+            !pawn.IsPrisoner && !pawn.IsSlave &&
+            pawn.Faction != Faction.OfPlayer && pawn.HostileTo(Faction.OfPlayer);
+
+        internal SmokeAssignment PendingSmokeFor(Pawn pawn) =>
+            pawn == null ? null : pendingSmokeRestores.Find(a => a.Pawn == pawn);
+
+        internal void TrackPendingSmoke(Pawn pawn, ThingWithComps originalWeapon)
+        {
+            if (!StillApplicableForRestore(pawn) || originalWeapon == null || originalWeapon.Destroyed ||
+                SmokeCombat.IsSmokeWeapon(originalWeapon.def))
+                return;
+            SmokeAssignment existing = PendingSmokeFor(pawn);
+            if (existing != null)
+            {
+                if (existing.OriginalWeapon == null || existing.OriginalWeapon.Destroyed)
+                    existing.OriginalWeapon = originalWeapon;
+                existing.LoadoutRestored = false;
+                return;
+            }
+            pendingSmokeRestores.Add(new SmokeAssignment
+            {
+                Pawn = pawn,
+                OriginalWeapon = originalWeapon,
+                Fighting = true
+            });
+        }
+
+        internal void ClearPendingSmoke(Pawn pawn)
+        {
+            if (pawn != null)
+                pendingSmokeRestores.RemoveAll(a => a.Pawn == pawn);
+        }
+
+        internal void PrunePendingSmoke()
+        {
+            pendingSmokeRestores.RemoveAll(a =>
+                a?.Pawn == null || a.LoadoutRestored || a.OriginalWeapon == null || a.OriginalWeapon.Destroyed ||
+                !StillApplicableForRestore(a.Pawn) || (!a.Pawn.SpawnedOrAnyParentSpawned && a.Pawn.MapHeld != map));
+        }
+
         public override void ExposeData()
         {
             Scribe_Collections.Look(ref parties, "rimSiegeParties", LookMode.Deep);
             parties ??= new List<SiegeParty>(); // Saves made before this optional feature have no party records.
+            Scribe_Collections.Look(ref pendingSmokeRestores, "pendingSmokeRestores", LookMode.Deep);
+            pendingSmokeRestores ??= new List<SmokeAssignment>();
             Scribe_Values.Look(ref nextId, "rimSiegeNextParty", 1);
         }
     }

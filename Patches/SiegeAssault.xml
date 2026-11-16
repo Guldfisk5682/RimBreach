@@ -4,6 +4,12 @@
     <xpath>Defs/DutyDef[defName="AssaultColony"]/thinkNode/subNodes/li[@Class="JobGiver_AIFightEnemies"]</xpath>
     <order>Prepend</order>
     <value>
+      <li Class="RimSiege.Raids.ThinkNode_ConditionalTribalSmoke">
+        <subNodes>
+          <li Class="RimSiege.Raids.Artillery.JobGiver_ArtillerySmoke" />
+          <li Class="RimSiege.Raids.JobGiver_TribalSmokeFollowers" />
+        </subNodes>
+      </li>
       <li Class="RimSiege.Raids.ThinkNode_ConditionalLadderDuty">
         <subNodes>
           <li Class="RimSiege.Raids.JobGiver_SiegeApproach" />
@@ -23,9 +29,39 @@
     <xpath>Defs/DutyDef[defName="Escort"]/thinkNode/subNodes/li[1]</xpath>
     <order>Prepend</order>
     <value>
+      <li Class="RimSiege.Raids.ThinkNode_ConditionalTribalSmoke">
+        <subNodes>
+          <li Class="RimSiege.Raids.Artillery.JobGiver_ArtillerySmoke" />
+          <li Class="RimSiege.Raids.JobGiver_TribalSmokeFollowers" />
+        </subNodes>
+      </li>
       <li Class="RimSiege.Raids.ThinkNode_ConditionalLadderDuty">
         <subNodes>
           <li Class="RimSiege.Raids.JobGiver_SiegeApproach" />
+        </subNodes>
+      </li>
+    </value>
+  </Operation>
+  <Operation Class="PatchOperationInsert">
+    <xpath>Defs/DutyDef[defName="Sapper"]/thinkNode/subNodes/li[@Class="JobGiver_AIFightEnemies"]</xpath>
+    <order>Prepend</order>
+    <value>
+      <li Class="RimSiege.Raids.ThinkNode_ConditionalTribalSmoke">
+        <subNodes>
+          <li Class="RimSiege.Raids.Artillery.JobGiver_ArtillerySmoke" />
+          <li Class="RimSiege.Raids.JobGiver_TribalSmokeFollowers" />
+        </subNodes>
+      </li>
+    </value>
+  </Operation>
+  <Operation Class="PatchOperationInsert">
+    <xpath>Defs/DutyDef[defName="Breaching"]/thinkNode/subNodes/li[@Class="ThinkNode_HarmedRecently"]</xpath>
+    <order>Prepend</order>
+    <value>
+      <li Class="RimSiege.Raids.ThinkNode_ConditionalTribalSmoke">
+        <subNodes>
+          <li Class="RimSiege.Raids.Artillery.JobGiver_ArtillerySmoke" />
+          <li Class="RimSiege.Raids.JobGiver_TribalSmokeFollowers" />
         </subNodes>
       </li>
     </value>

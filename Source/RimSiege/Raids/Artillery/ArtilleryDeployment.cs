@@ -125,7 +125,7 @@ namespace RimSiege.Raids.Artillery
         private static bool CarriesVanguardEquipment(Pawn pawn, bool smokeCarrier) =>
             pawn?.RaceProps?.Humanlike == true &&
             (CarriesSmokeBelt(pawn) || pawn.equipment?.Primary?.def is ThingDef weapon &&
-                (!smokeCarrier || weapon != ArtillerySmokeDefOf.CE_Weapon_GrenadeSmoke) &&
+                (!smokeCarrier || !SmokeCombat.IsSmokeWeapon(weapon)) &&
                 (weapon.IsMeleeWeapon || IsThrown(weapon) || weapon.weaponTags?.Contains("CE_AI_Launcher") == true ||
                  IsExplosive(weapon) || pawn.equipment.PrimaryEq?.PrimaryVerb?.IsIncendiary_Ranged() == true));
 

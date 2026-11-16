@@ -25,14 +25,15 @@ namespace RimSiege.Raids
             internal ArtilleryRaid Artillery;
             internal GroupedArtillery Grouped;
             internal float NativePawnPoints;
+            internal float IncidentPoints;
             internal readonly List<Pawn> InjectedConstructoids = new();
         }
         [ThreadStatic] internal static Spawn Current;
 
-        private static void Prefix(out Spawn __state)
+        private static void Prefix(IncidentParms parms, out Spawn __state)
         {
             __state = Current;
-            Current = SiegeRaidMap.Enabled ? new Spawn() : null;
+            Current = SiegeRaidMap.Enabled ? new Spawn { IncidentPoints = parms.points } : null;
         }
 
         private static void Postfix(IncidentParms parms, bool __result)
@@ -42,11 +43,15 @@ namespace RimSiege.Raids
             if (Current.Artillery != null || parms.raidStrategy.Worker is RaidStrategyWorker_ImmediateAttack ||
                 parms.raidStrategy.Worker is RaidStrategyWorker_ImmediateAttackSmart ||
                 parms.raidStrategy.Worker is RaidStrategyWorker_StageThenAttack ||
+                parms.raidStrategy.Worker is RaidStrategyWorker_ImmediateAttackSappers ||
+                parms.raidStrategy.Worker is RaidStrategyWorker_ImmediateAttackBreaching ||
                 Current.Pawns.Exists(p => SiegeRoles.Ordinary(p.GetLord()) || SiegeRoles.LadderAssaultDuty(p)))
             {
                 bool deferKits = parms.faction.def.humanlikeFaction && parms.faction.def.techLevel >= TechLevel.Industrial &&
                     Current.Grouped == null && Current.Artillery != null;
                 SiegeParty party = map.GetComponent<SiegeRaidMap>().Register(Current.Pawns, parms.faction, deferKits);
+                if (Current.Artillery == null && Current.Grouped == null)
+                    TribalSmokeState.TryInitialize(party, parms, Current.Pawns, Current.IncidentPoints);
                 if (Current.Grouped != null)
                 {
                     foreach (ArtilleryRaid raid in Current.Grouped.Batteries)
@@ -118,7 +123,11 @@ namespace RimSiege.Raids
             SiegeRaidMap raids = map.GetComponent<SiegeRaidMap>();
             SiegeParty party = raids.Party(__instance);
             if (SiegeRaidMap.Enabled && party != null) raids.Issue(__instance, party);
+            if (SiegeRaidMap.Enabled && party?.TribalSmoke is { ReachedDefenses: false } tribal &&
+                ArtilleryRetreat.AtPlayerDefenses(__instance))
+                tribal.ReachedDefenses = true;
             ArtilleryDeployment.PawnArrived(__instance, map);
+            SmokeLoadout.OnPawnRecovered(__instance);
         }
     }
 
@@ -131,13 +140,24 @@ namespace RimSiege.Raids
         {
             LadderInventory.Drop(___pawn);
             if (__state?.Spawned == true) __state.SetForbidden(false);
+            SmokeLoadout.OnPawnDowned(___pawn);
         }
+    }
+
+    [HarmonyPatch(typeof(Pawn_HealthTracker), "MakeUndowned")]
+    internal static class CarrierRecoveredPatch
+    {
+        private static void Postfix(Pawn ___pawn) => SmokeLoadout.OnPawnRecovered(___pawn);
     }
 
     [HarmonyPatch(typeof(Pawn), nameof(Pawn.Kill))]
     internal static class CarrierDeathPatch
     {
-        private static void Prefix(Pawn __instance) => LadderInventory.Drop(__instance);
+        private static void Prefix(Pawn __instance)
+        {
+            LadderInventory.Drop(__instance);
+            SmokeLoadout.OnPawnKilled(__instance);
+        }
     }
 
     [HarmonyPatch(typeof(Pawn), "get_LabelPrefix")]

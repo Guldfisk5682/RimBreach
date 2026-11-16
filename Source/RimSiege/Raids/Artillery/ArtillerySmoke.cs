@@ -17,7 +17,10 @@ namespace RimSiege.Raids.Artillery
     {
         public static DutyDef RS_ArtillerySmoke = null;
         public static JobDef RS_LayArtillerySmoke = null;
+        public static JobDef RS_ApproachSmokeThrow = null;
         public static ThingDef CE_Weapon_GrenadeSmoke = null;
+        [MayRequire("CETeam.CombatExtendedArmory")]
+        public static ThingDef CE_Weapon_SmokeBomb = null;
 
         static ArtillerySmokeDefOf() => DefOfHelper.EnsureInitializedInCtor(typeof(ArtillerySmokeDefOf));
     }
@@ -57,6 +60,16 @@ namespace RimSiege.Raids.Artillery
 
         internal bool IsDone(Map map) => (!Required && Covered) || ArtillerySmoke.Screened(Cell, map);
 
+        internal bool CanClaim(Pawn pawn, Map map, int now) =>
+            !IsDone(map) && now >= RetryAt &&
+            (ClaimedBy == null || ClaimedBy == pawn || now >= ClaimUntil);
+
+        internal void Claim(Pawn pawn, int until)
+        {
+            ClaimedBy = pawn;
+            ClaimUntil = until;
+        }
+
         public void ExposeData()
         {
             Scribe_Values.Look(ref Cell, "cell", IntVec3.Invalid);
@@ -89,11 +102,13 @@ namespace RimSiege.Raids.Artillery
         internal int Deadline;
         internal int InitialPawns;
         internal int LastThrowTick;
+        internal int InFlightUntil;
+        internal int NextEvalTick;
         internal float ThrowRange = DefaultThrowRange;
         internal bool StartedScreen;
         internal List<SmokeAssignment> Assignments = new();
         internal List<SmokeTarget> Targets = new();
-        private List<IntVec3> approachRoute = new();
+        internal List<IntVec3> ApproachRoute = new();
         private IntVec3 followCell = IntVec3.Invalid;
         private int nextFollowUpdate;
         private Pawn[] followingBehind = Array.Empty<Pawn>();
@@ -121,24 +136,24 @@ namespace RimSiege.Raids.Artillery
 
             Pawn[] carriers = followingBehind = Assignments.Select(assignment => assignment.Pawn)
                 .Where(pawn => Ready(pawn) && HasCarrier(pawn) && pawn.GetLord() == lord &&
-                    (FindSmokeGrenade(pawn) != null || pawn.CurJobDef == ArtillerySmokeDefOf.RS_LayArtillerySmoke))
+                    (FindSmokeWeapon(pawn) != null || pawn.CurJobDef == ArtillerySmokeDefOf.RS_LayArtillerySmoke))
                 .ToArray();
             if (carriers.Length == 0) return;
 
             Map map = lord.Map;
-            if (approachRoute.Count == 0)
+            if (ApproachRoute.Count == 0)
             {
                 using PawnPath path = map.pathFinder.FindPathNow(Rally, campCenter, TraverseParms.For(carriers[0]),
                     null, PathEndMode.OnCell);
                 if (path == null || !path.Found) return;
-                approachRoute.AddRange(path.NodesReversed.AsEnumerable().Reverse());
+                ApproachRoute.AddRange(path.NodesReversed.AsEnumerable().Reverse());
             }
 
             // Use the back of the smoke team so the main force cannot overtake a carrier still throwing.
             int rear = carriers.Min(pawn => NearestRouteIndex(pawn.Position, map));
             for (int i = rear - 1; i >= 0; i--)
             {
-                IntVec3 cell = approachRoute[i];
+                IntVec3 cell = ApproachRoute[i];
                 if (carriers.Any(pawn => IsoFloor.Distance3D(pawn.Position, cell, map) < 17f) ||
                     !CanAdvance(cell, map)) continue;
                 followCell = cell;
@@ -150,41 +165,29 @@ namespace RimSiege.Raids.Artillery
         {
             int closest = 0;
             float distance = float.MaxValue;
-            for (int i = 0; i < approachRoute.Count; i++)
+            for (int i = 0; i < ApproachRoute.Count; i++)
             {
-                float candidate = IsoFloor.Distance3D(position, approachRoute[i], map);
+                float candidate = IsoFloor.Distance3D(position, ApproachRoute[i], map);
                 if (candidate >= distance) continue;
                 distance = candidate;
                 closest = i;
             }
             return closest;
         }
-        private Verb[] currentThreats;
-        private int threatWindow = -1;
-        private readonly Dictionary<IntVec3, bool> exposure = new();
+        internal ThingDef SmokeWeapon;
+        internal bool TurretsOnly;
+        private SmokeThreatCache threatCache;
+        private SmokeThreatCache ThreatCache =>
+            threatCache ??= new SmokeThreatCache(includeColonists: !TurretsOnly);
 
-        internal bool CanAdvance(IntVec3 cell, Map map)
-        {
-            if (!cell.InBounds(map)) return false;
-            if (Screened(cell, map)) return true;
-            int window = GenTicks.TicksGame / 15;
-            if (window != threatWindow)
-            {
-                threatWindow = window;
-                currentThreats = CollectThreats(map);
-                exposure.Clear();
-            }
-            if (!exposure.TryGetValue(cell, out bool exposed))
-                exposure[cell] = exposed = IsExposed(cell, map, currentThreats);
-            return !exposed;
-        }
+        internal ThingWithComps FindSmokeWeapon(Pawn pawn) =>
+            SmokeCombat.FindSmokeWeapon(pawn, SmokeWeapon ?? ArtillerySmokeDefOf.CE_Weapon_GrenadeSmoke);
+
+        internal bool CanAdvance(IntVec3 cell, Map map) => ThreatCache.CanAdvance(cell, map);
 
         internal static bool Eligible(ArtilleryRaid raid) => raid.Faction.def.humanlikeFaction && raid.RaidPoints >= 2000f;
 
-        internal static bool Ready(Pawn pawn) => pawn is { Spawned: true, Downed: false, Dead: false, InMentalState: false } &&
-            pawn.RaceProps.Humanlike &&
-            !pawn.WorkTagIsDisabled(WorkTags.Violent) && pawn.health.capacities.CapableOf(PawnCapacityDefOf.Manipulation) &&
-            pawn.health.capacities.CapableOf(PawnCapacityDefOf.Moving);
+        internal static bool Ready(Pawn pawn) => SmokeCombat.Ready(pawn);
 
         internal static ArtillerySmoke Plan(ArtilleryRaid raid, out string outcome)
         {
@@ -252,7 +255,7 @@ namespace RimSiege.Raids.Artillery
                 ThrowRange = throwRange,
                 StartedScreen = true,
                 Targets = targets,
-                approachRoute = nodes
+                ApproachRoute = nodes
             };
             for (int i = 0; i < carriers.Count; i++)
             {
@@ -269,26 +272,13 @@ namespace RimSiege.Raids.Artillery
             return screen;
         }
 
-        private static Verb[] CollectThreats(Map map) =>
-            map.listerBuildings.allBuildingsColonistCombatTargets.OfType<IAttackTargetSearcher>()
-                .Concat(map.mapPawns.FreeColonistsSpawned.OfType<IAttackTargetSearcher>())
-                .Select(shooter => shooter is Building_Turret turret ? turret.AttackVerb : shooter.CurrentEffectiveVerb)
-                .Where(verb => verb != null && !verb.verbProps.IsMeleeAttack &&
-                    (verb is Verb_LaunchProjectileCE ce ? ce.Projectile : verb.GetProjectile())
-                        ?.projectile?.flyOverhead != true)
-                .ToArray();
+        private static Verb[] CollectThreats(Map map) => SmokeThreatCache.CollectThreats(map, includeColonists: true);
 
         private static bool IsExposed(IntVec3 cell, Map map, Verb[] threats) =>
-            threats.Any(verb => verb.Caster.Spawned &&
-                IsoFloor.RangeDistance(verb.Caster.Position, cell, map) <= verb.EffectiveRange &&
-                verb.CanHitTarget(cell));
+            SmokeThreatCache.IsExposedToThreats(cell, map, threats);
 
-        private static float SafeThrowRange()
-        {
-            float range = ArtillerySmokeDefOf.CE_Weapon_GrenadeSmoke?.Verbs?
-                .FirstOrDefault(v => !v.IsMeleeAttack)?.range ?? 10f;
-            return Math.Max(4f, range - 1.2f);
-        }
+        private static float SafeThrowRange() =>
+            SmokeCombat.ThrowRange(ArtillerySmokeDefOf.CE_Weapon_GrenadeSmoke, margin: 1.2f, fallback: 10f);
 
         private static IntVec3 FindRally(IntVec3 entry, Map map, TraverseParms traverse, Predicate<IntVec3> exposed)
         {
@@ -451,7 +441,7 @@ namespace RimSiege.Raids.Artillery
 
                 if (!campExposed || order == stations.Count - 1)
                 {
-                    Vector3 side = ComputeApproachSide(nodes, idx, rally);
+                    Vector3 side = SmokeCombat.ApproachSide(nodes, idx, rally);
                     int preferredSign = Vector3.Dot(side, threatDir) >= 0f ? 1 : -1;
                     IntVec3 flank = FindFlankCell(map, spine, side, preferredSign, exposed);
                     if (!flank.IsValid) flank = FindFlankCell(map, spine, side, -preferredSign, exposed);
@@ -459,19 +449,6 @@ namespace RimSiege.Raids.Artillery
                         TryAddTarget(targets, flank, spine, order, false, anchor, rally, map, traverse, throwRange, exposed);
                 }
             }
-        }
-
-        private static Vector3 ComputeApproachSide(List<IntVec3> nodes, int idx, IntVec3 rally)
-        {
-            IntVec3 prev = nodes[Math.Max(0, idx - 3)];
-            IntVec3 next = nodes[Math.Min(nodes.Count - 1, idx + 3)];
-            Vector3 tangent = (next - prev).ToVector3();
-            tangent.y = 0f;
-            if (tangent.sqrMagnitude < 0.01f) tangent = (nodes[nodes.Count - 1] - rally).ToVector3();
-            tangent.y = 0f;
-            return tangent.sqrMagnitude >= 0.01f
-                ? new Vector3(-tangent.z, 0f, tangent.x).normalized
-                : new Vector3(1f, 0f, 0f);
         }
 
         private static void AddCampScreen(List<SmokeTarget> targets, IntVec3 rally, CampPlan camp, float threatAngle,
@@ -566,11 +543,8 @@ namespace RimSiege.Raids.Artillery
             IntVec3 fallback = IntVec3.Invalid;
             foreach (int offset in new[] { 4, 5, 3 })
             {
-                IntVec3 candidate = spine + new IntVec3(
-                    Mathf.RoundToInt(side.x * sign * offset), 0, Mathf.RoundToInt(side.z * sign * offset));
-                if (!candidate.InBounds(map) || !IsoFloor.SameFloor(candidate, spine, map) ||
-                    candidate.Filled(map) || !candidate.Walkable(map) ||
-                    !GenSight.LineOfSight(spine, candidate, map, skipFirstCell: true)) continue;
+                IntVec3 candidate = SmokeCombat.FlankCell(spine, side, sign * offset, map);
+                if (!candidate.IsValid) continue;
                 if (exposed(candidate)) return candidate;
                 if (!fallback.IsValid) fallback = candidate;
             }
@@ -609,15 +583,8 @@ namespace RimSiege.Raids.Artillery
             return best;
         }
 
-        private static ThingWithComps GiveSmoke(Pawn pawn, int count)
-        {
-            var inventory = pawn.TryGetComp<CompInventory>();
-            var grenade = (ThingWithComps)ThingMaker.MakeThing(ArtillerySmokeDefOf.CE_Weapon_GrenadeSmoke);
-            grenade.stackCount = count;
-            if (inventory.container.TryAdd(grenade, canMergeWithExistingStacks: false)) return grenade;
-            grenade.Destroy();
-            return null;
-        }
+        private static ThingWithComps GiveSmoke(Pawn pawn, int count) =>
+            SmokeCombat.GiveSmoke(pawn, ArtillerySmokeDefOf.CE_Weapon_GrenadeSmoke, count);
 
         private static void DiscardGrantedSmoke(Dictionary<Pawn, ThingWithComps> grenades)
         {
@@ -626,12 +593,12 @@ namespace RimSiege.Raids.Artillery
         }
 
         internal static ThingWithComps FindSmokeGrenade(Pawn pawn) =>
-            pawn?.equipment?.Primary is { } equipped && equipped.def == ArtillerySmokeDefOf.CE_Weapon_GrenadeSmoke
-                ? equipped : pawn?.inventory?.innerContainer?.FirstOrDefault(t => t.def == ArtillerySmokeDefOf.CE_Weapon_GrenadeSmoke && !t.Destroyed) as ThingWithComps;
+            SmokeCombat.FindSmokeWeapon(pawn, ArtillerySmokeDefOf.CE_Weapon_GrenadeSmoke);
 
         internal bool HasActiveWork(Map map, int now)
         {
-            if (LastThrowTick > 0 && now < LastThrowTick + 140) return true;
+            if (InFlightUntil > now || (InFlightUntil == 0 && LastThrowTick > 0 && now < LastThrowTick + 95))
+                return true;
             bool unscreened = Targets.Any(t => !t.IsDone(map));
             if (!unscreened) return false;
             return Assignments.Any(a => Ready(a.Pawn) && !a.Fighting && FindSmokeGrenade(a.Pawn) != null);
@@ -642,7 +609,7 @@ namespace RimSiege.Raids.Artillery
             var required = Targets.Where(target => target.Required).ToList();
             if (required.Count == 0) return Targets.All(target => target.IsDone(map));
             return required.All(target => target.IsDone(map)) &&
-                raid.Camp.Guns.All(placement => PlacementCovered(placement, map, currentThreats ??= CollectThreats(map)));
+                raid.Camp.Guns.All(placement => PlacementCovered(placement, map, ThreatCache.CurrentThreats(map)));
         }
 
         private static bool PlacementCovered(ArtilleryPlacement placement, Map map, Verb[] threats)
@@ -666,13 +633,143 @@ namespace RimSiege.Raids.Artillery
 
         internal bool HasCarrier(Pawn pawn) => AssignmentFor(pawn) is { Fighting: false };
 
+        internal static bool IsInCombat(Pawn pawn, int now)
+        {
+            if (pawn?.mindState == null) return false;
+            Thing enemy = pawn.mindState.enemyTarget;
+            return (enemy is { Spawned: true } && pawn.HostileTo(enemy)) ||
+                pawn.mindState.lastHarmTick >= now - 90;
+        }
+
+        private static void EndSmokeJob(Pawn pawn)
+        {
+            if (pawn?.CurJob == null) return;
+            if (pawn.CurJobDef == ArtillerySmokeDefOf.RS_LayArtillerySmoke ||
+                pawn.CurJob.jobGiver is JobGiver_ArtillerySmoke or JobGiver_ArtillerySmokeFollowers ||
+                pawn.CurJobDef == ArtillerySmokeDefOf.RS_ApproachSmokeThrow)
+                pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
+        }
+
+        internal bool TryClaim(Pawn pawn, IntVec3 targetCell, int duration)
+        {
+            int now = GenTicks.TicksGame;
+            SmokeTarget matched = Targets.Find(target => target.Cell == targetCell);
+            if (matched == null || !matched.CanClaim(pawn, pawn.Map, now)) return false;
+            ReleaseClaim(pawn, IntVec3.Invalid, 0);
+            matched.Claim(pawn, now + duration);
+            return true;
+        }
+
+        internal void ReleaseClaim(Pawn pawn, IntVec3 targetCell, int tightenTicks)
+        {
+            int now = GenTicks.TicksGame;
+            foreach (SmokeTarget target in Targets)
+            {
+                if (target.ClaimedBy != pawn) continue;
+                if (targetCell.IsValid && target.Cell != targetCell) continue;
+                if (tightenTicks > 0)
+                    target.ClaimUntil = Math.Min(target.ClaimUntil, now + tightenTicks);
+                else
+                    target.ClaimedBy = null;
+            }
+        }
+
+        internal void OnThrowRejected(Pawn pawn, IntVec3 targetCell)
+        {
+            int now = GenTicks.TicksGame;
+            foreach (SmokeTarget target in Targets)
+            {
+                if (target.ClaimedBy == pawn) target.ClaimedBy = null;
+                if (targetCell.IsValid && target.Cell == targetCell)
+                    target.RetryAt = Math.Max(target.RetryAt, now + 20);
+            }
+            NextEvalTick = now;
+        }
+
+        internal void NotifySmokeThrown(Pawn pawn, IntVec3 targetCell, int graceTicks)
+        {
+            int now = GenTicks.TicksGame;
+            int until = now + graceTicks;
+            LastThrowTick = now;
+            InFlightUntil = Math.Max(InFlightUntil, until);
+            foreach (SmokeTarget target in Targets)
+            {
+                if (target.ClaimedBy == pawn) target.ClaimedBy = null;
+                if (targetCell.IsValid && target.Cell == targetCell)
+                    target.RetryAt = Math.Max(target.RetryAt, until);
+            }
+            if (FindSmokeWeapon(pawn) == null)
+                NextEvalTick = now;
+        }
+
+        internal void OnPawnDowned(Pawn pawn)
+        {
+            SmokeAssignment assignment = AssignmentFor(pawn);
+            if (assignment != null) assignment.Fighting = true;
+            ReleaseClaim(pawn, IntVec3.Invalid, 0);
+            NextEvalTick = GenTicks.TicksGame;
+        }
+
+        internal void OnPawnKilled(Pawn pawn)
+        {
+            SmokeAssignment assignment = AssignmentFor(pawn);
+            if (assignment != null)
+            {
+                assignment.Fighting = true;
+                assignment.LoadoutRestored = true;
+                assignment.OriginalWeapon = null;
+            }
+            ReleaseClaim(pawn, IntVec3.Invalid, 0);
+            NextEvalTick = GenTicks.TicksGame;
+        }
+
+        internal void EvaluateCarriers(Lord lord, Map map, int now,
+            Predicate<Pawn> participates = null, bool keepScreenUnderFire = false)
+        {
+            NextEvalTick = 0;
+            var wake = new List<Pawn>();
+            foreach (SmokeAssignment assignment in Assignments)
+            {
+                if (assignment.Fighting) continue;
+                Pawn pawn = assignment.Pawn;
+                if (!Ready(pawn) || pawn.GetLord() != lord ||
+                    !(participates?.Invoke(pawn) ?? (pawn.mindState?.duty?.def == ArtillerySmokeDefOf.RS_ArtillerySmoke)))
+                {
+                    assignment.Fighting = true;
+                    ReleaseClaim(pawn, IntVec3.Invalid, 0);
+                    if (pawn?.Spawned == true && !pawn.Dead && !pawn.Downed)
+                    {
+                        EndSmokeJob(pawn);
+                        SmokeLoadout.Restore(assignment);
+                        wake.Add(pawn);
+                    }
+                    continue;
+                }
+
+                if (pawn.CurJobDef == ArtillerySmokeDefOf.RS_LayArtillerySmoke) continue;
+                if (FindSmokeWeapon(pawn) == null || !keepScreenUnderFire && IsInCombat(pawn, now))
+                {
+                    assignment.Fighting = true;
+                    ReleaseClaim(pawn, IntVec3.Invalid, 0);
+                    EndSmokeJob(pawn);
+                    SmokeLoadout.Restore(assignment);
+                    wake.Add(pawn);
+                }
+            }
+            for (int i = 0; i < wake.Count; i++)
+                if (wake[i] is { Spawned: true, Dead: false, Downed: false })
+                    wake[i].jobs.CheckForJobOverride();
+        }
+
         internal void RestoreWeapons()
         {
             foreach (SmokeAssignment assignment in Assignments)
             {
                 Pawn pawn = assignment.Pawn;
-                if (pawn?.CurJobDef == ArtillerySmokeDefOf.RS_LayArtillerySmoke)
-                    pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
+                assignment.Fighting = true;
+                ReleaseClaim(pawn, IntVec3.Invalid, 0);
+                if (pawn?.Spawned == true && !pawn.Dead && !pawn.Downed)
+                    EndSmokeJob(pawn);
                 SmokeLoadout.Restore(assignment);
             }
         }
@@ -684,7 +781,7 @@ namespace RimSiege.Raids.Artillery
             return total;
         }
 
-        internal static bool Screened(IntVec3 cell, Map map) => cell.AnyGas(map, GasType.BlindSmoke);
+        internal static bool Screened(IntVec3 cell, Map map) => SmokeCombat.Screened(cell, map);
 
         public void ExposeData()
         {
@@ -692,14 +789,17 @@ namespace RimSiege.Raids.Artillery
             Scribe_Values.Look(ref Deadline, "deadline");
             Scribe_Values.Look(ref InitialPawns, "initialPawns");
             Scribe_Values.Look(ref LastThrowTick, "lastThrowTick");
+            Scribe_Values.Look(ref InFlightUntil, "inFlightUntil");
             Scribe_Values.Look(ref ThrowRange, "throwRange", DefaultThrowRange);
             Scribe_Values.Look(ref StartedScreen, "startedScreen");
+            Scribe_Defs.Look(ref SmokeWeapon, "smokeWeapon");
+            Scribe_Values.Look(ref TurretsOnly, "turretsOnly");
             Scribe_Collections.Look(ref Assignments, "assignments", LookMode.Deep);
             Scribe_Collections.Look(ref Targets, "targets", LookMode.Deep);
-            Scribe_Collections.Look(ref approachRoute, "approachRoute", LookMode.Value);
+            Scribe_Collections.Look(ref ApproachRoute, "approachRoute", LookMode.Value);
             Assignments ??= new();
             Targets ??= new();
-            approachRoute ??= new();
+            ApproachRoute ??= new();
         }
     }
 
@@ -741,7 +841,8 @@ namespace RimSiege.Raids.Artillery
         public override void LordToilTick()
         {
             int now = GenTicks.TicksGame;
-            if (now % 15 != 0 || Raid.Smoke is not ArtillerySmoke smoke) return;
+            if (Raid.Smoke is not ArtillerySmoke smoke) return;
+            if (now % 10 != 0 && !(smoke.NextEvalTick > 0 && now >= smoke.NextEvalTick)) return;
             foreach (SmokeTarget target in smoke.Targets)
             {
                 if (!target.Required && !target.Covered && ArtillerySmoke.Screened(target.Cell, lord.Map))
@@ -751,6 +852,7 @@ namespace RimSiege.Raids.Artillery
                     target.ClaimedBy.CurJobDef != ArtillerySmokeDefOf.RS_LayArtillerySmoke))
                     target.ClaimedBy = null;
             }
+            smoke.EvaluateCarriers(lord, lord.Map, now);
 
             bool allScreened = smoke.Targets.All(target => target.IsDone(lord.Map));
             bool noCarriers = !smoke.Assignments.Any(assignment =>
@@ -765,39 +867,29 @@ namespace RimSiege.Raids.Artillery
     {
         protected override Job TryGiveJob(Pawn pawn)
         {
-            if (pawn?.RaceProps?.Humanlike != true) return null;
-            if (pawn.GetLord()?.LordJob is not LordJob_Artillery job || (job.Raid.Smoke ?? job.Raid.OptionalSmoke) is not ArtillerySmoke screen)
+            ArtillerySmoke screen = SmokeLoadout.ActiveScreen(pawn);
+            if (screen == null || !screen.StartedScreen || !ArtillerySmoke.Ready(pawn) || !screen.HasCarrier(pawn))
                 return null;
-            if (!screen.StartedScreen || !ArtillerySmoke.Ready(pawn)) return null;
-            if (screen.AssignmentFor(pawn) is not { Fighting: false } assignment) return null;
-            ThingWithComps grenade = ArtillerySmoke.FindSmokeGrenade(pawn);
-            Thing enemy = pawn.mindState.enemyTarget;
-            bool fighting = enemy is { Spawned: true } && pawn.HostileTo(enemy) ||
-                pawn.mindState.lastHarmTick >= GenTicks.TicksGame - 90;
-            if (grenade == null || fighting)
-            {
-                // An override query can run while the smoke driver is still casting.
-                if (pawn.CurJobDef == ArtillerySmokeDefOf.RS_LayArtillerySmoke) return null;
-                assignment.Fighting = true;
-                SmokeLoadout.Restore(assignment);
-                return null;
-            }
-
+            TribalNativeGroup tribal = TribalNativeGroup.For(pawn);
             int now = GenTicks.TicksGame;
+            if (tribal != null && pawn.CurJobDef == ArtillerySmokeDefOf.RS_LayArtillerySmoke)
+                return pawn.CurJob;
+            ThingWithComps grenade = screen.FindSmokeWeapon(pawn);
+            if (grenade == null || tribal == null && ArtillerySmoke.IsInCombat(pawn, now))
+                return null;
+
             Map map = pawn.Map;
             float throwRange = screen.ThrowRange > 0f ? screen.ThrowRange : ArtillerySmoke.DefaultThrowRange;
-            // Try throws or protected approaches in screen order.
-            var candidates = screen.Targets.Where(candidate => !candidate.IsDone(map) && now >= candidate.RetryAt &&
-                (candidate.ClaimedBy == null || candidate.ClaimedBy == pawn || now >= candidate.ClaimUntil))
+            // Try throws or protected approaches in screen order without mutating state until job start.
+            var candidates = screen.Targets.Where(candidate => candidate.CanClaim(pawn, map, now) &&
+                    (tribal == null || candidate.Required || pawn != tribal.CenterCarrier))
                 .OrderBy(candidate => candidate.Order)
+                .ThenBy(candidate => tribal != null && !candidate.Required)
                 .ThenBy(candidate => pawn.Position.DistanceToSquared(candidate.Stand)).ToList();
             SmokeTarget throwTarget = screen.CanAdvance(pawn.Position, map)
                 ? candidates.FirstOrDefault(target => CanThrowNow(pawn.Position, target, map, throwRange)) : null;
             if (throwTarget != null)
             {
-                Claim(throwTarget, pawn, now);
-                throwTarget.RetryAt = now + 100;
-                screen.LastThrowTick = now;
                 Job throwSmoke = JobMaker.MakeJob(ArtillerySmokeDefOf.RS_LayArtillerySmoke, throwTarget.Cell, grenade);
                 throwSmoke.maxNumStaticAttacks = 1;
                 return throwSmoke;
@@ -807,49 +899,55 @@ namespace RimSiege.Raids.Artillery
             foreach (SmokeTarget target in candidates)
             {
                 if (pathBudget == 0) break;
-                IntVec3 moveSpot = FindMoveSpot(pawn, target, map, throwRange, screen, ref pathBudget);
+                IntVec3 moveSpot = FindMoveSpot(pawn, target, map, throwRange, screen, ref pathBudget,
+                    requireThrowPosition: tribal != null);
                 if (!moveSpot.IsValid) continue;
-                Claim(target, pawn, now);
-                return JobMaker.MakeJob(JobDefOf.Goto, moveSpot, 90, checkOverrideOnExpiry: true);
+                Job move = JobMaker.MakeJob(ArtillerySmokeDefOf.RS_ApproachSmokeThrow, moveSpot, 90, checkOverrideOnExpiry: true);
+                move.targetC = target.Cell;
+                return move;
             }
 
-            return WaitForSmoke();
-
-            void Claim(SmokeTarget target, Pawn carrier, int tick)
+            if (tribal?.Waypoint is { IsValid: true } waypoint && waypoint != pawn.Position &&
+                pawn.CanReach(waypoint, PathEndMode.OnCell, Danger.Deadly))
             {
-                foreach (SmokeTarget previous in screen.Targets)
-                    if (previous.ClaimedBy == carrier) previous.ClaimedBy = null;
-                target.ClaimedBy = carrier;
-                target.ClaimUntil = tick + 100;
+                if (pawn.CurJob?.jobGiver == this && pawn.CurJobDef == JobDefOf.Goto && pawn.pather.Moving)
+                    return pawn.CurJob;
+                IntVec3 covered = CoveredApproach(pawn, waypoint, screen);
+                if (covered.IsValid)
+                    return JobMaker.MakeJob(JobDefOf.Goto, covered, 90, checkOverrideOnExpiry: true);
             }
+            return WaitForSmoke();
         }
 
         private static Job WaitForSmoke() => JobMaker.MakeJob(JobDefOf.Wait, 20, checkOverrideOnExpiry: true);
 
-        private static bool CanThrowNow(IntVec3 pos, SmokeTarget target, Map map, float throwRange)
-        {
-            float dist = IsoFloor.RangeDistance(pos, target.Cell, map);
-            return IsoFloor.SameFloor(pos, target.Cell, map) &&
-                dist >= 2f && dist <= throwRange &&
-                GenSight.LineOfSight(pos, target.Cell, map, skipFirstCell: true);
-        }
+        private static bool CanThrowNow(IntVec3 pos, SmokeTarget target, Map map, float throwRange) =>
+            SmokeCombat.CanThrowNow(pos, target.Cell, map, throwRange);
 
-        private static IntVec3 FindMoveSpot(Pawn pawn, SmokeTarget target, Map map, float throwRange, ArtillerySmoke screen, ref int pathBudget)
+        private static IntVec3 FindMoveSpot(Pawn pawn, SmokeTarget target, Map map, float throwRange,
+            ArtillerySmoke screen, ref int pathBudget, bool requireThrowPosition)
         {
             // Reuse the actual native route; a safe destination alone does not make the walk safe.
-            foreach (IntVec3 cell in GenAdjFast.AdjacentCells8Way(target.Stand).Prepend(target.Stand))
+            // Path and sight queries can refill GenAdjFast's shared result list.
+            IntVec3 stand = target.Stand;
+            IntVec3[] offsets = GenAdj.AdjacentCells;
+            for (int i = -1; i < offsets.Length; i++)
             {
+                IntVec3 cell = i < 0 ? stand : stand + offsets[i];
                 if (cell == pawn.Position || !cell.InBounds(map) || !cell.Standable(map) ||
+                    requireThrowPosition && !screen.CanAdvance(cell, map) ||
                     !CanThrowNow(cell, target, map, throwRange) ||
                     !map.pawnDestinationReservationManager.CanReserve(cell, pawn) ||
                     !pawn.CanReach(cell, PathEndMode.OnCell, Danger.Deadly)) continue;
                 pathBudget--;
-                return CoveredApproach(pawn, cell, screen, target, throwRange);
+                IntVec3 approach = CoveredApproach(pawn, cell, screen, target, throwRange);
+                if (!requireThrowPosition || CanThrowNow(approach, target, map, throwRange)) return approach;
+                if (pathBudget == 0) break;
             }
             return IntVec3.Invalid;
         }
 
-        private static IntVec3 CoveredApproach(Pawn pawn, IntVec3 destination, ArtillerySmoke screen,
+        internal static IntVec3 CoveredApproach(Pawn pawn, IntVec3 destination, ArtillerySmoke screen,
             SmokeTarget target = null, float throwRange = 0f)
         {
             Map map = pawn.Map;
@@ -877,7 +975,7 @@ namespace RimSiege.Raids.Artillery
         public JobGiver_ArtillerySmokeFollowers()
         {
             wanderRadius = Region.GridSize;
-            wanderDestValidator = (pawn, _, cell) =>
+            wanderDestValidator = (pawn, cell, _) =>
                 pawn.GetLord()?.LordJob is LordJob_Artillery { Raid.Smoke: { } screen } &&
                 screen.CanAdvance(cell, pawn.Map) && screen.CanFollowInto(pawn, cell);
         }
@@ -897,24 +995,18 @@ namespace RimSiege.Raids.Artillery
         }
     }
 
-    [HarmonyPatch(typeof(JobGiver_TakeAndEquip), "TryGiveJob")]
-    internal static class ArtillerySmokeEquipmentOwnership
-    {
-        private static bool Prefix(Pawn pawn) =>
-            !ArtilleryWeaponSwitch.InProgress(pawn) && !SmokeLoadout.IsSmokeLocked(pawn);
-    }
-
     [HarmonyPatch(typeof(Pawn_PathFollower), "TryEnterNextPathCell")]
     internal static class ArtillerySmokeMovement
     {
         private static bool Prefix(Pawn_PathFollower __instance, Pawn ___pawn)
         {
-            if (___pawn.mindState.duty?.def != ArtillerySmokeDefOf.RS_ArtillerySmoke ||
-                ___pawn.GetLord()?.LordJob is not LordJob_Artillery job ||
-                (job.Raid.Smoke ?? job.Raid.OptionalSmoke) is not ArtillerySmoke screen ||
-                screen.AssignmentFor(___pawn) is { Fighting: true } ||
+            ArtillerySmoke screen = SmokeLoadout.ActiveScreen(___pawn);
+            if (screen == null) return true;
+            bool tribal = TribalNativeGroup.For(___pawn) != null;
+            if (!tribal && screen.AssignmentFor(___pawn) is { Fighting: true } ||
                 screen.CanAdvance(__instance.nextCell, ___pawn.Map) &&
-                (screen.HasCarrier(___pawn) || screen.CanFollowInto(___pawn, __instance.nextCell))) return true;
+                (tribal || screen.HasCarrier(___pawn) || screen.CanFollowInto(___pawn, __instance.nextCell)))
+                return true;
 
             // Native repathing and disappearing smoke can invalidate the route after the job was assigned.
             ___pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);

@@ -78,7 +78,7 @@ namespace RimSiege.Raids
     {
         internal static bool Eligible(Pawn pawn, SiegeRaidMap map) => SiegeRaidMap.Enabled &&
             SiegeRoles.CanParticipateInTacticalAssault(pawn) &&
-            map.Party(pawn) != null && pawn.mindState.duty?.def == DutyDefOf.AssaultColony &&
+            map.Party(pawn) is { TribalSmoke: null } && pawn.mindState.duty?.def == DutyDefOf.AssaultColony &&
             pawn.GetLord()?.CurLordToil is LordToil_AssaultColony;
 
         protected override Job TryGiveJob(Pawn pawn)

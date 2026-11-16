@@ -84,6 +84,22 @@ namespace RimSiege.Raids.Artillery
             Review(raid.CampLord);
         }
 
+        internal static void ReviewTribal(SiegeRaidMap raids)
+        {
+            foreach (TribalSmokeState raid in raids.TribalSmokeStates)
+            {
+                Lord origin = raid.Groups.Select(group => group.Lord).FirstOrDefault(lord => lord != null);
+                if (origin == null || !origin.faction.HostileTo(Faction.OfPlayer) || ShouldRetreat(origin.faction, raid.InitialRaidSize,
+                    raid.ViolentLosses.Count, raid.ReachedDefenses, false, raid.RetreatSeed) == null) continue;
+
+                foreach (TribalNativeGroup group in raid.Groups)
+                {
+                    Review(group.Lord);
+                    if (group.Lord?.CurLordToil is LordToil_PanicFlee or LordToil_ExitMap) group.End();
+                }
+            }
+        }
+
         private static void Review(Lord lord)
         {
             if (lord == null || lord.CurLordToil is LordToil_PanicFlee or LordToil_ExitMap) return;
@@ -105,7 +121,8 @@ namespace RimSiege.Raids.Artillery
                 // The coordinated raid owns casualty retreats from arrival,
                 // even while its groups have separate native duty lords.
                 return lord.faction?.def.humanlikeFaction != true ||
-                    (artillery.IncidentForLord(lord) == null && artillery.ForLord(lord) == null);
+                    (artillery.IncidentForLord(lord) == null && artillery.ForLord(lord) == null &&
+                     lord.Map.GetComponent<SiegeRaidMap>().TribalSmokeFor(lord) == null);
             }
         }
 
@@ -122,15 +139,23 @@ namespace RimSiege.Raids.Artillery
                 ArtilleryRaid raid = artillery.ForPawn(pawn);
                 ArtilleryIncident incident = raid == null ? artillery.IncidentForLord(pawn.GetLord()) :
                     artillery.Incident(raid.IncidentKey);
-                if (incident?.ReachedDefenses == true || incident == null && (raid == null || raid.ReachedDefenses)) return;
+                TribalSmokeState tribal = SiegeRaidMap.Enabled && raid == null && incident == null
+                    ? map.GetComponent<SiegeRaidMap>().Party(pawn)?.TribalSmoke
+                    : null;
+                bool? reached = incident?.ReachedDefenses ?? raid?.ReachedDefenses ?? tribal?.ReachedDefenses;
+                if (reached != false) return;
 
-                IntVec3 cell = pawn.Position;
-                if (!map.areaManager.Home[cell] && !OnPlayerWall(cell, map)) return;
+                if (!AtPlayerDefenses(pawn)) return;
 
                 if (incident != null) incident.ReachedDefenses = true;
-                else raid.ReachedDefenses = true;
+                else if (raid != null) raid.ReachedDefenses = true;
+                else tribal.ReachedDefenses = true;
             }
         }
+
+        internal static bool AtPlayerDefenses(Pawn pawn) =>
+            pawn is { Spawned: true, Downed: false } && pawn.Position.InBounds(pawn.Map) &&
+            (pawn.Map.areaManager.Home[pawn.Position] || OnPlayerWall(pawn.Position, pawn.Map));
 
         private static bool OnPlayerWall(IntVec3 cell, Map map)
         {
@@ -178,7 +203,8 @@ namespace RimSiege.Raids.Artillery
                     cond is not (PawnLostCondition.Incapped or PawnLostCondition.Killed or PawnLostCondition.MadePrisoner) ||
                     !__instance.ownedPawns.Contains(pawn)) return;
                 ArtilleryMap artillery = __instance.Map.GetComponent<ArtilleryMap>();
-                __state = artillery.IncidentForLord(__instance)?.ViolentLosses ?? artillery.ForPawn(pawn)?.ViolentLosses;
+                __state = artillery.IncidentForLord(__instance)?.ViolentLosses ?? artillery.ForPawn(pawn)?.ViolentLosses ??
+                    __instance.Map.GetComponent<SiegeRaidMap>().TribalSmokeFor(__instance)?.ViolentLosses;
             }
 
             private static void Postfix(Lord __instance, Pawn pawn, HashSet<int> __state)

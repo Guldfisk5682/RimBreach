@@ -106,13 +106,18 @@ namespace RimSiege.Raids.Artillery
                 raid.InitialAmmoRequested = true;
                 NativeSiege.Supplement(ammoToil, raid);
             }
-            if (raid.OptionalSmoke is { } optional && (GenTicks.TicksGame + raid.Key) % 15 == 0 &&
-                (lord.CurLordToil is not LordToil_Siege || GenTicks.TicksGame >= optional.Deadline ||
-                 !optional.HasActiveWork(Map, GenTicks.TicksGame)))
+            int now = GenTicks.TicksGame;
+            if (raid.OptionalSmoke is { } optional &&
+                ((optional.NextEvalTick > 0 && now >= optional.NextEvalTick) || (now + raid.Key) % 10 == 0))
             {
-                optional.RestoreWeapons();
-                raid.OptionalSmoke = null;
-                if (lord.CurLordToil is LordToil_Siege) lord.CurLordToil.UpdateAllDuties();
+                optional.EvaluateCarriers(lord, Map, now);
+                if (lord.CurLordToil is not LordToil_Siege || now >= optional.Deadline ||
+                    !optional.HasActiveWork(Map, now))
+                {
+                    optional.RestoreWeapons();
+                    raid.OptionalSmoke = null;
+                    if (lord.CurLordToil is LordToil_Siege) lord.CurLordToil.UpdateAllDuties();
+                }
             }
             if (raid.WaitingForFirstGun && lord.CurLordToil is LordToil_Siege legacySiege)
             {

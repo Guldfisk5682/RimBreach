@@ -5,4 +5,9 @@
     <driverClass>RimSiege.Raids.Artillery.JobDriver_LayArtillerySmoke</driverClass>
     <reportString>throwing a smoke grenade.</reportString>
   </JobDef>
+  <JobDef>
+    <defName>RS_ApproachSmokeThrow</defName>
+    <driverClass>RimSiege.Raids.Artillery.JobDriver_ApproachSmokeThrow</driverClass>
+    <reportString>moving into position to throw smoke.</reportString>
+  </JobDef>
 </Defs>

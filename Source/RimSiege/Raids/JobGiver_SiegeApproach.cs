@@ -78,9 +78,12 @@ namespace RimSiege.Raids
         private static IntVec3 ExistingRouteStand(Pawn pawn, IntVec3 destination)
         {
             Map map = pawn.Map;
-            foreach (IntVec3 cell in GenAdjFast.AdjacentCells8Way(destination))
+            foreach (IntVec3 offset in GenAdj.AdjacentCells)
+            {
+                IntVec3 cell = destination + offset;
                 if (cell.InBounds(map) && cell.Standable(map) && pawn.CanReach(cell, PathEndMode.OnCell, Danger.Deadly))
                     return cell;
+            }
             return IntVec3.Invalid;
         }
     }
