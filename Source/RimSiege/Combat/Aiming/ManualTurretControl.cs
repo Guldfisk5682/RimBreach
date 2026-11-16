@@ -9,7 +9,9 @@ namespace RimSiege.Combat.Aiming
     // their ammo, cooldown and forced-target state without a class migration.
     public sealed class ManualTurretControl : DefModExtension
     {
-        internal static bool Applies(Building_TurretGunCE turret) => turret.PlayerControlled &&
+        internal static bool Applies(Building_TurretGunCE turret) =>
+            RimSiegeMod.Settings?.ModifySpecialWeapons == true &&
+            turret.PlayerControlled &&
             turret.def.HasModExtension<ManualTurretControl>();
     }
 

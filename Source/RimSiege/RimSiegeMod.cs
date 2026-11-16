@@ -48,6 +48,7 @@ namespace RimSiege
             }
             listing.CheckboxLabeled("RS_FortressFog".Translate(), ref Settings.FortressFog,
                 "RS_FortressFogDescription".Translate());
+            listing.CheckboxLabeled("RS_ModifySpecialWeapons".Translate(), ref Settings.ModifySpecialWeapons);
             listing.End();
         }
     }

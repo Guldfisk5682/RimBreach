@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LanguageData>
   <RS_IndirectOverheadObstruction>Overhead obstruction: shells may strike a floor or roof after launch.</RS_IndirectOverheadObstruction>
+  <RS_ModifySpecialWeapons>Modify special weapon behavior</RS_ModifySpecialWeapons>
 </LanguageData>

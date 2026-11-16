@@ -11,6 +11,7 @@ namespace RimSiege
         public bool MechSupportShield = true;
         public int MechShieldPoints = 5000;
         public bool ScaleArtilleryConstruction = true;
+        public bool ModifySpecialWeapons;
 
         public override void ExposeData()
         {
@@ -21,6 +22,7 @@ namespace RimSiege
             Scribe_Values.Look(ref MechShieldPoints, "mechShieldPoints", 5000);
             Scribe_Values.Look(ref ScaleArtilleryConstruction, "scaleArtilleryConstruction", true);
             Scribe_Values.Look(ref FortressFog, "fortressFog", false);
+            Scribe_Values.Look(ref ModifySpecialWeapons, "modifySpecialWeapons", false);
         }
     }
 }
