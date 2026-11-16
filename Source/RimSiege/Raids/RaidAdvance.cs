@@ -110,8 +110,8 @@ namespace RimSiege.Raids
         private static void Postfix(Verb __instance, LocalTargetInfo __0, bool __result)
         {
             if (!__result || !SiegeRaidMap.Enabled || __instance.IsMeleeAttack ||
-                __instance.Caster is not Pawn { Spawned: true, Downed: false } pawn || !pawn.RaceProps.Humanlike ||
-                pawn.equipment?.Primary?.def.IsMeleeWeapon == true ||
+                __instance.Caster is not Pawn { Spawned: true, Downed: false } pawn ||
+                !SiegeRoles.CanParticipateInTacticalAssault(pawn) || SiegeRoles.MeleeAssault(pawn) ||
                 __0.Thing is not Thing target || !pawn.HostileTo(target) || pawn.pather.Moving) return;
 
             if (pawn.GetLord()?.CurLordToil is not

@@ -81,13 +81,22 @@ namespace RimSiege.Raids
             pawn.RaceProps.IsMechanoid && pawn.BodySize >= 3f &&
             pawn.equipment?.Primary?.def.IsRangedWeapon == true;
 
+        internal static bool MeleeAssault(Pawn pawn) =>
+            pawn.equipment?.Primary is { } weapon
+                ? weapon.def.IsMeleeWeapon
+                : pawn.kindDef.canMeleeAttack;
+
         internal static int LadderPriority(Pawn pawn)
         {
             if (pawn.RaceProps.IsMechanoid)
-                return FireSupportMech(pawn) || MechBattery.IsConstructoid(pawn) ? 2 : 1;
-            if (pawn.GetLord()?.LordJob is LordJob_Artillery || pawn.mindState.duty?.def == DutyDefOf.Build ||
+            {
+                if (FireSupportMech(pawn) || MechBattery.IsConstructoid(pawn)) return 2;
+                return MeleeAssault(pawn) ? 0 : 1;
+            }
+            if (pawn.mindState.duty?.def == DutyDefOf.Build ||
                 pawn.CurJobDef == JobDefOf.ManTurret) return 3;
-            if (ArtilleryDeployment.HasMeleePrimary(pawn)) return 0;
+            if (MeleeAssault(pawn)) return 0;
+            if (pawn.GetLord()?.LordJob is LordJob_Artillery) return 3;
             return pawn.Faction.def.techLevel >= TechLevel.Industrial &&
                 ArtilleryDeployment.CarriesLadderPriorityEquipment(pawn) ? 1 : 2;
         }

@@ -122,7 +122,7 @@ namespace RimSiege.Raids
             LadderInventory.Restore(__instance);
             SiegeRaidMap raids = map.GetComponent<SiegeRaidMap>();
             SiegeParty party = raids.Party(__instance);
-            if (SiegeRaidMap.Enabled && party != null) raids.Issue(__instance, party);
+            if (SiegeRaidMap.Enabled && party != null) raids.QueueArrival(__instance);
             if (SiegeRaidMap.Enabled && party?.TribalSmoke is { ReachedDefenses: false } tribal &&
                 ArtilleryRetreat.AtPlayerDefenses(__instance))
                 tribal.ReachedDefenses = true;

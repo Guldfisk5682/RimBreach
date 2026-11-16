@@ -16,12 +16,14 @@ namespace RimSiege.Integration
         private bool readingTopComponents;
         private static readonly List<ClimbPlanner.Site> NoSites = new();
 
-        internal bool HasUsableSiegeLadder(Faction faction)
+        internal bool HasSiegeLadderOrClearance(Faction faction)
         {
             if (StairGrid.For(Map) is not { } grid) return false;
             foreach (VLink link in grid.links)
                 if (link.thing is Building_SiegeLadder ladder && (faction == null || ladder.Faction == faction) &&
-                    !link.topBlocker && StairGrid.UsableIn(link, Map))
+                    (link.topBlocker
+                        ? ladder.Spawned && canClearTop(ladder.top.GetEdifice(Map))
+                        : StairGrid.UsableIn(link, Map)))
                     return true;
             return false;
         }

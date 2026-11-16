@@ -31,10 +31,19 @@ namespace RimSiege.Raids
         private readonly Dictionary<Pawn, RouteStatus> ladderRoutes = new Dictionary<Pawn, RouteStatus>();
         private struct PlanStatus { internal int tick, version; internal bool available, placing; }
         private struct RouteStatus { internal int tick, version; internal bool available; }
+        private (Faction Faction, int Version, bool Exists) assaultLadder;
+
+        internal bool HasAssaultLadder(Faction faction)
+        {
+            int version = Planner.Version;
+            if (assaultLadder.Faction != faction || assaultLadder.Version != version)
+                assaultLadder = (faction, version, Planner.HasSiegeLadderOrClearance(faction));
+            return assaultLadder.Exists;
+        }
 
         internal bool HasLadderRoute(Pawn pawn)
         {
-            if (!Planner.HasUsableSiegeLadder(pawn.Faction)) return false;
+            if (!HasAssaultLadder(pawn.Faction)) return false;
             int now = Find.TickManager.TicksGame, version = Planner.Version;
             if (ladderRoutes.TryGetValue(pawn, out RouteStatus cached) && cached.version == version &&
                 now - cached.tick < RaidClimb.MemoTicks)
@@ -96,6 +105,7 @@ namespace RimSiege.Raids
         private readonly Dictionary<Pawn, SiegeParty> membership = new Dictionary<Pawn, SiegeParty>();
         private readonly Dictionary<Pawn, LadderKit> receivers = new();
         private readonly HashSet<LadderKit> dropped = new();
+        private readonly List<Pawn> arriving = new();
         private int nextId = 1;
         internal int ReachEpoch;
 
@@ -188,6 +198,8 @@ namespace RimSiege.Raids
                 Issue(pawn, Party(pawn));
         }
 
+        internal void QueueArrival(Pawn pawn) => arriving.Add(pawn);
+
         internal void Issue(Pawn pawn, SiegeParty party)
         {
             if (party.Issued >= (party.InitialCount * party.LadderQuotaPercent + 99) / 100 ||
@@ -264,6 +276,11 @@ namespace RimSiege.Raids
         public override void MapComponentTick()
         {
             int now = Find.TickManager.TicksGame;
+            if (arriving.Count != 0)
+            {
+                if (Enabled) IssueInOrder(arriving);
+                arriving.Clear();
+            }
             if (pendingSmokeRestores.Count != 0 && now % 300 == 0)
                 PrunePendingSmoke();
             if (Enabled && now % 60 == 0) ArtilleryRetreat.ReviewTribal(this);
@@ -307,9 +324,10 @@ namespace RimSiege.Raids
                 foreach (SiegeParty party in parties)
                     foreach (Pawn pawn in party.Members)
                         if (pawn != null && pawn.Map == map && Party(pawn) == party && LadderInventory.Get(pawn) != null &&
-                            Applies(pawn) && !SiegeRoles.FireSupportMech(pawn) && SiegeRoles.Eligible(pawn, party) &&
                             (pawn.CurJobDef == JobDefOf.AttackMelee || pawn.CurJobDef == JobDefOf.AttackStatic || pawn.CurJobDef == JobDefOf.Wait_Combat) &&
-                            !(pawn.CurJob.jobGiver is JobGiver_SiegeApproach))
+                            pawn.CurJob.jobGiver is not JobGiver_SiegeApproach && Applies(pawn) &&
+                            (SiegeRoles.MeleeAssault(pawn) || !party.HasAssaultLadder(pawn.Faction)) &&
+                            SiegeRoles.Eligible(pawn, party))
                             wake.Add(pawn);
             // Vanilla may forbid a kit after SpawnSetup; wake only after the drop has finished and enumeration has ended.
             foreach (Pawn pawn in wake) pawn.jobs.CheckForJobOverride();

@@ -8,9 +8,15 @@ namespace RimSiege.Raids
 {
     public sealed class ThinkNode_ConditionalLadderDuty : ThinkNode_Conditional
     {
-        protected override bool Satisfied(Pawn pawn) => LadderPerch.Get(pawn) != null ||
-            !SiegeRoles.FireSupportMech(pawn) && (LadderInventory.Get(pawn) != null ||
-                pawn.Map?.GetComponent<SiegeRaidMap>().RecoveryFor(pawn) != null);
+        protected override bool Satisfied(Pawn pawn)
+        {
+            if (LadderPerch.Get(pawn) != null) return true;
+            SiegeRaidMap raids = pawn.Map?.GetComponent<SiegeRaidMap>();
+            if (raids?.Applies(pawn) != true || raids.Party(pawn) is not { } party) return false;
+            if (SiegeRoles.MeleeAssault(pawn))
+                return LadderInventory.Get(pawn) != null || raids.RecoveryFor(pawn) != null;
+            return LadderInventory.Get(pawn) != null && !party.HasAssaultLadder(pawn.Faction);
+        }
     }
 
     public sealed class ThinkNode_ConditionalLadderAssault : ThinkNode_Conditional
