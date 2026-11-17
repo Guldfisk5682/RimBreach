@@ -17,6 +17,13 @@ namespace RimSiege.Raids.Artillery
 
         private static bool Stubborn => RimSiegeMod.Settings?.StubbornEnemies == true;
 
+        internal static bool IsResoluteHumanCrew(ArtilleryRaid raid) =>
+            RimSiegeMod.Settings?.ResoluteArtillery == true &&
+            raid?.Faction?.def.humanlikeFaction == true && raid.Kind != ArtilleryRaidKind.Mechanoid;
+
+        internal static bool ShouldDisablePostAssaultSupplies(ArtilleryRaid raid) =>
+            raid != null && raid.AssaultEnded && IsResoluteHumanCrew(raid);
+
         internal static void Review(ArtilleryMap artillery)
         {
             foreach (ArtilleryRaid raid in artillery.TrackedRaids.Where(raid => raid.IncidentKey == 0).ToArray())
@@ -37,38 +44,32 @@ namespace RimSiege.Raids.Artillery
                 foreach (ArtilleryRaid wave in waves) ReviewWave(wave);
                 foreach (Lord lord in incident.NativeLords.ToArray()) Review(lord);
             }
+            foreach (ArtilleryRaid raid in artillery.TrackedRaids.ToArray())
+                if (HasCrewCollapsed(raid)) Review(raid.CampLord);
         }
 
-        private static bool HasActiveBattery(ArtilleryRaid raid)
+        internal static bool HasActiveBattery(ArtilleryRaid raid)
         {
             Lord camp = raid?.CampLord;
             if (raid == null || raid.Phase == ArtilleryPhase.Abandoned || raid.Camp?.Guns == null ||
                 camp?.CurLordToil is not LordToil_Siege) return false;
-            foreach (ArtilleryPlacement gun in raid.Camp.Guns)
-            {
-                if (!gun.IsSupport || gun.Building is not { Spawned: true, Destroyed: false } building ||
-                    building.Faction != raid.Faction ||
-                    building.TryGetComp<CompBreakdownable>()?.BrokenDown == true) continue;
-                Pawn op = null;
-                if (gun.NeedsOperator)
-                {
-                    op = gun.Operator;
-                    if (op == null || op.Dead || op.Downed || !op.Spawned || op.Map != building.Map ||
-                        op.InMentalState || op.Faction != raid.Faction || op.GetLord() != camp ||
-                        !op.health.capacities.CapableOf(PawnCapacityDefOf.Manipulation))
-                        continue;
-                }
-                if (building is Building_TurretGunCE turret)
-                {
-                    CompAmmoUser ammo = turret.GetAmmo();
-                    if (ammo != null && ammo.UseAmmo && !ammo.HasAmmoOrMagazine &&
-                        (op == null || ArtilleryGunnerPatch.FindAmmo(op, turret) == null))
-                        continue;
-                }
-                return true;
-            }
-            return false;
+            return raid.Camp.Guns.Any(gun => ArtilleryCamp.IsActiveBuiltSupportGun(raid, camp, gun));
         }
+
+        internal static bool HasCrewCollapsed(ArtilleryRaid raid)
+        {
+            if (raid == null || !raid.InfantryReleased || raid.Phase == ArtilleryPhase.Abandoned ||
+                raid.CampLord?.CurLordToil is not LordToil_Siege campToil)
+                return false;
+            int lost = raid.CampViolentLosses.Count;
+            int alive = campToil.lord.ownedPawns.Count;
+            return lost >= 2 && ShouldRetreat(raid.Faction, lost + alive, lost, false, false, raid.RaidSeed) != null;
+        }
+
+        private static bool ShouldKeepCampStanding(ArtilleryRaid raid) =>
+            IsResoluteHumanCrew(raid) && raid.CampLord?.CurLordToil is LordToil_Siege &&
+            (raid.AssaultEnded || (raid.InfantryReleased && (raid.AssaultCreated || raid.AssaultLord != null))) &&
+            !HasCrewCollapsed(raid) && (raid.AssaultEnded || HasActiveBattery(raid));
 
         private static float? ShouldRetreat(Faction faction, int initial, int lost, bool reachedDefenses,
             bool breaches, int seed)
@@ -83,7 +84,7 @@ namespace RimSiege.Raids.Artillery
         {
             Review(raid.VanguardLord);
             Review(raid.AssaultLord);
-            Review(raid.CampLord);
+            if (!ShouldKeepCampStanding(raid)) Review(raid.CampLord);
         }
 
         internal static void ReviewTribal(SiegeRaidMap raids)
@@ -228,21 +229,25 @@ namespace RimSiege.Raids.Artillery
         private static class CountRaidLoss
         {
             private static void Prefix(Lord __instance, Pawn pawn, PawnLostCondition cond,
-                out HashSet<int> __state)
+                out (HashSet<int> Main, HashSet<int> Camp) __state)
             {
-                __state = null;
+                __state = default;
                 if (__instance.faction?.def.humanlikeFaction != true ||
                     cond is not (PawnLostCondition.Incapped or PawnLostCondition.Killed or PawnLostCondition.MadePrisoner) ||
                     !__instance.ownedPawns.Contains(pawn)) return;
                 ArtilleryMap artillery = __instance.Map.GetComponent<ArtilleryMap>();
-                __state = artillery.IncidentForLord(__instance)?.ViolentLosses ?? artillery.ForPawn(pawn)?.ViolentLosses ??
+                HashSet<int> main = artillery.IncidentForLord(__instance)?.ViolentLosses ?? artillery.ForPawn(pawn)?.ViolentLosses ??
                     __instance.Map.GetComponent<SiegeRaidMap>().TribalSmokeFor(__instance)?.ViolentLosses;
+                HashSet<int> camp = artillery.ForLord(__instance) is { InfantryReleased: true } campRaid &&
+                    campRaid.CampLord == __instance ? campRaid.CampViolentLosses : null;
+                __state = (main, camp);
             }
 
-            private static void Postfix(Lord __instance, Pawn pawn, HashSet<int> __state)
+            private static void Postfix(Lord __instance, Pawn pawn, (HashSet<int> Main, HashSet<int> Camp) __state)
             {
-                if (__state != null && !__instance.ownedPawns.Contains(pawn))
-                    __state.Add(pawn.thingIDNumber);
+                if (__instance.ownedPawns.Contains(pawn)) return;
+                __state.Main?.Add(pawn.thingIDNumber);
+                __state.Camp?.Add(pawn.thingIDNumber);
             }
         }
     }

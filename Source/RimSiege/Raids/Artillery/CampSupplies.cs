@@ -31,10 +31,9 @@ namespace RimSiege.Raids.Artillery
             return cells;
         }
 
-        private static bool FindSpot(Map map, CampPlan camp, HashSet<IntVec3> reserved, bool allowFogged,
+        private static bool FindSpot(Map map, IntVec3 center, HashSet<IntVec3> reserved, bool allowFogged,
             bool canRoofPunch, out IntVec3 spot)
         {
-            IntVec3 center = camp.Center;
             bool floors = IsoFloor.HasFloors(map);
             int floor = floors ? IsoFloor.FloorOf(center, map) : 0;
 
@@ -65,17 +64,18 @@ namespace RimSiege.Raids.Artillery
         }
 
         internal static bool CanSupply(Map map, CampPlan camp) => camp != null && camp.Center.InBounds(map) &&
-            FindSpot(map, camp, Reserved(map, camp), allowFogged: true, canRoofPunch: true, out _);
+            FindSpot(map, camp.Center, Reserved(map, camp), allowFogged: true, canRoofPunch: true, out _);
 
         internal static bool DropGroups(Map map, ArtilleryRaid raid, List<List<Thing>> groups, int openDelay,
-            bool instaDrop, bool leaveSlag, bool canRoofPunch, bool forbid, bool allowFogged, Faction faction)
+            bool instaDrop, bool leaveSlag, bool canRoofPunch, bool forbid, bool allowFogged, Faction faction,
+            IntVec3? dropCenter = null)
         {
             CampPlan camp = raid.Camp;
             var reserved = Reserved(map, camp);
             var spots = new List<IntVec3>(groups.Count);
             foreach (List<Thing> group in groups)
             {
-                if (!FindSpot(map, camp, reserved, allowFogged, canRoofPunch, out IntVec3 spot)) return false;
+                if (!FindSpot(map, dropCenter ?? camp.Center, reserved, allowFogged, canRoofPunch, out IntVec3 spot)) return false;
                 spots.Add(spot);
                 reserved.Add(spot);
             }

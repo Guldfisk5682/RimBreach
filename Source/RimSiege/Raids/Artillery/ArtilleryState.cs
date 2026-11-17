@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using RimSiege.Integration;
 using RimWorld;
 using Verse;
+using Verse.AI;
 using Verse.AI.Group;
 
 namespace RimSiege.Raids.Artillery
@@ -27,19 +28,23 @@ namespace RimSiege.Raids.Artillery
         internal List<Pawn> Members = new List<Pawn>();
         internal CampPlan Camp;
         internal ArtillerySmoke Smoke, OptionalSmoke;
+        internal ArtilleryBatterySupport BatterySupport;
         internal int InitialRaidSize;
         internal HashSet<int> ViolentLosses = new();
+        internal HashSet<int> CampViolentLosses = new();
         internal bool ReachedDefenses;
         internal bool RetreatAnnounced;
         internal bool SmokeAttempted, ShieldAssigned;
         internal bool Rolled, Selected, SuppliesDelivered;
         internal bool InfantryReleased, AssaultCreated, AssaultEnded, CompletionSent, CompletionPending;
+        internal bool PostAssaultCleaned;
         internal bool IndependentCrew;
         internal bool KeepsSeparateCrew => IndependentCrew || SmokeAttempted;
         internal bool HoldsForFirstGun => Kind == ArtilleryRaidKind.Breaching;
         internal int ConstructoidCount;
+        internal int LastBatteryEngagedTick;
         internal List<string> CompletionTags = new List<string>();
-        internal Lord CampLord, AssaultLord, VanguardLord;
+        internal Lord CampLord, AssaultLord, VanguardLord, ExitLord;
         internal bool WaitingForFirstGun, InitialAmmoRequested;
         internal bool ScreenedDeployment;
 
@@ -63,11 +68,14 @@ namespace RimSiege.Raids.Artillery
             Scribe_Deep.Look(ref Camp, "camp");
             Scribe_Deep.Look(ref Smoke, "smoke");
             Scribe_Deep.Look(ref OptionalSmoke, "optionalSmoke");
+            Scribe_Deep.Look(ref BatterySupport, "batterySupport");
             Scribe_Values.Look(ref SmokeAttempted, "smokeAttempted");
             Scribe_Values.Look(ref ShieldAssigned, "shieldAssigned");
             Scribe_Values.Look(ref InitialRaidSize, "initialRaidSize");
             Scribe_Collections.Look(ref ViolentLosses, "violentLossIds", LookMode.Value);
             ViolentLosses ??= new();
+            Scribe_Collections.Look(ref CampViolentLosses, "campViolentLossIds", LookMode.Value);
+            CampViolentLosses ??= new();
             Scribe_Values.Look(ref ReachedDefenses, "reachedDefenses");
             Scribe_Values.Look(ref RetreatAnnounced, "retreatAnnounced");
             Scribe_Values.Look(ref Rolled, "rolled");
@@ -79,12 +87,15 @@ namespace RimSiege.Raids.Artillery
             Scribe_Values.Look(ref AssaultEnded, "assaultEnded");
             Scribe_Values.Look(ref CompletionSent, "completionSent");
             Scribe_Values.Look(ref CompletionPending, "completionPending");
+            Scribe_Values.Look(ref PostAssaultCleaned, "postAssaultCleaned");
             Scribe_Values.Look(ref ConstructoidCount, "constructoidCount");
+            Scribe_Values.Look(ref LastBatteryEngagedTick, "lastBatteryEngagedTick");
             Scribe_Collections.Look(ref CompletionTags, "completionTags", LookMode.Value);
             CompletionTags ??= new List<string>();
             Scribe_References.Look(ref CampLord, "campLord");
             Scribe_References.Look(ref AssaultLord, "assaultLord");
             Scribe_References.Look(ref VanguardLord, "vanguardLord");
+            Scribe_References.Look(ref ExitLord, "exitLord");
             Scribe_Values.Look(ref WaitingForFirstGun, "waitingForFirstGun");
             Scribe_Values.Look(ref InitialAmmoRequested, "initialAmmoRequested");
         }
@@ -96,6 +107,20 @@ namespace RimSiege.Raids.Artillery
                 if (gun.Building != null && gun.Building.Spawned && !gun.Building.Destroyed && gun.Building.Faction == Faction)
                     gun.Building.Map.GetComponent<ArtilleryMap>().TrackGun(gun.Building, this, gun);
         }
+
+        internal ArtilleryLocalSmoke ActiveLocalSmokeFor(Pawn pawn)
+        {
+            ArtilleryLocalSmoke screen = pawn.mindState?.duty?.def == DutyDefOf.Build ? BatterySupport?.Screen : null;
+            return screen?.Work.HasCarrier(pawn) == true ? screen : null;
+        }
+
+        internal ArtilleryLocalSmoke LocalSmokeFor(Pawn pawn)
+        {
+            ArtilleryLocalSmoke battery = BatterySupport?.Screen;
+            return battery?.Work.AssignmentFor(pawn) != null ? battery : null;
+        }
+
+        internal ArtillerySmoke SmokeFor(Pawn pawn) => Smoke ?? LocalSmokeFor(pawn)?.Work ?? OptionalSmoke;
     }
 
     internal sealed class CampPlan : IExposable

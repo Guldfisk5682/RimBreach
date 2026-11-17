@@ -6,6 +6,7 @@ namespace RimSiege
     {
         public bool EnhancedAssault;
         public bool StubbornEnemies;
+        public bool ResoluteArtillery;
         public int ArtilleryChance = 3;
         public bool FortressFog;
         public bool MechSupportShield = true;
@@ -17,6 +18,7 @@ namespace RimSiege
         {
             Scribe_Values.Look(ref EnhancedAssault, "enhancedAssault", false);
             Scribe_Values.Look(ref StubbornEnemies, "stubbornEnemies", false);
+            Scribe_Values.Look(ref ResoluteArtillery, "resoluteArtillery", false);
             Scribe_Values.Look(ref ArtilleryChance, "artilleryChance", 3);
             Scribe_Values.Look(ref MechSupportShield, "mechSupportShield", true);
             Scribe_Values.Look(ref MechShieldPoints, "mechShieldPoints", 5000);

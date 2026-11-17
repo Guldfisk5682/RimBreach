@@ -73,6 +73,8 @@ namespace RimSiege.Raids.Artillery
         internal static HashSet<Pawn> Retained(ArtilleryRaid raid, Lord camp)
         {
             var crew = new HashSet<Pawn>(raid.Camp.Guns.Where(g => g.Operator != null).Select(g => g.Operator));
+            if (raid.BatterySupport is { } support && !ArtilleryRetreat.ShouldDisablePostAssaultSupplies(raid))
+                crew.UnionWith(support.Helpers.Where(p => p?.GetLord() == camp));
             int projects = ArtilleryCamp.Placements(raid.Camp).Count(Pending);
             if (projects == 0) return crew;
             var toil = (LordToil_Siege)camp.CurLordToil;
@@ -97,7 +99,9 @@ namespace RimSiege.Raids.Artillery
 
         internal static void RestoreBuilders(ArtilleryRaid raid, LordToil_Siege toil)
         {
-            if (!raid.SuppliesDelivered || !raid.InfantryReleased || !HasConstruction(raid)) return;
+            if (!raid.SuppliesDelivered || !raid.InfantryReleased ||
+                !(HasConstruction(raid) || !ArtilleryRetreat.ShouldDisablePostAssaultSupplies(raid) &&
+                    raid.BatterySupport?.Helpers.Count > 0)) return;
             foreach (Pawn pawn in Retained(raid, toil.lord))
                 if (CanBuild(toil, pawn)) NativeSiege.AssignBuilderDuty(toil, pawn);
         }

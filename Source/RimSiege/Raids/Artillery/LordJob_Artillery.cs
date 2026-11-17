@@ -107,6 +107,18 @@ namespace RimSiege.Raids.Artillery
                 NativeSiege.Supplement(ammoToil, raid);
             }
             int now = GenTicks.TicksGame;
+            if (lord.CurLordToil is LordToil_Siege toil)
+            {
+                if (ArtilleryRetreat.ShouldDisablePostAssaultSupplies(raid))
+                {
+                    if (!raid.PostAssaultCleaned) ArtilleryCamp.EnsurePostAssaultState(raid, toil);
+                }
+                else if (raid.BatterySupport != null && (now + raid.Key) % 120 == 0 &&
+                    raid.BatterySupport.Review(raid, toil, now))
+                {
+                    toil.UpdateAllDuties();
+                }
+            }
             if (raid.OptionalSmoke is { } optional &&
                 ((optional.NextEvalTick > 0 && now >= optional.NextEvalTick) || (now + raid.Key) % 10 == 0))
             {

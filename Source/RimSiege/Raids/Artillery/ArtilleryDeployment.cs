@@ -46,7 +46,7 @@ namespace RimSiege.Raids.Artillery
             {
                 if (raid.CampLord.ownedPawns.Any(p => !p.Dead && !p.Spawned && p.SpawnedOrAnyParentSpawned)) return;
                 raid.SmokeAttempted = true;
-                raid.Smoke = ArtillerySmoke.Plan(raid, out _);
+                raid.Smoke = ArtillerySmoke.Plan(raid, out IntVec3 rally, out _);
                 if (raid.Smoke != null)
                 {
                     foreach (Pawn pawn in raid.CampLord.ownedPawns)
@@ -54,7 +54,7 @@ namespace RimSiege.Raids.Artillery
                     raid.CampLord.GotoToil(raid.CampLord.Graph.lordToils.OfType<LordToil_ArtillerySmoke>().Single());
                     return;
                 }
-                EndSmoke(raid);
+                EndSmoke(raid, rally);
                 return;
             }
             if (raid.HoldsForFirstGun)
@@ -67,7 +67,7 @@ namespace RimSiege.Raids.Artillery
             if (raid.IndependentCrew) Release(raid);
         }
 
-        internal static void EndSmoke(ArtilleryRaid raid)
+        internal static void EndSmoke(ArtilleryRaid raid, IntVec3? fallbackRally = null)
         {
             Lord camp = raid.CampLord;
             ArtillerySmoke screen = raid.Smoke;
@@ -77,9 +77,9 @@ namespace RimSiege.Raids.Artillery
             screen?.RestoreWeapons();
             if (camp.CurLordToil != camp.Graph.StartingToil) camp.GotoToil(camp.Graph.StartingToil);
             var toil = camp.Graph.lordToils.OfType<LordToil_Siege>().Single();
-            if (!camp.ownedPawns.Any(pawn => ArtilleryCrew.CanBuild(toil, pawn)))
+            Pawn builder = camp.ownedPawns.FirstOrDefault(pawn => ArtilleryCrew.CanBuild(toil, pawn));
+            if (builder == null)
             {
-                if (!raid.HoldsForFirstGun) ReleaseVanguard(raid, camp, toil, screen);
                 raid.InfantryReleased = true;
                 ArtilleryCamp.TransferToAssault(raid, camp, camp.ownedPawns.ToList());
                 return;
@@ -88,31 +88,21 @@ namespace RimSiege.Raids.Artillery
             raid.ScreenedDeployment = screen?.CampCovered(raid, camp.Map) == true;
             try { EnterSiege(camp); }
             finally { raid.ScreenedDeployment = false; }
-            if (ShouldWaitForFirstGun(raid, camp)) return;
-            if (!raid.HoldsForFirstGun) ReleaseVanguard(raid, camp, toil, screen);
-            ArtilleryCamp.ReleaseInfantry(raid, camp, force: true);
-        }
-
-        private static void ReleaseVanguard(ArtilleryRaid raid, Lord camp, LordToil_Siege toil, ArtillerySmoke screen)
-        {
-            var specialists = Specialists(raid.Strategy, camp.ownedPawns);
-            var vanguard = camp.ownedPawns.Where(pawn => SiegeRoles.IsHumanlikeRaider(pawn) && ArtillerySmoke.Ready(pawn) &&
-                !specialists.Contains(pawn) && (!raid.SuppliesDelivered || !raid.Camp.Guns.Any(gun => gun.Operator == pawn)) &&
-                CarriesVanguardEquipment(pawn, screen?.AssignmentFor(pawn) != null)).ToList();
-            if (raid.SuppliesDelivered &&
-                !camp.ownedPawns.Any(pawn => !vanguard.Contains(pawn) && ArtilleryCrew.CanBuild(toil, pawn)))
+            if (ArtillerySmoke.Eligible(raid) && raid.SuppliesDelivered && camp.CurLordToil == toil)
             {
-                Pawn builder = vanguard.FirstOrDefault(pawn => ArtilleryCrew.CanBuild(toil, pawn));
-                if (builder != null) vanguard.Remove(builder);
+                IntVec3 follow = screen?.LastFollowCell is { IsValid: true } last ? last : screen?.Rally ??
+                    (fallbackRally is { IsValid: true } rally ? rally : builder.Position);
+                screen ??= new ArtillerySmoke { Rally = follow };
+                raid.BatterySupport = ArtilleryBatterySupport.Start(raid, toil, screen);
+                raid.BatterySupport.Review(raid, toil, GenTicks.TicksGame);
+                if (ShouldWaitForFirstGun(raid, camp))
+                {
+                    toil.UpdateAllDuties();
+                    return;
+                }
             }
-            if (vanguard.Count == 0) return;
-
-            camp.RemovePawns(vanguard);
-            foreach (Pawn pawn in vanguard)
-                if (pawn.CurJob != null) pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
-            raid.VanguardLord = LordMaker.MakeNewLord(raid.Faction,
-                new LordJob_AssaultColony(raid.Faction, canKidnap: false, canTimeoutOrFlee: false, canSteal: false), camp.Map, vanguard);
-            camp.Map.GetComponent<SiegeRaidMap>().IssueInOrder(vanguard);
+            else if (ShouldWaitForFirstGun(raid, camp)) return;
+            ArtilleryCamp.ReleaseInfantry(raid, camp, force: true);
         }
 
         internal static bool HasMeleePrimary(Pawn pawn) => pawn.equipment?.Primary?.def.IsMeleeWeapon == true;
@@ -120,12 +110,9 @@ namespace RimSiege.Raids.Artillery
         internal static bool CarriesLadderPriorityEquipment(Pawn pawn) =>
             CarriesSmokeBelt(pawn) || CarriesWeapon(pawn, weapon => IsThrown(weapon.def) && IsExplosive(weapon.def));
 
-        internal static bool CarriesVanguardEquipment(Pawn pawn) => CarriesVanguardEquipment(pawn, false);
-
-        private static bool CarriesVanguardEquipment(Pawn pawn, bool smokeCarrier) =>
+        internal static bool CarriesVanguardEquipment(Pawn pawn) =>
             pawn?.RaceProps?.Humanlike == true &&
             (CarriesSmokeBelt(pawn) || pawn.equipment?.Primary?.def is ThingDef weapon &&
-                (!smokeCarrier || !SmokeCombat.IsSmokeWeapon(weapon)) &&
                 (weapon.IsMeleeWeapon || IsThrown(weapon) || weapon.weaponTags?.Contains("CE_AI_Launcher") == true ||
                  IsExplosive(weapon) || pawn.equipment.PrimaryEq?.PrimaryVerb?.IsIncendiary_Ranged() == true));
 
@@ -151,7 +138,6 @@ namespace RimSiege.Raids.Artillery
             raid.WaitingForFirstGun = false;
             raid.OptionalSmoke?.RestoreWeapons();
             raid.OptionalSmoke = null;
-            if (raid.VanguardLord == null) ReleaseVanguard(raid, toil.lord, toil, null);
             ArtilleryCamp.ReleaseInfantry(raid, toil.lord, force: true);
         }
 

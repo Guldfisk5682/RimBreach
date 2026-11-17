@@ -32,11 +32,14 @@ namespace RimSiege.Raids.Artillery
         {
             AddFinishAction(condition =>
             {
-                if (castLaunched || castRejected) return;
-                if (castStarted && condition == JobCondition.Succeeded)
-                    SmokeLoadout.OnThrowRejected(pawn, job.targetA.Cell);
-                else
-                    SmokeLoadout.ReleaseThrowClaim(pawn, job.targetA.Cell);
+                if (!castLaunched && !castRejected)
+                {
+                    if (castStarted && condition == JobCondition.Succeeded)
+                        SmokeLoadout.OnThrowRejected(pawn, job.targetA.Cell);
+                    else
+                        SmokeLoadout.ReleaseThrowClaim(pawn, job.targetA.Cell);
+                }
+                SmokeLoadout.FinishLocalThrow(pawn);
             });
 
             yield return Toils_General.Do(() =>
@@ -113,9 +116,9 @@ namespace RimSiege.Raids.Artillery
         private static ArtillerySmoke ResolveArtilleryScreen(Pawn pawn)
         {
             if (pawn?.GetLord()?.LordJob is LordJob_Artillery job)
-                return job.Raid.Smoke ?? job.Raid.OptionalSmoke;
+                return job.Raid.SmokeFor(pawn);
             ArtilleryRaid raid = pawn?.MapHeld?.GetComponent<ArtilleryMap>()?.ForPawn(pawn);
-            return raid?.Smoke ?? raid?.OptionalSmoke;
+            return raid?.SmokeFor(pawn);
         }
 
         private static ArtillerySmoke ResolveScreen(Pawn pawn) =>
@@ -127,15 +130,20 @@ namespace RimSiege.Raids.Artillery
         internal static ArtillerySmoke ActiveScreen(Pawn pawn)
         {
             if (pawn?.RaceProps.Humanlike != true) return null;
-            if (pawn.mindState?.duty?.def == ArtillerySmokeDefOf.RS_ArtillerySmoke &&
-                pawn.GetLord()?.LordJob is LordJob_Artillery job)
-                return job.Raid.Smoke ?? job.Raid.OptionalSmoke;
+            if (pawn.GetLord()?.LordJob is LordJob_Artillery job)
+            {
+                DutyDef duty = pawn.mindState?.duty?.def;
+                if (duty == ArtillerySmokeDefOf.RS_ArtillerySmoke) return job.Raid.Smoke ?? job.Raid.OptionalSmoke;
+                return job.Raid.ActiveLocalSmokeFor(pawn)?.Work;
+            }
             TribalNativeGroup group = TribalNativeGroup.For(pawn);
             return group?.Includes(pawn) == true ? group.Screen : null;
         }
 
         internal static bool IsSmokeLocked(Pawn pawn) =>
-            pawn is { Dead: false, Downed: false } && ActiveScreen(pawn)?.HasCarrier(pawn) == true;
+            pawn is { Dead: false, Downed: false } && ActiveScreen(pawn) is { } screen && screen.HasCarrier(pawn) &&
+            (!screen.IsLocal || pawn.CurJobDef == ArtillerySmokeDefOf.RS_LayArtillerySmoke ||
+             pawn.CurJobDef == ArtillerySmokeDefOf.RS_ApproachSmokeThrow);
 
         internal static bool TryClaim(Pawn pawn, IntVec3 targetCell, int duration, bool throwing)
         {
@@ -144,10 +152,10 @@ namespace RimSiege.Raids.Artillery
                 !targetCell.InBounds(map) || !ArtillerySmoke.Ready(pawn)) return false;
 
             int now = GenTicks.TicksGame;
-            if (TribalNativeGroup.For(pawn) == null && ArtillerySmoke.IsInCombat(pawn, now)) return false;
+            if (!screen.IsLocal && TribalNativeGroup.For(pawn) == null && ArtillerySmoke.IsInCombat(pawn, now)) return false;
 
             float range = screen.ThrowRange > 0f ? screen.ThrowRange : ArtillerySmoke.DefaultThrowRange;
-            if (throwing && (!screen.CanAdvance(pawn.Position, map) ||
+            if (throwing && (!screen.CanThrowFrom(pawn.Position, map) ||
                 !SmokeCombat.CanThrowNow(pawn.Position, targetCell, map, range))) return false;
             return screen.TryClaim(pawn, targetCell, duration);
         }
@@ -167,6 +175,12 @@ namespace RimSiege.Raids.Artillery
 
         private static void NotifySmokeThrown(Pawn pawn, IntVec3 targetCell, int graceTicks) =>
             ResolveScreen(pawn)?.NotifySmokeThrown(pawn, targetCell, graceTicks);
+
+        internal static void FinishLocalThrow(Pawn pawn)
+        {
+            if (ResolveArtilleryScreen(pawn) is { IsLocal: true } screen)
+                Restore(screen.AssignmentFor(pawn));
+        }
 
         internal static void EquipGrenade(Pawn pawn, ThingWithComps grenade)
         {
@@ -194,6 +208,7 @@ namespace RimSiege.Raids.Artillery
             {
                 raid.Smoke?.OnPawnDowned(pawn);
                 raid.OptionalSmoke?.OnPawnDowned(pawn);
+                raid.LocalSmokeFor(pawn)?.Work.OnPawnDowned(pawn);
             }
             ResolveTribalScreen(pawn)?.OnPawnDowned(pawn);
         }
@@ -206,6 +221,7 @@ namespace RimSiege.Raids.Artillery
             {
                 raid.Smoke?.OnPawnKilled(pawn);
                 raid.OptionalSmoke?.OnPawnKilled(pawn);
+                raid.LocalSmokeFor(pawn)?.Work.OnPawnKilled(pawn);
             }
             SiegeRaidMap raids = pawn.MapHeld?.GetComponent<SiegeRaidMap>();
             if (raids != null)
@@ -229,7 +245,7 @@ namespace RimSiege.Raids.Artillery
             if (ResolveArtilleryScreen(pawn) is { } screen &&
                 screen.AssignmentFor(pawn) is { LoadoutRestored: false } artilleryAssignment &&
                 (pawn.GetLord()?.LordJob is not LordJob_Artillery || !screen.HasCarrier(pawn) ||
-                 pawn.mindState?.duty?.def != ArtillerySmokeDefOf.RS_ArtillerySmoke))
+                 ActiveScreen(pawn) != screen))
             {
                 artilleryAssignment.Fighting = true;
                 Restore(artilleryAssignment);
@@ -251,6 +267,7 @@ namespace RimSiege.Raids.Artillery
             }
             ClearAssignment(raid?.Smoke?.AssignmentFor(pawn));
             ClearAssignment(raid?.OptionalSmoke?.AssignmentFor(pawn));
+            ClearAssignment(raid?.LocalSmokeFor(pawn)?.Work.AssignmentFor(pawn));
             ClearAssignment(ResolveTribalScreen(pawn)?.AssignmentFor(pawn));
         }
 

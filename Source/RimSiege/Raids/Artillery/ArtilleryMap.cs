@@ -77,7 +77,8 @@ namespace RimSiege.Raids.Artillery
         {
             if (lord == null) return null;
             if (lord.LordJob is LordJob_Artillery camp) return ForKey(camp.RaidKey);
-            return raids.FirstOrDefault(r => r.CampLord == lord || r.AssaultLord == lord || r.VanguardLord == lord);
+            return raids.FirstOrDefault(r => r.CampLord == lord || r.AssaultLord == lord ||
+                r.VanguardLord == lord || r.ExitLord == lord);
         }
         internal bool HasActiveRaid(int id) => raids.Any(r => r.Id == id && r.Selected && r.Phase != ArtilleryPhase.Abandoned);
         internal bool IsOperator(Pawn pawn)
@@ -116,6 +117,7 @@ namespace RimSiege.Raids.Artillery
                 return;
             }
             if (raid.VanguardLord == removed) raid.VanguardLord = null;
+            if (raid.ExitLord == removed) raid.ExitLord = null;
             if (raid.AssaultLord == removed)
             {
                 raid.AssaultLord = null;
@@ -130,6 +132,11 @@ namespace RimSiege.Raids.Artillery
         {
             if (raid.AssaultEnded) return;
             raid.AssaultEnded = true;
+            if (ArtilleryRetreat.IsResoluteHumanCrew(raid))
+            {
+                if (raid.LastBatteryEngagedTick == 0) raid.LastBatteryEngagedTick = GenTicks.TicksGame;
+                return;
+            }
             // A completed first wave does not cancel independent construction or
             // manning. Crew retain their own native retreat/non-hostility paths.
             if (raid.KeepsSeparateCrew) return;
@@ -143,7 +150,8 @@ namespace RimSiege.Raids.Artillery
             if (raid == null || !raids.Contains(raid) ||
                 (raid.CampLord != null && map.lordManager.lords.Contains(raid.CampLord)) ||
                 (raid.AssaultLord != null && map.lordManager.lords.Contains(raid.AssaultLord)) ||
-                (raid.VanguardLord != null && map.lordManager.lords.Contains(raid.VanguardLord))) return;
+                (raid.VanguardLord != null && map.lordManager.lords.Contains(raid.VanguardLord)) ||
+                (raid.ExitLord != null && map.lordManager.lords.Contains(raid.ExitLord))) return;
             ArtilleryIncident incident = Incident(raid.IncidentKey);
             if (incident != null)
             {

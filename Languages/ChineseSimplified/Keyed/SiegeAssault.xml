@@ -5,6 +5,8 @@
   <RS_ArtilleryChance>特殊强化袭击出现概率：{0}</RS_ArtilleryChance>
   <RS_StubbornEnemies>顽固的敌人</RS_StubbornEnemies>
   <RS_StubbornEnemiesDescription>开启后，人类敌人在取得袭击进度时将更难被击退。</RS_StubbornEnemiesDescription>
+  <RS_ResoluteArtillery>意志坚强的炮兵</RS_ResoluteArtillery>
+  <RS_ResoluteArtilleryDescription>开启后，当主力部队撤退时，只要已建成的人类支援火炮仍有操作员与可用弹药，炮兵将继续坚守阵地操炮作战（不再获得额外空投补给）；当炮兵自身崩溃、火炮被毁、弹药耗尽或仅剩直射火炮且长时间无法接敌时才会撤离。</RS_ResoluteArtilleryDescription>
   <RS_LadderCarrier>〔架梯手〕</RS_LadderCarrier>
   <RS_ArtilleryRaidLabel_Ordinary>炮兵增援的{0}</RS_ArtilleryRaidLabel_Ordinary>
   <RS_ArtilleryRaidLabel_Breaching>炮兵增援的{0}</RS_ArtilleryRaidLabel_Breaching>
