@@ -40,7 +40,8 @@ namespace RimSiege.Raids
             SiegeRaidMap raids = map.GetComponent<SiegeRaidMap>();
             LadderKit kit = LadderInventory.Get(pawn);
             if (raids.Applies(pawn) && kit == null) return null;
-            Building_SiegeLadder building = LadderSite.Spawn(foot, top, faction, map, lift, allowBlocker);
+            bool allowBlockedTop = allowBlocker && (!raids.Applies(pawn) || LadderTopClearance.Allows(top.GetEdifice(map)));
+            Building_SiegeLadder building = LadderSite.Spawn(foot, top, faction, map, lift, allowBlockedTop);
             if (building != null && kit != null) LadderInventory.Consume(pawn, kit);
             if (building?.topBlocker == true && raids.Applies(pawn) && LadderTopClearance.Allows(top.GetEdifice(map)))
                 pawn.jobs.jobQueue.EnqueueFirst(JobMaker.MakeJob(PZVJobDefOf.PZ_LadderPerch, building, top));

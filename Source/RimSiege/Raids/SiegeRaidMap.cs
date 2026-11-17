@@ -29,8 +29,8 @@ namespace RimSiege.Raids
         internal RaidAdvance AdvanceFor(Pawn pawn) => Advances.Find(group => group.Members.Contains(pawn));
         private readonly Dictionary<Pawn, PlanStatus> jobs = new Dictionary<Pawn, PlanStatus>();
         private readonly Dictionary<Pawn, RouteStatus> ladderRoutes = new Dictionary<Pawn, RouteStatus>();
-        private struct PlanStatus { internal int tick, version; internal bool available, placing; }
-        private struct RouteStatus { internal int tick, version; internal bool available; }
+        private struct PlanStatus { internal int tick, version, floor; internal bool available, placing; }
+        private struct RouteStatus { internal int tick, version, floor; internal District district; internal bool available; }
         private (Faction Faction, int Version, bool Exists) assaultLadder;
 
         internal bool HasAssaultLadder(Faction faction)
@@ -45,23 +45,29 @@ namespace RimSiege.Raids
         {
             if (!HasAssaultLadder(pawn.Faction)) return false;
             int now = Find.TickManager.TicksGame, version = Planner.Version;
+            int floor = IsoFloor.FloorOf(pawn.Position, pawn.Map);
+            District district = pawn.GetDistrict(RegionType.Set_Passable);
             if (ladderRoutes.TryGetValue(pawn, out RouteStatus cached) && cached.version == version &&
-                now - cached.tick < RaidClimb.MemoTicks)
+                cached.floor == floor && cached.district == district && now - cached.tick < RaidClimb.MemoTicks)
                 return cached.available;
-            bool available = !Planner.Destination(pawn, true).IsValid && Planner.Destination(pawn, false).IsValid;
-            ladderRoutes[pawn] = new RouteStatus { tick = now, version = version, available = available };
+            bool available = !Planner.Destination(pawn, true).IsValid &&
+                (Planner.Destination(pawn, false).IsValid || Planner.ClimbEntryForBlockedAssault(pawn, pawn.Faction).IsValid);
+            ladderRoutes[pawn] = new RouteStatus { tick = now, version = version, floor = floor, district = district, available = available };
             return available;
         }
 
         internal Job Plan(Pawn pawn, bool placing = true)
         {
             int now = Find.TickManager.TicksGame, version = Planner.Version;
-            if (jobs.TryGetValue(pawn, out PlanStatus cached) && cached.placing == placing && cached.version == version && now - cached.tick < RaidClimb.MemoTicks && !cached.available)
+            int floor = IsoFloor.FloorOf(pawn.Position, pawn.Map);
+            int retryTicks = placing && LadderInventory.Get(pawn) != null ? 60 : RaidClimb.MemoTicks;
+            if (jobs.TryGetValue(pawn, out PlanStatus cached) && cached.placing == placing && cached.version == version &&
+                cached.floor == floor && now - cached.tick < retryTicks && !cached.available)
                 return null;
             Job job = placing && LadderInventory.Get(pawn) != null
                 ? Planner.JobFor(pawn, available: UnusedLanding(pawn))
                 : Planner.JobFor(pawn, placing);
-            jobs[pawn] = new PlanStatus { tick = now, version = version, available = job != null, placing = placing };
+            jobs[pawn] = new PlanStatus { tick = now, version = version, floor = floor, available = job != null, placing = placing };
             return job;
         }
 
@@ -137,6 +143,8 @@ namespace RimSiege.Raids
             Job cur = pawn.CurJob;
             if (cur == null) return true;
             if (cur.jobGiver is JobGiver_SiegeApproach) return false;
+            if (cur.jobGiver is JobGiver_AITrashColonyClose or JobGiver_AITrashBuildingsDistant or JobGiver_AISapper)
+                return true;
             JobDef def = cur.def;
             return def == JobDefOf.Wait || def == JobDefOf.Wait_Wander || def == JobDefOf.FollowClose ||
                 def == JobDefOf.Goto || def == JobDefOf.Wait_Combat;
@@ -287,8 +295,9 @@ namespace RimSiege.Raids
             for (int i = 0; i < parties.Count; i++)
                 parties[i].TribalSmoke?.Tick(now);
             bool recover = dropped.Count != 0 && now % 60 == 0;
+            bool checkStalledCombat = Enabled && parties.Count != 0 && now % 60 == 0;
             bool recheckCarriers = Enabled && parties.Count != 0 && now % RaidClimb.MemoTicks == 0;
-            if (!recover && !recheckCarriers) return;
+            if (!recover && !checkStalledCombat && !recheckCarriers) return;
             HashSet<Pawn> wake = new HashSet<Pawn>();
             if (recover)
             {
@@ -320,14 +329,26 @@ namespace RimSiege.Raids
                     if (selected != null && !Taking(selected, kit)) wake.Add(selected);
                 }
             }
+            if (checkStalledCombat)
+                foreach (SiegeParty party in parties)
+                    foreach (Pawn pawn in party.Members)
+                        if (pawn != null && pawn.Map == map && Party(pawn) == party && Applies(pawn) &&
+                            !pawn.Drafted && pawn.CurJobDef == JobDefOf.Wait_Combat && pawn.CurJob != null &&
+                            pawn.CurJob.startTick + 60 <= now && !pawn.stances.FullBodyBusy &&
+                            LadderPerch.Get(pawn) == null &&
+                            (pawn.CurrentEffectiveVerb is not { } verb || verb.verbProps.IsMeleeAttack ||
+                             !RaidStationaryCombat.HasAutoShootTarget(pawn, verb)))
+                            wake.Add(pawn);
             if (recheckCarriers)
                 foreach (SiegeParty party in parties)
                     foreach (Pawn pawn in party.Members)
                         if (pawn != null && pawn.Map == map && Party(pawn) == party && LadderInventory.Get(pawn) != null &&
-                            (pawn.CurJobDef == JobDefOf.AttackMelee || pawn.CurJobDef == JobDefOf.AttackStatic || pawn.CurJobDef == JobDefOf.Wait_Combat) &&
+                            (pawn.CurJobDef == JobDefOf.AttackMelee || pawn.CurJobDef == JobDefOf.AttackStatic ||
+                             pawn.CurJobDef == JobDefOf.Wait_Combat || pawn.CurJobDef == JobDefOf.Goto) &&
                             pawn.CurJob.jobGiver is not JobGiver_SiegeApproach && Applies(pawn) &&
-                            (SiegeRoles.MeleeAssault(pawn) || !party.HasAssaultLadder(pawn.Faction)) &&
-                            SiegeRoles.Eligible(pawn, party))
+                            SiegeRoles.CloseAssault(pawn) &&
+                            SiegeRoles.Eligible(pawn, party) &&
+                            (pawn.CurJobDef != JobDefOf.Goto || !party.Planner.Destination(pawn, true).IsValid))
                             wake.Add(pawn);
             // Vanilla may forbid a kit after SpawnSetup; wake only after the drop has finished and enumeration has ended.
             foreach (Pawn pawn in wake) pawn.jobs.CheckForJobOverride();

@@ -49,21 +49,37 @@ namespace RimSiege.Raids
             return body;
         }
 
+        internal static bool HasAutoShootTarget(Pawn pawn, Verb verb)
+        {
+            if (verb == null || verb.verbProps.IsMeleeAttack) return false;
+            TargetScanFlags flags = TargetScanFlags.NeedLOSToAll | TargetScanFlags.NeedThreat | TargetScanFlags.NeedAutoTargetable;
+            if (verb.IsIncendiary_Ranged()) flags |= TargetScanFlags.NeedNonBurning;
+            return AttackTargetFinder.BestShootTargetFromCurrentPosition(pawn, flags) != null;
+        }
+
         private static bool TryPreferJob(bool canHit, Pawn pawn, out Job job)
         {
             job = null;
-            if (!SiegeRaidMap.Enabled || SiegeRoles.MeleeAssault(pawn)) return false;
+            // The native job giver has already handled melee and selected a ranged verb.
+            if (!SiegeRaidMap.Enabled) return false;
             SiegeRaidMap raids = pawn.Map.GetComponent<SiegeRaidMap>();
             if (!raids.Applies(pawn)) return false;
 
             if (!canHit)
             {
-                // Fall through to the duty's ladder node when the raider can use an existing route.
-                return raids.Party(pawn).HasLadderRoute(pawn);
+                // Let the duty's ladder node open a route (or let close-assault use an existing route) before repositioning.
+                SiegeParty party = raids.Party(pawn);
+                return SiegeRoles.CanOpenLadderRoute(pawn, party) ||
+                    (SiegeRoles.CloseAssault(pawn) && party.HasLadderRoute(pawn));
             }
+
+            if (SiegeRoles.CloseAssault(pawn)) return false;
 
             if (!pawn.Position.WalkableBy(pawn.Map, pawn) ||
                 !pawn.Map.pawnDestinationReservationManager.CanReserve(pawn.Position, pawn, pawn.Drafted))
+                return false;
+
+            if (pawn.CurrentEffectiveVerb is not { } effectiveVerb || !HasAutoShootTarget(pawn, effectiveVerb))
                 return false;
 
             pawn.pather.StopDead();

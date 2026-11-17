@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
+using ProjectZ;
 using RimSiege.Integration;
 using RimSiege.Raids.Artillery;
 using RimWorld;
@@ -111,7 +112,8 @@ namespace RimSiege.Raids
         {
             if (!__result || !SiegeRaidMap.Enabled || __instance.IsMeleeAttack ||
                 __instance.Caster is not Pawn { Spawned: true, Downed: false } pawn ||
-                !SiegeRoles.CanParticipateInTacticalAssault(pawn) || SiegeRoles.MeleeAssault(pawn) ||
+                !SiegeRoles.CanParticipateInTacticalAssault(pawn) || SiegeRoles.CloseAssault(pawn) ||
+                SmokeCombat.IsSmokeWeapon(__instance.EquipmentSource?.def) || LadderPerch.Get(pawn) != null ||
                 __0.Thing is not Thing target || !pawn.HostileTo(target) || pawn.pather.Moving) return;
 
             if (pawn.GetLord()?.CurLordToil is not

@@ -35,10 +35,6 @@ namespace RimSiege.Integration
         private readonly Func<int> epoch;
         private RouteGraph main;
         private int synchronizedEpoch = -1;
-        private bool checkingRoute, selectingTarget;
-        private IntVec3 reachableTarget;
-        private delegate Thing TargetPicker(Pawn pawn, Lord lord, RouteGraph graph, int startComp, ClimbPlans plans, out bool anyReachable);
-        private static readonly TargetPicker PickTarget = AccessTools.MethodDelegate<TargetPicker>(AccessTools.Method(typeof(RaidClimb), "PickTarget"));
 
         internal IsoSiegePlanner(Map map, Func<int> epoch, Func<Thing, bool> canClearTop)
         {
@@ -73,34 +69,134 @@ namespace RimSiege.Integration
         private static LocalTargetInfo RaidFocus(PawnDuty duty) =>
             duty == null || duty.def == DutyDefOf.Escort ? LocalTargetInfo.Invalid : duty.focus;
 
-        internal IntVec3 Destination(Pawn pawn, bool withoutClimbing)
+        internal IntVec3 Destination(Pawn pawn, bool withoutClimbing) =>
+            Destination(pawn, withoutClimbing, out _);
+
+        internal IntVec3 Destination(Pawn pawn, bool withoutClimbing, out Thing targetThing)
         {
-            Synchronize(pawn);
-            IsoSiegePlanner previous = Active;
-            Active = this;
-            try
+            targetThing = null;
+            if (Map.regionDirtyer.AnyDirty) Map.regionAndRoomUpdater.TryRebuildDirtyRegionsAndRooms();
+            main = RouteGraph.For(Map);
+            if (main == null || pawn == null || !pawn.Spawned) return IntVec3.Invalid;
+
+            TraverseParms traversal = TraverseParms.For(pawn);
+            LocalTargetInfo focus = RaidFocus(pawn.mindState?.duty);
+            if (focus.IsValid)
             {
-                IntVec3 destination = RaidFocus(pawn.mindState?.duty).Cell;
-                if (!destination.IsValid)
+                bool focusReached = withoutClimbing
+                    ? main.FloorReach(pawn.Position, focus, PathEndMode.Touch, traversal)
+                    : Map.reachability.CanReach(pawn.Position, focus, PathEndMode.Touch, traversal);
+                if (focusReached)
                 {
-                    Lord lord = pawn.GetLord();
-                    int startComp = ClimbPlanner.CompAt(Graph, pawn.Position, Map);
-                    if (lord == null || startComp == int.MinValue) return IntVec3.Invalid;
-                    reachableTarget = IntVec3.Invalid;
-                    selectingTarget = true;
-                    Thing target = PickTarget(pawn, lord, Graph, startComp, Plans, out bool anyReachable);
-                    selectingTarget = false;
-                    destination = anyReachable ? reachableTarget : target?.Position ?? IntVec3.Invalid;
+                    targetThing = focus.Thing;
+                    return focus.Cell;
                 }
-                if (!destination.IsValid) return IntVec3.Invalid;
-                checkingRoute = true;
-                TraverseParms traversal = TraverseParms.For(pawn);
-                bool reached = withoutClimbing
-                    ? main.FloorReach(pawn.Position, destination, PathEndMode.Touch, traversal)
-                    : Map.reachability.CanReach(pawn.Position, destination, PathEndMode.Touch, traversal);
-                return reached ? destination : IntVec3.Invalid;
+                return IntVec3.Invalid;
             }
-            finally { selectingTarget = checkingRoute = false; Active = previous; }
+
+            Lord lord = pawn.GetLord();
+            List<IAttackTarget> potential = Map.attackTargetsCache.GetPotentialTargetsFor(pawn);
+            Thing best = null;
+            float bestDist = float.MaxValue;
+            for (int i = 0; i < potential.Count; i++)
+            {
+                IAttackTarget candidate = potential[i];
+                Thing thing = candidate?.Thing;
+                if (thing == null || !thing.Spawned || thing.Map != Map ||
+                    candidate.ThreatDisabled(pawn) || !AttackTargetFinder.IsAutoTargetable(candidate) ||
+                    !pawn.HostileTo(thing) || lord?.LordJob?.ValidateAttackTarget(pawn, thing) == false)
+                    continue;
+
+                float dist = IsoFloor.Distance3D(pawn.Position, thing.Position, Map);
+                if (dist >= bestDist) continue;
+                bool reached = withoutClimbing
+                    ? main.FloorReach(pawn.Position, thing, PathEndMode.Touch, traversal)
+                    : Map.reachability.CanReach(pawn.Position, thing, PathEndMode.Touch, traversal);
+                if (!reached) continue;
+
+                best = thing;
+                bestDist = dist;
+            }
+            targetThing = best;
+            return best?.Position ?? IntVec3.Invalid;
+        }
+
+        internal IntVec3 ClimbEntryForBlockedAssault(Pawn pawn, Faction faction)
+        {
+            if (Map.regionDirtyer.AnyDirty) Map.regionAndRoomUpdater.TryRebuildDirtyRegionsAndRooms();
+            main = RouteGraph.For(Map);
+            if (main == null || pawn == null || !pawn.Spawned) return IntVec3.Invalid;
+            if (StairGrid.For(Map) is not { } grid) return IntVec3.Invalid;
+
+            TraverseParms traversal = TraverseParms.For(pawn);
+            TraverseParms digTraversal = TraverseParms.For(pawn, Danger.Deadly, TraverseMode.PassAllDestroyableThings);
+            List<IAttackTarget> potential = Map.attackTargetsCache.GetPotentialTargetsFor(pawn);
+            Lord lord = pawn.GetLord();
+
+            IntVec3 bestTop = IntVec3.Invalid;
+            float bestDist = float.MaxValue;
+            foreach (VLink link in grid.links)
+            {
+                if (link.thing is not Building_SiegeLadder ladder || link.topBlocker ||
+                    (faction != null && ladder.Faction != faction) || !StairGrid.UsableIn(link, Map))
+                    continue;
+                IntVec3 top = link.top;
+                if (!top.InBounds(Map) || !top.StandableBy(Map, pawn)) continue;
+                if (main.FloorReach(pawn.Position, top, PathEndMode.OnCell, traversal) ||
+                    !Map.reachability.CanReach(pawn.Position, top, PathEndMode.OnCell, traversal))
+                    continue;
+
+                float dist = IsoFloor.Distance3D(pawn.Position, ladder.foot, Map);
+                if (dist >= bestDist) continue;
+
+                bool leadsToTarget = false;
+                for (int i = 0; i < potential.Count; i++)
+                {
+                    IAttackTarget candidate = potential[i];
+                    Thing thing = candidate?.Thing;
+                    if (thing == null || !thing.Spawned || thing.Map != Map ||
+                        candidate.ThreatDisabled(pawn) || !AttackTargetFinder.IsAutoTargetable(candidate) ||
+                        !pawn.HostileTo(thing) || lord?.LordJob?.ValidateAttackTarget(pawn, thing) == false)
+                        continue;
+                    if (Map.reachability.CanReach(top, thing, PathEndMode.Touch, digTraversal))
+                    {
+                        leadsToTarget = true;
+                        break;
+                    }
+                }
+                if (!leadsToTarget) continue;
+
+                bestTop = top;
+                bestDist = dist;
+            }
+            return bestTop;
+        }
+
+        internal Building_SiegeLadder ActiveBlockedLadder(Pawn pawn, Faction faction)
+        {
+            if (StairGrid.For(Map) is not { } grid || pawn == null || !pawn.Spawned) return null;
+            if (Map.regionDirtyer.AnyDirty) Map.regionAndRoomUpdater.TryRebuildDirtyRegionsAndRooms();
+            main = RouteGraph.For(Map);
+            if (main == null) return null;
+
+            TraverseParms traversal = TraverseParms.For(pawn);
+            Building_SiegeLadder best = null;
+            float bestDist = float.MaxValue;
+            foreach (VLink link in grid.links)
+            {
+                if (link.thing is not Building_SiegeLadder ladder || !link.topBlocker || !ladder.Spawned ||
+                    (faction != null && ladder.Faction != faction) || !canClearTop(ladder.top.GetEdifice(Map)))
+                    continue;
+                if (LadderPerch.For(Map)?.Holder(ladder) == null) continue;
+                if (!main.FloorReach(pawn.Position, ladder.foot, PathEndMode.OnCell, traversal)) continue;
+                float dist = IsoFloor.Distance3D(pawn.Position, ladder.foot, Map);
+                if (dist < bestDist)
+                {
+                    best = ladder;
+                    bestDist = dist;
+                }
+            }
+            return best;
         }
 
         internal Job JobFor(Pawn pawn, bool placing = true, Predicate<IntVec3> available = null)
@@ -177,34 +273,7 @@ namespace RimSiege.Integration
         {
             private static void Postfix(Map map, ref RouteGraph __result)
             {
-                if (Active != null && !Active.checkingRoute && Active.Map == map) __result = Active.Graph;
-            }
-        }
-
-        [HarmonyPatch(typeof(RaidClimb), "PickTarget")]
-        private static class ReachableTargetBinding
-        {
-            private static int Component(RouteGraph graph, IntVec3 cell, Map map, int startComp)
-            {
-                int component = ClimbPlanner.CompAt(graph, cell, map);
-                // Iso returns only a flag when it finds a reachable target.
-                if (Active != null && Active.selectingTarget && Active.Graph == graph && Active.Map == map && component == startComp)
-                    Active.reachableTarget = cell;
-                return component;
-            }
-
-            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
-            {
-                MethodInfo compAt = AccessTools.Method(typeof(ClimbPlanner), nameof(ClimbPlanner.CompAt));
-                foreach (CodeInstruction instruction in instructions)
-                {
-                    if (instruction.Calls(compAt))
-                    {
-                        yield return new CodeInstruction(OpCodes.Ldarg_3).MoveLabelsFrom(instruction).MoveBlocksFrom(instruction);
-                        instruction.operand = AccessTools.Method(typeof(ReachableTargetBinding), nameof(Component));
-                    }
-                    yield return instruction;
-                }
+                if (Active != null && Active.Map == map) __result = Active.Graph;
             }
         }
 

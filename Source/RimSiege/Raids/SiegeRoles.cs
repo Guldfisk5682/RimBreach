@@ -86,6 +86,55 @@ namespace RimSiege.Raids
                 ? weapon.def.IsMeleeWeapon
                 : pawn.kindDef.canMeleeAttack;
 
+        internal static bool CloseAssault(Pawn pawn) =>
+            pawn != null && !FireSupportMech(pawn) && !MechBattery.IsConstructoid(pawn) &&
+            (MeleeAssault(pawn) || HasCloseAssaultPrimary(pawn));
+
+        internal static bool HasCloseAssaultPrimary(Pawn pawn) =>
+            pawn?.equipment?.Primary is { } primary &&
+            (IsExplosiveThrownWeapon(primary) || IsFlamethrower(primary));
+
+        internal static bool IsExplosiveThrownWeapon(ThingWithComps weapon)
+        {
+            if (weapon == null) return false;
+            ThingDef def = weapon.def;
+            ThingCategoryDef grenades = DefDatabase<ThingCategoryDef>.GetNamedSilentFail("Grenades");
+            bool thrown = def.weaponTags?.Contains("CE_AI_Grenade") == true ||
+                (grenades != null && def.IsWithinCategory(grenades)) ||
+                def.Verbs?.Any(v => typeof(Verb_ThrowGrenade).IsAssignableFrom(v.verbClass)) == true;
+            if (!thrown) return false;
+            Verb primaryVerb = weapon.TryGetComp<CompEquippable>()?.PrimaryVerb;
+            if (primaryVerb != null)
+            {
+                ThingDef projectile = (primaryVerb as Verb_LaunchProjectileCE)?.Projectile ?? primaryVerb.GetProjectile();
+                return IsExplosiveProjectile(projectile);
+            }
+            return def.Verbs?.Any(v => IsExplosiveProjectile(v.defaultProjectile)) == true;
+        }
+
+        private static bool IsExplosiveProjectile(ThingDef projectile)
+        {
+            ProjectileProperties props = projectile?.projectile;
+            if (props?.damageDef == null || !props.damageDef.harmsHealth) return false;
+            return props.explosionRadius > 0f || props.damageDef.isExplosive ||
+                typeof(ProjectileCE_Explosive).IsAssignableFrom(projectile.thingClass);
+        }
+
+        internal static bool IsFlamethrower(ThingWithComps weapon)
+        {
+            if (weapon == null || IsExplosiveThrownWeapon(weapon)) return false;
+            Verb verb = weapon.TryGetComp<CompEquippable>()?.PrimaryVerb;
+            if (verb == null || verb.IsMeleeAttack || verb.verbProps.range > 16f) return false;
+            if (verb.IsIncendiary_Ranged()) return true;
+            ThingDef proj = (verb as Verb_LaunchProjectileCE)?.Projectile ?? verb.GetProjectile();
+            DamageDef damage = proj?.projectile?.damageDef;
+            return damage != null && (damage == DamageDefOf.Flame || damage == DamageDefOf.Burn ||
+                damage.hediff == DamageDefOf.Burn.hediff);
+        }
+
+        internal static bool CanOpenLadderRoute(Pawn pawn, SiegeParty party) =>
+            LadderInventory.Get(pawn) != null && !party.HasAssaultLadder(pawn.Faction) && Eligible(pawn, party);
+
         internal static int LadderPriority(Pawn pawn)
         {
             if (pawn.RaceProps.IsMechanoid)
@@ -97,6 +146,7 @@ namespace RimSiege.Raids
                 pawn.CurJobDef == JobDefOf.ManTurret) return 3;
             if (MeleeAssault(pawn)) return 0;
             if (pawn.GetLord()?.LordJob is LordJob_Artillery) return 3;
+            if (HasCloseAssaultPrimary(pawn)) return 1;
             return pawn.Faction.def.techLevel >= TechLevel.Industrial &&
                 ArtilleryDeployment.CarriesLadderPriorityEquipment(pawn) ? 1 : 2;
         }
@@ -106,6 +156,7 @@ namespace RimSiege.Raids
             if (pawn.mindState?.duty?.def == DutyDefOf.Breaching || pawn.mindState?.duty?.def == DutyDefOf.Sapper)
                 return true;
             if (ArtilleryDeployment.HasMeleePrimary(pawn)) return false;
+            if (pawn.equipment?.Primary is { } primary && IsExplosiveThrownWeapon(primary)) return false;
             return !(pawn.Faction.def.techLevel >= TechLevel.Industrial &&
                 ArtilleryDeployment.CarriesLadderPriorityEquipment(pawn) &&
                 (pawn.equipment?.Primary == null || !DemolitionWeapon(pawn.equipment.Primary) ||
