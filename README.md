@@ -12,6 +12,7 @@ Take on a contract to capture a fortified outpost for a reward, or destroy a hos
 
 ## Requirements
 
+- RimWorld Biotech
 - [Harmony](https://github.com/pardeike/HarmonyRimWorld)
 - [Combat Extended](https://github.com/CombatExtended-Continued/CombatExtended)
 - [Combat Extended Armory](https://github.com/CombatExtended-Continued/CombatExtendedArmory)

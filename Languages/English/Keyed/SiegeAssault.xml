@@ -5,8 +5,6 @@
   <RS_ArtilleryChance>Chance of a special enhanced raid: {0}</RS_ArtilleryChance>
   <RS_StubbornEnemies>Stubborn enemies</RS_StubbornEnemies>
   <RS_StubbornEnemiesDescription>Human raiders are harder to drive off once they gain ground in an assault.</RS_StubbornEnemiesDescription>
-  <RS_ResoluteArtillery>Resolute artillery crew</RS_ResoluteArtillery>
-  <RS_ResoluteArtilleryDescription>When enabled, human artillery crews stand their ground and keep operating built support guns after the main force retreats (without receiving further supply drops), withdrawing only if the crew collapses, guns are lost, usable ammunition runs out, or only direct-fire guns remain idle with no close threat.</RS_ResoluteArtilleryDescription>
   <RS_LadderCarrier>[Ladder carrier]</RS_LadderCarrier>
   <RS_ArtilleryRaidLabel_Ordinary>Artillery-supported {0}</RS_ArtilleryRaidLabel_Ordinary>
   <RS_ArtilleryRaidLabel_Breaching>Artillery-supported {0}</RS_ArtilleryRaidLabel_Breaching>
@@ -19,4 +17,7 @@
   <RS_ScaleArtilleryConstruction>Scale artillery construction speed with raid points</RS_ScaleArtilleryConstruction>
   <RS_MechSupportShield>Enable mechanoid rapid support shields</RS_MechSupportShield>
   <RS_MechShieldPoints>Minimum raid points for rapid support shields: {0}</RS_MechShieldPoints>
+  <RS_HumanMechEscorts>Allow mechanoid escorts in humanlike raids</RS_HumanMechEscorts>
+  <RS_HumanMechEscortsDescription>When enabled, humanlike factions with Industrial or higher technology will field mechanoid escorts as part of their raiding force. Enabling this option may significantly increase game difficulty.</RS_HumanMechEscortsDescription>
+  <RS_HumanMechMinPoints>Minimum raid points for mechanoid escorts: {0}</RS_HumanMechMinPoints>
 </LanguageData>

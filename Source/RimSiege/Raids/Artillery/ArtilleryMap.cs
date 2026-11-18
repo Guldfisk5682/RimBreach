@@ -77,8 +77,7 @@ namespace RimSiege.Raids.Artillery
         {
             if (lord == null) return null;
             if (lord.LordJob is LordJob_Artillery camp) return ForKey(camp.RaidKey);
-            return raids.FirstOrDefault(r => r.CampLord == lord || r.AssaultLord == lord ||
-                r.VanguardLord == lord || r.ExitLord == lord);
+            return raids.FirstOrDefault(r => r.CampLord == lord || r.AssaultLord == lord || r.VanguardLord == lord || r.MechEscortLord == lord);
         }
         internal bool HasActiveRaid(int id) => raids.Any(r => r.Id == id && r.Selected && r.Phase != ArtilleryPhase.Abandoned);
         internal bool IsOperator(Pawn pawn)
@@ -117,7 +116,7 @@ namespace RimSiege.Raids.Artillery
                 return;
             }
             if (raid.VanguardLord == removed) raid.VanguardLord = null;
-            if (raid.ExitLord == removed) raid.ExitLord = null;
+            if (raid.MechEscortLord == removed) raid.MechEscortLord = null;
             if (raid.AssaultLord == removed)
             {
                 raid.AssaultLord = null;
@@ -132,11 +131,6 @@ namespace RimSiege.Raids.Artillery
         {
             if (raid.AssaultEnded) return;
             raid.AssaultEnded = true;
-            if (ArtilleryRetreat.IsResoluteHumanCrew(raid))
-            {
-                if (raid.LastBatteryEngagedTick == 0) raid.LastBatteryEngagedTick = GenTicks.TicksGame;
-                return;
-            }
             // A completed first wave does not cancel independent construction or
             // manning. Crew retain their own native retreat/non-hostility paths.
             if (raid.KeepsSeparateCrew) return;
@@ -151,7 +145,7 @@ namespace RimSiege.Raids.Artillery
                 (raid.CampLord != null && map.lordManager.lords.Contains(raid.CampLord)) ||
                 (raid.AssaultLord != null && map.lordManager.lords.Contains(raid.AssaultLord)) ||
                 (raid.VanguardLord != null && map.lordManager.lords.Contains(raid.VanguardLord)) ||
-                (raid.ExitLord != null && map.lordManager.lords.Contains(raid.ExitLord))) return;
+                (raid.MechEscortLord != null && map.lordManager.lords.Contains(raid.MechEscortLord))) return;
             ArtilleryIncident incident = Incident(raid.IncidentKey);
             if (incident != null)
             {
@@ -214,6 +208,7 @@ namespace RimSiege.Raids.Artillery
             {
                 ArtilleryRaid raid = raids[i];
                 Index(raid);
+                ArtilleryRetreat.RestoreEscortExits(raid);
                 if (raid.InitialRaidSize == 0) raid.InitialRaidSize = raid.Members.Count;
                 if (raid.AssaultLord != null) raid.AssaultCreated = true;
                 if (raid.AssaultCreated && !raid.AssaultEnded &&

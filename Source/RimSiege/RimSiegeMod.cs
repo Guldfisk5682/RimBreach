@@ -30,11 +30,17 @@ namespace RimSiege
             {
                 listing.CheckboxLabeled("RS_StubbornEnemies".Translate(), ref Settings.StubbornEnemies,
                     "RS_StubbornEnemiesDescription".Translate());
-                listing.CheckboxLabeled("RS_ResoluteArtillery".Translate(), ref Settings.ResoluteArtillery,
-                    "RS_ResoluteArtilleryDescription".Translate());
                 listing.Label("RS_ArtilleryChance".Translate((Settings.ArtilleryChance / 10f).ToString("0.0")));
                 Settings.ArtilleryChance = Mathf.RoundToInt(listing.Slider(Settings.ArtilleryChance, 0f, 10f));
                 listing.CheckboxLabeled("RS_ScaleArtilleryConstruction".Translate(), ref Settings.ScaleArtilleryConstruction);
+                listing.CheckboxLabeled("RS_HumanMechEscorts".Translate(), ref Settings.HumanMechEscorts,
+                    "RS_HumanMechEscortsDescription".Translate());
+                if (Settings.HumanMechEscorts)
+                {
+                    listing.Label("RS_HumanMechMinPoints".Translate(Settings.HumanMechMinPoints));
+                    Settings.HumanMechMinPoints = 1000 * Mathf.RoundToInt(
+                        listing.Slider(Settings.HumanMechMinPoints / 1000f, 2, 10));
+                }
                 if (ModsConfig.BiotechActive)
                 {
                     listing.CheckboxLabeled("RS_MechSupportShield".Translate(), ref Settings.MechSupportShield);

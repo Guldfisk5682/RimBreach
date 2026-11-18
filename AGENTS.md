@@ -112,7 +112,7 @@ Dependency locations are configured through project properties: `RimWorldDir`, `
 
 Run relevant compilation, XML syntax, and diff checks. A successful build establishes static validity, not runtime regression coverage. Release builds write `Assemblies/RimSiege.dll`; dependency assemblies remain external. Do not force-add ignored RimSiege DLLs to Git.
 
-Required mods are Harmony, CE, CE Armory, IsoRim Waylith, IsoRimZ, and a compatible CEPack extension API build. Keep About and README consistent. Runtime packages contain metadata, `Assemblies/RimSiege.dll`, definitions, patches, translations, README, and license. Exclude source, build intermediates, dependencies, and `.local/`.
+RimBreach requires the Biotech DLC, Harmony, CE, CE Armory, IsoRim Waylith, IsoRimZ, and a compatible CEPack extension API build. Keep About and README consistent. Runtime packages contain metadata, `Assemblies/RimSiege.dll`, definitions, patches, translations, README, and license. Exclude source, build intermediates, dependencies, and `.local/`.
 
 Before deployment, verify the target folder, loaded mod combination, source revision, and DLL hash. Preserve installation-folder settings and workshop identity. Activate one local or workshop copy of each package. Coordinate package-ID changes with the actual enabled configuration. If a running process locks a DLL, finish the build first and follow the human's session-specific game-control authorization. Preserve existing saves.
 

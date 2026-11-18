@@ -34,13 +34,14 @@ namespace RimSiege.Raids.Artillery
         internal static void NotifyGunCompleted(ArtilleryRaid raid, ArtilleryPlacement gun, LordJob_Artillery job)
         {
             if (!raid.InitialAmmoRequested) job.InitialAmmoReady = true;
+            if (gun.IsSupport && raid.InfantryHold is { } hold) hold.ReviewRequested = true;
             if (!raid.InfantryReleased && raid.HoldsForFirstGun && gun.IsSupport)
                 job.RequestInfantryAssault();
         }
 
         internal static void Begin(ArtilleryRaid raid)
         {
-            if (raid.InfantryReleased || raid.Smoke != null || raid.CampLord == null ||
+            if (raid.InfantryReleased || raid.Smoke != null || raid.InfantryHold != null || raid.CampLord == null ||
                 raid.CampLord.CurLordToil is LordToil_ExitMap or LordToil_PanicFlee) return;
             if (!raid.SmokeAttempted && ArtillerySmoke.Eligible(raid) && raid.CampLord.CurLordToil == raid.CampLord.Graph.StartingToil)
             {
@@ -57,7 +58,7 @@ namespace RimSiege.Raids.Artillery
                 EndSmoke(raid, rally);
                 return;
             }
-            if (raid.HoldsForFirstGun)
+            if (raid.HoldsForFirstGun || HasMechEscorts(raid))
             {
                 if (raid.CampLord.CurLordToil == raid.CampLord.Graph.StartingToil &&
                     !raid.CampLord.ownedPawns.Any(p => !p.Dead && !p.Spawned && p.SpawnedOrAnyParentSpawned))
@@ -71,6 +72,7 @@ namespace RimSiege.Raids.Artillery
         {
             Lord camp = raid.CampLord;
             ArtillerySmoke screen = raid.Smoke;
+            LordJob_ArtilleryMechEscort.RejoinCamp(raid);
             raid.Smoke = null;
             foreach (Pawn pawn in camp.ownedPawns)
                 if (pawn.CurJob != null) pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
@@ -88,13 +90,25 @@ namespace RimSiege.Raids.Artillery
             raid.ScreenedDeployment = screen?.CampCovered(raid, camp.Map) == true;
             try { EnterSiege(camp); }
             finally { raid.ScreenedDeployment = false; }
-            if (ArtillerySmoke.Eligible(raid) && raid.SuppliesDelivered && camp.CurLordToil == toil)
+            if (raid.SuppliesDelivered && camp.CurLordToil == toil)
             {
                 IntVec3 follow = screen?.LastFollowCell is { IsValid: true } last ? last : screen?.Rally ??
                     (fallbackRally is { IsValid: true } rally ? rally : builder.Position);
                 screen ??= new ArtillerySmoke { Rally = follow };
-                raid.BatterySupport = ArtilleryBatterySupport.Start(raid, toil, screen);
-                raid.BatterySupport.Review(raid, toil, GenTicks.TicksGame);
+                int now = GenTicks.TicksGame;
+                if (ArtillerySmoke.Eligible(raid))
+                {
+                    raid.BatterySupport = ArtilleryBatterySupport.Start(raid, toil, screen);
+                    raid.BatterySupport.Review(raid, toil, now);
+                }
+                if (HasMechEscorts(raid) && HasPendingSupportGun(raid) && !HasCompletedSupportGun(raid))
+                {
+                    raid.InfantryHold = ArtilleryInfantryHold.Start(raid, toil, screen, follow);
+                    toil.UpdateAllDuties();
+                    raid.InfantryHold.ReviewSmoke(raid, camp, now);
+                    ReviewSmokeHold(raid, toil);
+                    return;
+                }
                 if (ShouldWaitForFirstGun(raid, camp))
                 {
                     toil.UpdateAllDuties();
@@ -102,6 +116,24 @@ namespace RimSiege.Raids.Artillery
                 }
             }
             else if (ShouldWaitForFirstGun(raid, camp)) return;
+            ArtilleryCamp.ReleaseInfantry(raid, camp, force: true);
+        }
+
+        private static bool HasMechEscorts(ArtilleryRaid raid) => raid.Kind != ArtilleryRaidKind.Mechanoid &&
+            raid.CampLord.ownedPawns.Any(p => !p.Dead && !p.Downed && SiegeRoles.IsHumanRaidEscortMech(p));
+
+        internal static void ReviewSmokeHold(ArtilleryRaid raid, LordToil_Siege toil)
+        {
+            Lord camp = toil.lord;
+            raid.InfantryHold.ReviewRequested = false;
+            ArtilleryIncident incident = camp.Map.GetComponent<ArtilleryMap>().IncidentForLord(camp);
+            int losses = (incident?.ViolentLosses ?? raid.ViolentLosses).Count;
+            int initial = incident?.InitialRaidSize ?? raid.InitialRaidSize;
+            bool pending = HasPendingSupportGun(raid);
+            bool cannotBuild = pending && !ArtilleryCrew.HasBuilder(camp) && !ArtilleryCrew.HasArrivingBuilder(raid, camp);
+            if (!HasCompletedSupportGun(raid) && pending && !cannotBuild && losses * 10 < initial &&
+                camp.ticksInToil < FirstGunWaitTicks) return;
+            if (cannotBuild) ArtilleryCamp.CancelUnfinished(raid);
             ArtilleryCamp.ReleaseInfantry(raid, camp, force: true);
         }
 

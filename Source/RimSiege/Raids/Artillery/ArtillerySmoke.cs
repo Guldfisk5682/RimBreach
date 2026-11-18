@@ -16,6 +16,8 @@ namespace RimSiege.Raids.Artillery
     internal static class ArtillerySmokeDefOf
     {
         public static DutyDef RS_ArtillerySmoke = null;
+        public static DutyDef RS_ArtilleryMechSmokeEscort = null;
+        public static DutyDef RS_ArtilleryInfantryHold = null;
         public static JobDef RS_LayArtillerySmoke = null;
         public static JobDef RS_ApproachSmokeThrow = null;
         public static ThingDef CE_Weapon_GrenadeSmoke = null;
@@ -112,16 +114,20 @@ namespace RimSiege.Raids.Artillery
         internal List<SmokeTarget> Targets = new();
         internal List<IntVec3> ApproachRoute = new();
         private IntVec3 followCell = IntVec3.Invalid;
+        private IntVec3 mechFollowCell = IntVec3.Invalid;
         private int nextFollowUpdate;
         private Pawn[] followingBehind = Array.Empty<Pawn>();
 
-        internal bool CanFollowInto(Pawn follower, IntVec3 cell) =>
-            followingBehind.All(carrier => !carrier.Spawned ||
-                IsoFloor.Distance3D(carrier.Position, cell, follower.Map) >= 15f ||
+        internal bool CanFollowInto(Pawn follower, IntVec3 cell)
+        {
+            float distance = SiegeRoles.IsHumanRaidEscortMech(follower) ? 1f : 15f;
+            return followingBehind.All(carrier => !carrier.Spawned ||
+                IsoFloor.Distance3D(carrier.Position, cell, follower.Map) >= distance ||
                 IsoFloor.Distance3D(carrier.Position, cell, follower.Map) >=
                     IsoFloor.Distance3D(carrier.Position, follower.Position, follower.Map));
+        }
 
-        internal IntVec3 FollowCell(Lord lord, IntVec3 campCenter)
+        internal IntVec3 FollowCell(Lord lord, IntVec3 campCenter, bool mechEscort = false)
         {
             int now = GenTicks.TicksGame;
             if (now >= nextFollowUpdate)
@@ -129,12 +135,13 @@ namespace RimSiege.Raids.Artillery
                 nextFollowUpdate = now + 45;
                 UpdateFollowCells(lord, campCenter);
             }
-            return followCell;
+            return mechEscort ? mechFollowCell : followCell;
         }
 
         private void UpdateFollowCells(Lord lord, IntVec3 campCenter)
         {
             followCell = IntVec3.Invalid;
+            mechFollowCell = IntVec3.Invalid;
 
             Pawn[] carriers = followingBehind = Assignments.Select(assignment => assignment.Pawn)
                 .Where(pawn => Ready(pawn) && HasCarrier(pawn) && pawn.GetLord() == lord &&
@@ -156,8 +163,10 @@ namespace RimSiege.Raids.Artillery
             for (int i = rear - 1; i >= 0; i--)
             {
                 IntVec3 cell = ApproachRoute[i];
-                if (carriers.Any(pawn => IsoFloor.Distance3D(pawn.Position, cell, map) < 17f) ||
-                    !CanAdvance(cell, map)) continue;
+                float distance = carriers.Min(pawn => IsoFloor.Distance3D(pawn.Position, cell, map));
+                if (distance < (mechFollowCell.IsValid ? 17f : 1f) || !CanAdvance(cell, map)) continue;
+                if (!mechFollowCell.IsValid) mechFollowCell = cell;
+                if (distance < 17f) continue;
                 LastFollowCell = followCell = cell;
                 return;
             }
@@ -842,7 +851,13 @@ namespace RimSiege.Raids.Artillery
                 if (pawn?.mindState == null) continue;
                 if (!pawn.RaceProps.Humanlike)
                 {
-                    SiegeRoles.AssignMainForceEscortDuty(lord, pawn, focus, Raid);
+                    if (pawn.RaceProps.IsMechanoid && Raid?.Kind != ArtilleryRaidKind.Mechanoid)
+                    {
+                        // In-progress saves may still have escorts in the camp lord.
+                        LordToil_ArtilleryMechEscort.Assign(pawn, focus);
+                    }
+                    else
+                        SiegeRoles.AssignMainForceEscortDuty(lord, pawn, focus, Raid);
                     continue;
                 }
                 pawn.mindState.duty = new PawnDuty(ArtillerySmokeDefOf.RS_ArtillerySmoke, focus)
@@ -981,13 +996,14 @@ namespace RimSiege.Raids.Artillery
                 null, PathEndMode.OnCell);
             if (path == null || !path.Found) return IntVec3.Invalid;
 
+            bool smokeOnly = pawn.mindState?.duty?.def == ArtillerySmokeDefOf.RS_ArtilleryInfantryHold;
             IntVec3 last = IntVec3.Invalid;
             var nodes = path.NodesReversed;
             for (int i = nodes.Count - 1; i >= 0; i--)
             {
                 IntVec3 node = nodes[i];
                 if (node == pawn.Position) continue;
-                if (!screen.CanAdvance(node, map)) break;
+                if (smokeOnly ? !ArtillerySmoke.Screened(node, map) : !screen.CanAdvance(node, map)) break;
                 last = node;
                 if (target != null && CanThrowNow(node, target, map, throwRange)) return node;
             }
@@ -996,28 +1012,94 @@ namespace RimSiege.Raids.Artillery
 
     }
 
+    public sealed class JobGiver_ArtilleryMechSmokeCombat : JobGiver_AIFightEnemies
+    {
+        protected override Thing FindAttackTarget(Pawn pawn)
+        {
+            Verb verb = pawn.TryGetAttackVerb(null, allowManualCastWeapons: true);
+            return verb == null || verb.IsMeleeAttack ? null : RaidStationaryCombat.BestShootTarget(pawn, verb);
+        }
+
+        protected override bool TryFindShootingPosition(Pawn pawn, out IntVec3 dest, Verb verbToUse = null)
+        {
+            dest = IntVec3.Invalid;
+            return false;
+        }
+
+        protected override Job TryGiveJob(Pawn pawn)
+        {
+            if (!SiegeRaidMap.Enabled || !SiegeRoles.IsHumanRaidEscortMech(pawn) ||
+                !RaidStationaryCombat.AppliesTo(pawn, pawn.Map.GetComponent<SiegeRaidMap>()))
+                return null;
+            if ((pawn.GetLord()?.LordJob as LordJob_Artillery)?.Raid?.InfantryHold is { } hold &&
+                hold.UsesMechFlank(pawn, out IntVec3 flank) && flank.IsValid && flank != pawn.Position)
+                return null;
+
+            if (pawn.TryGetAttackVerb(null, allowManualCastWeapons: true) is { } verb &&
+                verb.verbProps.ai_RangedAlawaysShootGroundBelowTarget)
+            {
+                Thing target = RaidStationaryCombat.BestShootTarget(pawn, verb);
+                if (target == null) return null;
+                Job shot = JobMaker.MakeJob(JobDefOf.UseVerbOnThingStatic, RaidStationaryCombat.CastTarget(verb, target));
+                shot.verbToUse = verb;
+                shot.preventFriendlyFire = true;
+                return shot;
+            }
+            return base.TryGiveJob(pawn);
+        }
+    }
+
     public sealed class JobGiver_ArtillerySmokeFollowers : JobGiver_WanderNearDutyLocation
     {
         public JobGiver_ArtillerySmokeFollowers()
         {
             wanderRadius = Region.GridSize;
             wanderDestValidator = (pawn, cell, _) =>
-                pawn.GetLord()?.LordJob is LordJob_Artillery { Raid.Smoke: { } screen } &&
+                SmokeLoadout.ActiveScreen(pawn) is { } screen &&
                 screen.CanAdvance(cell, pawn.Map) && screen.CanFollowInto(pawn, cell);
         }
 
         protected override Job TryGiveJob(Pawn pawn)
         {
-            if (pawn?.RaceProps?.Humanlike != true) return null;
-            Lord lord = pawn.GetLord();
-            if (lord?.LordJob is not LordJob_Artillery job || (job.Raid.Smoke ?? job.Raid.OptionalSmoke) is not ArtillerySmoke screen) return null;
-            IntVec3 follow = screen.FollowCell(lord, job.Raid.Camp.Center);
-            pawn.mindState.duty.focus = pawn.mindState.duty.focusSecond = follow.IsValid ? follow : pawn.Position;
-            pawn.mindState.duty.wanderRadius = wanderRadius;
-            if (follow.IsValid && !pawn.Position.InHorDistOf(follow, 14f) &&
-                pawn.CanReach(follow, PathEndMode.OnCell, Danger.Deadly))
-                return JobMaker.MakeJob(JobDefOf.Goto, follow, 60, checkOverrideOnExpiry: true);
-            return base.TryGiveJob(pawn);
+            if (pawn == null) return null;
+            ArtilleryRaid raid = pawn.GetLord()?.LordJob switch
+            {
+                LordJob_Artillery camp => camp.Raid,
+                LordJob_ArtilleryMechEscort escort => escort.Raid,
+                _ => null
+            };
+            if (raid?.CampLord is not Lord campLord || SmokeLoadout.ActiveScreen(pawn) is not { } screen)
+                return null;
+            bool mech = SiegeRoles.IsHumanRaidEscortMech(pawn);
+            IntVec3 target = IntVec3.Invalid;
+            if (raid.InfantryHold?.UsesMechFlank(pawn, out target) != true)
+            {
+                IntVec3 follow = screen.FollowCell(campLord, raid.Camp.Center, mech);
+                target = follow.IsValid ? follow
+                    : mech ? screen.Rally
+                    : screen.LastFollowCell.IsValid && screen.CanAdvance(screen.LastFollowCell, pawn.Map) &&
+                      screen.CanFollowInto(pawn, screen.LastFollowCell) ? screen.LastFollowCell
+                    : raid.Camp.Center.IsValid && screen.CanAdvance(raid.Camp.Center, pawn.Map) &&
+                      screen.CanFollowInto(pawn, raid.Camp.Center) ? raid.Camp.Center
+                    : IntVec3.Invalid;
+            }
+            pawn.mindState.duty.focus = pawn.mindState.duty.focusSecond = target.IsValid ? target : pawn.Position;
+            pawn.mindState.duty.wanderRadius = mech ? 4f : wanderRadius;
+            if (target.IsValid && !pawn.Position.InHorDistOf(target, mech ? 0.9f : 14f) &&
+                pawn.CanReach(target, PathEndMode.OnCell, Danger.Deadly))
+            {
+                Job move = JobMaker.MakeJob(JobDefOf.Goto, target, 60, checkOverrideOnExpiry: true);
+                move.locomotionUrgency = PawnUtility.ResolveLocomotion(pawn, locomotionUrgencyOutsideRadius ?? locomotionUrgency);
+                return move;
+            }
+            if (mech) return JobMaker.MakeJob(JobDefOf.Wait_Wander, 60, checkOverrideOnExpiry: true);
+            Job wander = base.TryGiveJob(pawn);
+            if (wander != null && wander.def == JobDefOf.Wait_Wander)
+            {
+                wander.expiryInterval = wander.expiryInterval > 0 ? Math.Min(wander.expiryInterval, 60) : 60;
+                wander.checkOverrideOnExpire = true;
+            }
+            return wander;
         }
     }
 
@@ -1026,6 +1108,12 @@ namespace RimSiege.Raids.Artillery
     {
         private static bool Prefix(Pawn_PathFollower __instance, Pawn ___pawn)
         {
+            if (___pawn.mindState?.duty?.def == ArtillerySmokeDefOf.RS_ArtilleryInfantryHold)
+            {
+                if (ArtillerySmoke.Screened(__instance.nextCell, ___pawn.Map)) return true;
+                ___pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
+                return false;
+            }
             ArtillerySmoke screen = SmokeLoadout.ActiveScreen(___pawn);
             if (screen == null) return true;
             if (screen.IsLocal && ___pawn.CurJobDef != ArtillerySmokeDefOf.RS_ApproachSmokeThrow) return true;

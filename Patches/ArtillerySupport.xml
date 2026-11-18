@@ -10,4 +10,9 @@
     <order>Prepend</order>
     <value><li Class="RimSiege.Raids.Artillery.JobGiver_ArtilleryDemolition" /></value>
   </Operation>
+  <Operation Class="PatchOperationInsert">
+    <xpath>Defs/DutyDef[defName="Breaching" or defName="Escort" or defName="AssaultColony"]/thinkNode/subNodes/li[@Class="JobGiver_TakeCombatEnhancingDrug"]</xpath>
+    <order>Prepend</order>
+    <value><li Class="RimSiege.Raids.Artillery.JobGiver_ArtilleryMechSmokeCombat" /></value>
+  </Operation>
 </Patch>

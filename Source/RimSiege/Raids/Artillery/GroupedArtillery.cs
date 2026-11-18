@@ -214,6 +214,10 @@ namespace RimSiege.Raids.Artillery
                                     (float)System.Math.Max(1, g.Raid.Camp.Guns.Count)).First();
                             unarmed.Pawns.Remove(builder); camp.Pawns.Add(builder);
                         }
+                else
+                    HumanMechEscorts.InjectGrouped(reservation,
+                        groups.Where(g => g.Raid != null).Select(g => (g.Pawns, g.Power, g.Raid)).ToList(),
+                        allPawns, map);
                 Incident = new ArtilleryIncident { InitialRaidSize = allPawns.Count, Breaches = reservation.Breaches };
                 map.GetComponent<ArtilleryMap>().RegisterIncident(Incident);
                 foreach (ArtilleryRaid raid in Batteries) raid.IncidentKey = Incident.Key;

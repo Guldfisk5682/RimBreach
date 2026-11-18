@@ -34,12 +34,6 @@ namespace RimSiege.Raids.Artillery
 
         internal bool Review(ArtilleryRaid raid, LordToil_Siege toil, int now)
         {
-            if (ArtilleryRetreat.ShouldDisablePostAssaultSupplies(raid))
-            {
-                Screen.Work.RestoreWeapons();
-                raid.BatterySupport = null;
-                return Helpers.Count != 0;
-            }
             Lord camp = toil.lord;
             if (!raid.Camp.Guns.Any(g => g.IsSupport && (ArtilleryCrew.Pending(g) ||
                 g.Building is { Spawned: true } building && building.Faction == raid.Faction)))

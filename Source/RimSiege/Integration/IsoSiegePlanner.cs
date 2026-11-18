@@ -94,6 +94,20 @@ namespace RimSiege.Integration
                 return IntVec3.Invalid;
             }
 
+            Thing target = PreferredAssaultTarget(pawn);
+            if (target == null) return IntVec3.Invalid;
+            bool reached = withoutClimbing
+                ? main.FloorReach(pawn.Position, target, PathEndMode.Touch, traversal)
+                : Map.reachability.CanReach(pawn.Position, target, PathEndMode.Touch, traversal);
+            if (!reached) return IntVec3.Invalid;
+            targetThing = target;
+            return target.Position;
+        }
+
+        // Decide what to assault before asking whether we can walk there. A
+        // reachable target elsewhere on the map cannot veto a nearby ladder.
+        private Thing PreferredAssaultTarget(Pawn pawn)
+        {
             Lord lord = pawn.GetLord();
             List<IAttackTarget> potential = Map.attackTargetsCache.GetPotentialTargetsFor(pawn);
             Thing best = null;
@@ -109,16 +123,10 @@ namespace RimSiege.Integration
 
                 float dist = IsoFloor.Distance3D(pawn.Position, thing.Position, Map);
                 if (dist >= bestDist) continue;
-                bool reached = withoutClimbing
-                    ? main.FloorReach(pawn.Position, thing, PathEndMode.Touch, traversal)
-                    : Map.reachability.CanReach(pawn.Position, thing, PathEndMode.Touch, traversal);
-                if (!reached) continue;
-
                 best = thing;
                 bestDist = dist;
             }
-            targetThing = best;
-            return best?.Position ?? IntVec3.Invalid;
+            return best;
         }
 
         internal IntVec3 ClimbEntryForBlockedAssault(Pawn pawn, Faction faction)
@@ -220,7 +228,12 @@ namespace RimSiege.Integration
             {
                 Synchronize(pawn);
                 Active = this;
-                if (duty != null) duty.focus = RaidFocus(duty);
+                if (duty != null)
+                {
+                    LocalTargetInfo focus = RaidFocus(duty);
+                    if (!focus.IsValid && PreferredAssaultTarget(pawn) is Thing target) focus = target;
+                    duty.focus = focus;
+                }
                 return RaidClimb.TryGive(pawn, false, false);
             }
             finally

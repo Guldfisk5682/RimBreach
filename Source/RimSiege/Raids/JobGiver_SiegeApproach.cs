@@ -30,7 +30,8 @@ namespace RimSiege.Raids
             if (duty.focus.Thing is not Pawn escortee || !escortee.Spawned || escortee.Dead || escortee.Downed ||
                 !IsoFloor.SameFloor(pawn.Position, escortee.PositionHeld, pawn.Map))
                 return true;
-            return party.HasLadderRoute(pawn) || SiegeRoles.CanOpenLadderRoute(pawn, party);
+            return (party.HasLadderRoute(pawn) && SiegeRoles.Eligible(pawn, party)) ||
+                SiegeRoles.CanOpenLadderRoute(pawn, party);
         }
     }
 

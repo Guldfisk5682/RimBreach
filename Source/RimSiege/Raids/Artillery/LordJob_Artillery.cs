@@ -84,7 +84,7 @@ namespace RimSiege.Raids.Artillery
 
         internal void RequestInfantryAssault()
         {
-            if (lord.CurLordToil is LordToil_Siege) pendingInfantryAssault = true;
+            if (lord.CurLordToil is LordToil_Siege && Raid.InfantryHold == null) pendingInfantryAssault = true;
         }
 
         public override void Notify_AddedToLord()
@@ -109,14 +109,16 @@ namespace RimSiege.Raids.Artillery
             int now = GenTicks.TicksGame;
             if (lord.CurLordToil is LordToil_Siege toil)
             {
-                if (ArtilleryRetreat.ShouldDisablePostAssaultSupplies(raid))
+                if ((now + raid.Key) % 120 == 0)
                 {
-                    if (!raid.PostAssaultCleaned) ArtilleryCamp.EnsurePostAssaultState(raid, toil);
+                    if (raid.BatterySupport?.Review(raid, toil, now) == true) toil.UpdateAllDuties();
+                    raid.InfantryHold?.ReviewSmoke(raid, lord, now);
                 }
-                else if (raid.BatterySupport != null && (now + raid.Key) % 120 == 0 &&
-                    raid.BatterySupport.Review(raid, toil, now))
+                if (raid.InfantryHold is { } hold)
                 {
-                    toil.UpdateAllDuties();
+                    pendingInfantryAssault = false;
+                    if (hold.ReviewRequested || (now + raid.Key) % 60 == 0)
+                        ArtilleryDeployment.ReviewSmokeHold(raid, toil);
                 }
             }
             if (raid.OptionalSmoke is { } optional &&

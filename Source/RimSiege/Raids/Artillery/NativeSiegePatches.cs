@@ -139,10 +139,9 @@ namespace RimSiege.Raids.Artillery
             ArtilleryRaid raid = Raid(toil);
             if (raid != null)
             {
-                if (DisablePostAssaultSupplies(raid) && (memo == "NoBuilders" || memo == "NoArtillery"))
+                if (raid.InfantryHold is { } hold && (memo == "NoBuilders" || memo == "NoArtillery"))
                 {
-                    if (memo == "NoBuilders" && ArtilleryRetreat.HasActiveBattery(raid)) return;
-                    ArtilleryCamp.ExitCamp(raid, lord);
+                    hold.ReviewRequested = true;
                     return;
                 }
                 if (raid.WaitingForFirstGun && (memo == "NoBuilders" || memo == "NoArtillery")) return;
@@ -191,9 +190,6 @@ namespace RimSiege.Raids.Artillery
             pawn.workSettings.EnableAndInitialize();
         }
 
-        internal static bool DisablePostAssaultSupplies(ArtilleryRaid raid) =>
-            ArtilleryRetreat.ShouldDisablePostAssaultSupplies(raid);
-
         internal static bool HasCompletedGun(ArtilleryRaid raid) =>
             raid.Camp.Guns.Any(gun => gun.Building is { Spawned: true } building && building.Faction == raid.Faction);
 
@@ -201,7 +197,6 @@ namespace RimSiege.Raids.Artillery
         // calibre has stock. Only the managed shell supplement is per ammo type.
         internal static void Supplement(LordToil_Siege toil, ArtilleryRaid raid)
         {
-            if (DisablePostAssaultSupplies(raid)) return;
             var defs = raid.Camp.Guns.Where(g => g.Building is Building_TurretGunCE turret && turret.Spawned &&
                     turret.Faction == raid.Faction && turret.GetAmmo()?.UseAmmo == true && g.Ammo != null).Select(g => g.Ammo).Distinct().ToList();
             if (defs.Count == 0) return;
@@ -277,12 +272,8 @@ namespace RimSiege.Raids.Artillery
     [HarmonyPatch(typeof(LordToil_Siege), "DropSupplies")]
     internal static class NativeSiegeDropSuppliesPatch
     {
-        private static bool Prefix(LordToil_Siege __instance, ThingDef thingDef)
-        {
-            ArtilleryRaid raid = NativeSiege.Raid(__instance);
-            if (NativeSiege.DisablePostAssaultSupplies(raid)) return false;
-            return thingDef != ThingDefOf.MealSurvivalPack || raid?.Kind != ArtilleryRaidKind.Mechanoid;
-        }
+        private static bool Prefix(LordToil_Siege __instance, ThingDef thingDef) =>
+            thingDef != ThingDefOf.MealSurvivalPack || NativeSiege.Raid(__instance)?.Kind != ArtilleryRaidKind.Mechanoid;
 
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
         {
@@ -371,6 +362,11 @@ namespace RimSiege.Raids.Artillery
         private static void Postfix(LordToil_Siege __instance)
         {
             ArtilleryRaid raid = NativeSiege.Raid(__instance);
+            if (raid?.InfantryHold is { } hold)
+            {
+                hold.ApplyDuties(raid, __instance);
+                return;
+            }
             if (raid != null) ArtilleryCrew.RestoreBuilders(raid, __instance);
             NativeSiege.AssignGunners(__instance);
             raid?.OptionalSmoke?.ApplyOptionalDuties(__instance.lord);
@@ -417,11 +413,6 @@ namespace RimSiege.Raids.Artillery
         {
             ArtilleryRaid raid = NativeSiege.Raid(siege);
             if (raid == null) return true;
-            if (NativeSiege.DisablePostAssaultSupplies(raid))
-            {
-                NativeSiege.SupplementalDrop = true;
-                return false;
-            }
             NativeSiege.Supplement(siege, raid);
             NativeSiege.SupplementalDrop = true;
             return false;
@@ -441,13 +432,7 @@ namespace RimSiege.Raids.Artillery
         {
             ArtilleryRaid raid = NativeSiege.Raid(__instance);
             if (raid == null || __instance.lord.CurLordToil != __instance || !raid.SuppliesDelivered ||
-                raid.Phase == ArtilleryPhase.Abandoned) return;
-            int now = Find.TickManager.TicksGame;
-            if (NativeSiege.DisablePostAssaultSupplies(raid) &&
-                ((now + raid.Key) % 60 == 0 || now % 500 == 0) &&
-                ArtilleryCamp.TickResolutePostAssault(raid, __instance, now))
-                return;
-            if (now % 500 != 0) return;
+                raid.Phase == ArtilleryPhase.Abandoned || Find.TickManager.TicksGame % 500 != 0) return;
             ArtilleryCamp.RefreshConstruction(raid, __instance.lord.Map);
             if (!raid.Camp.Guns.Any(g => g.IsSupport))
             {
@@ -457,6 +442,12 @@ namespace RimSiege.Raids.Artillery
             ArtilleryCamp.RefreshOperators(raid, __instance.lord);
             if (__instance.lord.CurLordToil != __instance) return;
             SupportRoute.Refresh(__instance.lord.Map, raid);
+            if (raid.InfantryHold is { } hold)
+            {
+                hold.ReviewRequested = true;
+                __instance.UpdateAllDuties();
+                return;
+            }
             if (raid.Phase == ArtilleryPhase.Supporting || raid.InfantryReleased)
             {
                 if (raid.InfantryReleased) __instance.UpdateAllDuties();
@@ -517,19 +508,6 @@ namespace RimSiege.Raids.Artillery
             if (__instance.CurLordToil is not LordToil_Siege) return;
             ArtilleryRaid raid = NativeSiege.Raid(__instance);
             if (raid != null) ArtilleryCamp.ObserveFailure(raid, frame, newBlueprint);
-        }
-    }
-
-    [HarmonyPatch]
-    internal static class ArtilleryBurstEngagementPatch
-    {
-        private static IEnumerable<MethodBase> TargetMethods() =>
-            CeAccess.Methods(typeof(Building_TurretGunCE), nameof(Building_TurretGunCE.BeginBurst));
-
-        private static void Postfix(Building_TurretGunCE __instance)
-        {
-            ArtilleryRaid raid = ArtilleryRegistry.Find(__instance);
-            if (raid != null) raid.LastBatteryEngagedTick = GenTicks.TicksGame;
         }
     }
 }

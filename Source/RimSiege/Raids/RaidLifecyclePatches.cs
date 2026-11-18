@@ -26,6 +26,7 @@ namespace RimSiege.Raids
             internal GroupedArtillery Grouped;
             internal float NativePawnPoints;
             internal float IncidentPoints;
+            internal bool EscortMechsInjected;
             internal readonly List<Pawn> InjectedConstructoids = new();
         }
         [ThreadStatic] internal static Spawn Current;
@@ -79,7 +80,10 @@ namespace RimSiege.Raids
         private static void ArriveWithConstructoids(PawnsArrivalModeWorker worker, List<Pawn> pawns,
             IncidentParms parms)
         {
-            MechBattery.InjectConstructoids(RaidSpawnPatch.Current?.Artillery, pawns);
+            ArtilleryRaid raid = RaidSpawnPatch.Current?.Artillery;
+            MechBattery.InjectConstructoids(raid, pawns);
+            if (raid != null && !ArtilleryRaidPolicy.IsGrouped(parms.raidArrivalMode))
+                HumanMechEscorts.InjectUngrouped(raid, pawns, parms.target as Map);
             if (RaidSpawnPatch.Current != null) RaidSpawnPatch.Current.Pawns = pawns;
             worker.Arrive(pawns, parms);
         }
@@ -104,7 +108,12 @@ namespace RimSiege.Raids
             if (!__result || RaidSpawnPatch.Current == null) return;
             // SpawnThreats path can skip Arrive; inject then land any still-unspawned.
             int before = pawns.Count;
-            if (!debugTest) MechBattery.InjectConstructoids(RaidSpawnPatch.Current.Artillery, pawns);
+            if (!debugTest)
+            {
+                MechBattery.InjectConstructoids(RaidSpawnPatch.Current.Artillery, pawns);
+                if (!ArtilleryRaidPolicy.IsGrouped(parms?.raidArrivalMode))
+                    HumanMechEscorts.InjectUngrouped(RaidSpawnPatch.Current.Artillery, pawns, parms?.target as Map);
+            }
             if (pawns.Count > before && parms?.raidArrivalMode != null)
             {
                 var late = pawns.Skip(before).Where(p => p != null && !p.Spawned).ToList();

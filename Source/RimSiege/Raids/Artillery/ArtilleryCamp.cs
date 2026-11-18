@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Linq;
 using CombatExtended;
 using CombatExtended.Compatibility;
-using RimSiege.Integration;
 using RimWorld;
 using Verse;
 using Verse.AI;
@@ -169,11 +168,6 @@ namespace RimSiege.Raids.Artillery
         internal static void TransferToAssault(ArtilleryRaid raid, Lord camp, List<Pawn> pawns)
         {
             if (pawns.Count == 0 || (raid.AssaultEnded && !raid.KeepsSeparateCrew)) return;
-            if (raid.AssaultEnded && ArtilleryRetreat.IsResoluteHumanCrew(raid))
-            {
-                ReleaseToExit(raid, camp, pawns);
-                return;
-            }
             if (raid.AssaultLord != null && !camp.Map.lordManager.lords.Contains(raid.AssaultLord)) raid.AssaultLord = null;
             if (raid.AssaultLord == null && raid.KeepsSeparateCrew) raid.AssaultEnded = false;
             camp.RemovePawns(pawns);
@@ -209,6 +203,8 @@ namespace RimSiege.Raids.Artillery
         internal static void ReleaseInfantry(ArtilleryRaid raid, Lord camp, bool force = false)
         {
             if (raid.InfantryReleased || raid.Kind == ArtilleryRaidKind.Siege && !force) return;
+            raid.InfantryHold?.Stop();
+            raid.InfantryHold = null;
             if (!raid.SuppliesDelivered)
             {
                 CancelUnfinished(raid);
@@ -286,6 +282,7 @@ namespace RimSiege.Raids.Artillery
                         !raid.Camp.Guns.Any(g => g.Operator == p) &&
                         p.CanReserveAndReach(site, end, Danger.Deadly))
                     .OrderBy(p => raid.BatterySupport?.Helpers.Contains(p) == true)
+                    .ThenBy(p => raid.InfantryHold?.Points.Any(point => point.Carrier == p) == true)
                     .ThenBy(p => p.Position.DistanceToSquared(gun.Cell)).FirstOrDefault();
                 if (pawn == null) continue;
                 gun.Operator = pawn;
@@ -326,6 +323,8 @@ namespace RimSiege.Raids.Artillery
         // batteries stay hostile and fire while the assault lord is still alive.
         internal static void Abandon(ArtilleryRaid raid, Map map)
         {
+            raid.InfantryHold?.Stop();
+            raid.InfantryHold = null;
             raid.BatterySupport?.Screen.Work.RestoreWeapons();
             raid.BatterySupport = null;
             ArtilleryTargeting.ForgetRaid(raid);
@@ -350,171 +349,6 @@ namespace RimSiege.Raids.Artillery
                 return;
             }
             raid.Phase = ArtilleryPhase.Abandoned;
-        }
-
-        internal const int DirectSupportIdleExitTicks = 2100;
-        private const float DirectThreatRadius = 24f;
-
-        internal static bool HasActiveOperator(ArtilleryRaid raid, Lord camp, ArtilleryPlacement gun, Building building)
-        {
-            if (!gun.NeedsOperator) return true;
-            Pawn op = gun.Operator;
-            return op != null && !op.Dead && !op.Downed && op.Spawned && op.Map == building.Map &&
-                !op.InMentalState && op.Faction == raid.Faction && op.GetLord() == camp &&
-                op.health.capacities.CapableOf(PawnCapacityDefOf.Manipulation) &&
-                ((op.CurJobDef == JobDefOf.ManTurret || op.CurJobDef == CE_JobDefOf.ReloadTurret) &&
-                 op.CurJob?.targetA.Thing == building ||
-                 op.CanReserveAndReach(building, PathEndMode.InteractionCell, Danger.Deadly));
-        }
-
-        private static bool IsCompatibleAmmo(CompAmmoUser ammo, Thing thing) =>
-            thing != null && !thing.Destroyed &&
-            ammo.CurAmmoSet?.ammoTypes?.Any(link => link.ammo == thing.def) == true;
-
-        internal static bool IsUsableAmmoForGun(Building_TurretGunCE turret, CompAmmoUser ammo, Pawn op)
-        {
-            if (ammo == null || !ammo.UseAmmo || ammo.HasAmmoOrMagazine) return true;
-            if (op == null) return false;
-            if (IsCompatibleAmmo(ammo, op.carryTracker?.CarriedThing) ||
-                turret.InventoryAmmo(op.TryGetComp<CompInventory>()) != null ||
-                (op.CurJobDef == CE_JobDefOf.ReloadTurret && op.CurJob?.targetA.Thing == turret))
-                return true;
-            return ArtilleryGunnerPatch.FindAmmo(op, turret) != null;
-        }
-
-        internal static bool IsActiveBuiltSupportGun(ArtilleryRaid raid, Lord camp, ArtilleryPlacement gun)
-        {
-            if (!gun.IsSupport || gun.Building is not { Spawned: true, Destroyed: false } building ||
-                building.Faction != raid.Faction ||
-                building.TryGetComp<CompBreakdownable>()?.BrokenDown == true)
-                return false;
-            if (!HasActiveOperator(raid, camp, gun, building)) return false;
-            return building is not Building_TurretGunCE turret ||
-                IsUsableAmmoForGun(turret, turret.GetAmmo(), gun.Operator);
-        }
-
-        internal static void EnsurePostAssaultState(ArtilleryRaid raid, LordToil_Siege toil)
-        {
-            if (!ArtilleryRetreat.IsResoluteHumanCrew(raid) || !raid.AssaultEnded) return;
-            Lord camp = toil.lord;
-            Map map = camp.Map;
-            if (raid.BatterySupport != null)
-            {
-                raid.BatterySupport.Screen.Work.RestoreWeapons();
-                raid.BatterySupport = null;
-            }
-            CancelUnfinished(raid);
-            RefreshConstruction(raid, map);
-            RefreshOperators(raid, camp);
-            var operators = raid.Camp.Guns
-                .Where(g => g.Building is { Spawned: true, Destroyed: false } && g.Operator != null)
-                .Select(g => g.Operator)
-                .ToHashSet();
-            var spare = camp.ownedPawns.Where(p => !operators.Contains(p)).ToList();
-            if (spare.Count > 0) ReleaseToExit(raid, camp, spare);
-            if (!raid.PostAssaultCleaned)
-            {
-                raid.PostAssaultCleaned = true;
-                if (camp.ownedPawns.Count > 0 && camp.CurLordToil == toil) toil.UpdateAllDuties();
-            }
-        }
-
-        internal static void ReleaseToExit(ArtilleryRaid raid, Lord camp, List<Pawn> pawns)
-        {
-            if (pawns == null || pawns.Count == 0) return;
-            Map map = camp.Map;
-            camp.RemovePawns(pawns);
-            foreach (Pawn pawn in pawns)
-            {
-                if (pawn.Spawned) RestUtility.WakeUp(pawn);
-                if (pawn.jobs?.curJob != null)
-                    pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
-            }
-            if (raid.AssaultLord != null && map.lordManager.lords.Contains(raid.AssaultLord) &&
-                raid.AssaultLord.CurLordToil is LordToil_PanicFlee or LordToil_ExitMap)
-            {
-                raid.AssaultLord.AddPawns(pawns);
-                return;
-            }
-            if (raid.ExitLord != null && !map.lordManager.lords.Contains(raid.ExitLord)) raid.ExitLord = null;
-            if (raid.ExitLord == null)
-            {
-                raid.ExitLord = LordMaker.MakeNewLord(raid.Faction,
-                    new LordJob_ExitMapBest(LocomotionUrgency.Jog, canDig: false, canDefendSelf: true), map, pawns);
-                raid.ExitLord.inSignalLeave = raid.OriginalParms.inSignalEnd;
-                QuestUtility.AddQuestTag(raid.ExitLord, raid.OriginalParms.questTag);
-            }
-            else
-            {
-                raid.ExitLord.AddPawns(pawns);
-            }
-        }
-
-        internal static void ExitCamp(ArtilleryRaid raid, Lord camp)
-        {
-            if (camp == null || camp.CurLordToil is LordToil_ExitMap or LordToil_PanicFlee) return;
-            LordToil exit = camp.Graph?.lordToils.OfType<LordToil_ExitMap>().FirstOrDefault();
-            if (exit != null) camp.GotoToil(exit);
-        }
-
-        internal static bool TickResolutePostAssault(ArtilleryRaid raid, LordToil_Siege toil, int now)
-        {
-            EnsurePostAssaultState(raid, toil);
-            Lord camp = toil.lord;
-            if (camp.CurLordToil != toil || camp.ownedPawns.Count == 0) return true;
-
-            var usableSupport = raid.Camp.Guns.Where(g => IsActiveBuiltSupportGun(raid, camp, g)).ToList();
-            if (usableSupport.Count == 0)
-            {
-                ExitCamp(raid, camp);
-                return true;
-            }
-            if (usableSupport.Any(g => !g.IsDirectSupport))
-            {
-                raid.LastBatteryEngagedTick = now;
-                return false;
-            }
-
-            if (raid.LastBatteryEngagedTick == 0) raid.LastBatteryEngagedTick = now;
-            if (camp.lastPawnHarmTick > raid.LastBatteryEngagedTick)
-                raid.LastBatteryEngagedTick = System.Math.Min(now, camp.lastPawnHarmTick);
-
-            bool engaged = usableSupport.Any(g => g.Building is Building_TurretGunCE t &&
-                (t.CurrentTarget.IsValid || t.TargetCurrentlyAimingAt.IsValid ||
-                 t.ForcedTarget.IsValid || t.burstWarmupTicksLeft > 0)) ||
-                camp.ownedPawns.Any(p => p.CurJobDef == JobDefOf.AttackStatic ||
-                    p.CurJobDef == JobDefOf.AttackMelee || p.mindState?.enemyTarget != null) ||
-                HasCloseThreat(raid, camp, usableSupport, DirectThreatRadius);
-            if (engaged)
-            {
-                raid.LastBatteryEngagedTick = now;
-                return false;
-            }
-            if (now - raid.LastBatteryEngagedTick >= DirectSupportIdleExitTicks)
-            {
-                ExitCamp(raid, camp);
-                return true;
-            }
-            return false;
-        }
-
-        private static bool HasCloseThreat(ArtilleryRaid raid, Lord camp, List<ArtilleryPlacement> guns, float radius)
-        {
-            Map map = camp.Map;
-            foreach (Pawn hostile in map.mapPawns.AllPawnsSpawned)
-            {
-                if (hostile.Dead || hostile.Downed || !hostile.HostileTo(raid.Faction)) continue;
-                IntVec3 pos = hostile.Position;
-                if (raid.Camp.Center.IsValid && IsoFloor.Distance3D(pos, raid.Camp.Center, map) <= radius)
-                    return true;
-                foreach (ArtilleryPlacement gun in guns)
-                    if (gun.Building != null && IsoFloor.Distance3D(pos, gun.Building.Position, map) <= radius)
-                        return true;
-                foreach (Pawn crew in camp.ownedPawns)
-                    if (crew.Spawned && IsoFloor.Distance3D(pos, crew.Position, map) <= radius)
-                        return true;
-            }
-            return false;
         }
     }
 }

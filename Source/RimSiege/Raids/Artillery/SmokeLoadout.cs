@@ -129,13 +129,24 @@ namespace RimSiege.Raids.Artillery
 
         internal static ArtillerySmoke ActiveScreen(Pawn pawn)
         {
-            if (pawn?.RaceProps.Humanlike != true) return null;
+            if (pawn == null) return null;
+            if (pawn.GetLord()?.LordJob is LordJob_ArtilleryMechEscort escort &&
+                pawn.mindState?.duty?.def == ArtillerySmokeDefOf.RS_ArtilleryMechSmokeEscort)
+                return escort.Raid?.Smoke;
             if (pawn.GetLord()?.LordJob is LordJob_Artillery job)
             {
                 DutyDef duty = pawn.mindState?.duty?.def;
-                if (duty == ArtillerySmokeDefOf.RS_ArtillerySmoke) return job.Raid.Smoke ?? job.Raid.OptionalSmoke;
-                return job.Raid.ActiveLocalSmokeFor(pawn)?.Work;
+                if (pawn.RaceProps.Humanlike)
+                {
+                    if (duty == ArtillerySmokeDefOf.RS_ArtillerySmoke) return job.Raid.Smoke ?? job.Raid.OptionalSmoke;
+                    return job.Raid.ActiveLocalSmokeFor(pawn)?.Work;
+                }
+                if (SiegeRoles.IsHumanRaidEscortMech(pawn) && job.Raid?.Kind != ArtilleryRaidKind.Mechanoid &&
+                    duty == ArtillerySmokeDefOf.RS_ArtilleryMechSmokeEscort)
+                    return job.Raid.Smoke ?? job.Raid.InfantryHold?.MechScreen ?? job.Raid.OptionalSmoke;
+                return null;
             }
+            if (!pawn.RaceProps.Humanlike) return null;
             TribalNativeGroup group = TribalNativeGroup.For(pawn);
             return group?.Includes(pawn) == true ? group.Screen : null;
         }

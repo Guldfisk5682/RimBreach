@@ -174,10 +174,11 @@ namespace RimSiege.Raids
             }
             PrunePendingSmoke();
             var tacticalMembers = pawns.Where(p => p != null &&
-                (p.RaceProps.Humanlike || (faction == Faction.OfMechanoids && p.RaceProps.IsMechanoid))).ToList();
+                (p.RaceProps.Humanlike || p.RaceProps.IsMechanoid)).ToList();
+            int initialCount = tacticalMembers.Count(p => p.RaceProps.Humanlike || faction == Faction.OfMechanoids);
             SiegeParty party = new SiegeParty
             {
-                Id = nextId++, InitialCount = tacticalMembers.Count, Members = tacticalMembers,
+                Id = nextId++, InitialCount = initialCount, Members = tacticalMembers,
                 LadderQuotaPercent = LadderQuotaFor(faction)
             };
             parties.Add(party);
@@ -332,7 +333,8 @@ namespace RimSiege.Raids
             if (checkStalledCombat)
                 foreach (SiegeParty party in parties)
                     foreach (Pawn pawn in party.Members)
-                        if (pawn != null && pawn.Map == map && Party(pawn) == party && Applies(pawn) &&
+                        if (pawn != null && pawn.Map == map && Party(pawn) == party &&
+                            RaidStationaryCombat.AppliesTo(pawn, this) &&
                             !pawn.Drafted && pawn.CurJobDef == JobDefOf.Wait_Combat && pawn.CurJob != null &&
                             pawn.CurJob.startTick + 60 <= now && !pawn.stances.FullBodyBusy &&
                             LadderPerch.Get(pawn) == null &&

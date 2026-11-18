@@ -11,7 +11,7 @@ namespace RimSiege.Raids
     {
         internal static IntVec3 TryPlace(Pawn pawn, IntVec3 target, Predicate<IntVec3> allowed = null)
         {
-            if (pawn is not { Spawned: true } || pawn.Map is not { } map || !target.IsValid)
+            if (pawn is not { Spawned: true } || !pawn.RaceProps.Humanlike || pawn.Map is not { } map || !target.IsValid)
                 return IntVec3.Invalid;
             if (pawn.Position.GetEdifice(map) is Building_Door || IsStairOrLadderTile(pawn.Position, map) ||
                 pawn.Position.GetCover(map) != null || AlreadyCoveredFrom(pawn, target, map))

@@ -26,12 +26,16 @@ namespace RimSiege.Raids
             !pawn.WorkTypeIsDisabled(WorkTypeDefOf.Firefighter) &&
             pawn.health.capacities.CapableOf(PawnCapacityDefOf.Manipulation);
 
-        // In humanlike raids, all non-humanlike units (war animals, dryads, accompanying mechs/entities)
-        // are main-force-only. In pure Mechanoid raids (Faction.OfMechanoids), combat mechs use assault
+        // In humanlike raids, accompanying escort mechs participate in tactical combat
+        // (RaidStationaryCombat / RaidAdvance) without carrying or deploying assault ladders.
+        // In pure Mechanoid raids (Faction.OfMechanoids), combat mechs also use assault
         // ladders and Constructoids build batteries, while any non-mech/non-humanlike unit is main-force-only.
+        internal static bool IsHumanRaidEscortMech(Pawn pawn) =>
+            pawn?.RaceProps?.IsMechanoid == true && pawn.Faction != Faction.OfMechanoids;
+
         internal static bool CanParticipateInTacticalAssault(Pawn pawn) =>
             pawn is { Dead: false, Downed: false, InMentalState: false } &&
-            (pawn.RaceProps.Humanlike || (pawn.Faction == Faction.OfMechanoids && pawn.RaceProps.IsMechanoid));
+            (pawn.RaceProps.Humanlike || pawn.RaceProps.IsMechanoid);
 
         internal static bool IsMainForceOnly(Pawn pawn, bool allowConstructoid = false) =>
             pawn == null || (!pawn.RaceProps.Humanlike && (!allowConstructoid || !MechBattery.IsConstructoid(pawn)));
@@ -70,7 +74,7 @@ namespace RimSiege.Raids
         }
 
         internal static bool Eligible(Pawn pawn, SiegeParty party) =>
-            CanParticipateInTacticalAssault(pawn) && pawn.Spawned &&
+            !IsHumanRaidEscortMech(pawn) && CanParticipateInTacticalAssault(pawn) && pawn.Spawned &&
             ProjectZ.RaidClimb.Climber(pawn) &&
             (Ordinary(pawn.GetLord()) || LadderAssaultDuty(pawn)) &&
             ProjectZ.RaidClimb.MayClimb(pawn, false) &&

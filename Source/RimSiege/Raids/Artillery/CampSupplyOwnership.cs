@@ -43,6 +43,15 @@ namespace RimSiege.Raids.Artillery
                 : artillery.ForLord(lord)?.Key == key;
         }
 
+        internal IEnumerable<IntVec3> GroundPositions(ArtilleryRaid raid, Map map)
+        {
+            int key = Key(raid);
+            foreach (var supply in supplies)
+                if (supply.Value == key && supply.Key.SpawnedParentOrMe is { } holder &&
+                    holder is not Pawn && holder.Map == map)
+                    yield return holder.Position;
+        }
+
         internal void Release(int key)
         {
             foreach (Thing thing in supplies.Where(pair => pair.Value == key).Select(pair => pair.Key).ToArray())

@@ -32,7 +32,7 @@ namespace RimSiege.Raids.Artillery
         }
 
         private static bool FindSpot(Map map, IntVec3 center, HashSet<IntVec3> reserved, bool allowFogged,
-            bool canRoofPunch, out IntVec3 spot)
+            bool canRoofPunch, out IntVec3 spot, System.Predicate<IntVec3> dropPosition = null)
         {
             bool floors = IsoFloor.HasFloors(map);
             int floor = floors ? IsoFloor.FloorOf(center, map) : 0;
@@ -40,6 +40,7 @@ namespace RimSiege.Raids.Artillery
             bool Valid(IntVec3 cell, int radiusSq) =>
                 cell.InBounds(map) && (cell - center).LengthHorizontalSquared <= radiusSq &&
                 (!floors || IsoFloor.FloorOf(cell, map) == floor) && !reserved.Contains(cell) &&
+                dropPosition?.Invoke(cell) != false &&
                 DropCellFinder.IsGoodDropSpot(cell, map, allowFogged, canRoofPunch) &&
                 map.reachability.CanReach(center, cell, PathEndMode.OnCell, TraverseMode.NoPassClosedDoors, Danger.Deadly);
 
@@ -68,14 +69,14 @@ namespace RimSiege.Raids.Artillery
 
         internal static bool DropGroups(Map map, ArtilleryRaid raid, List<List<Thing>> groups, int openDelay,
             bool instaDrop, bool leaveSlag, bool canRoofPunch, bool forbid, bool allowFogged, Faction faction,
-            IntVec3? dropCenter = null)
+            IntVec3? dropCenter = null, System.Predicate<IntVec3> dropPosition = null)
         {
             CampPlan camp = raid.Camp;
             var reserved = Reserved(map, camp);
             var spots = new List<IntVec3>(groups.Count);
             foreach (List<Thing> group in groups)
             {
-                if (!FindSpot(map, dropCenter ?? camp.Center, reserved, allowFogged, canRoofPunch, out IntVec3 spot)) return false;
+                if (!FindSpot(map, dropCenter ?? camp.Center, reserved, allowFogged, canRoofPunch, out IntVec3 spot, dropPosition)) return false;
                 spots.Add(spot);
                 reserved.Add(spot);
             }

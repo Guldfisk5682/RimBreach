@@ -58,10 +58,21 @@ namespace RimSiege.Raids.Artillery
             List<ArtilleryPlacement> guns = profile.Configure(raidPoints, personnel, parms.faction, out _, breaching);
             if (!guns.Any(g => g.IsSupport)) return null;
             int constructoids = 0;
+            List<PawnKindDef> escortKinds = new List<PawnKindDef>();
             if (kind == "Mechanoid")
             {
                 constructoids = MechBattery.CountFor(guns, IsGrouped(parms.raidArrivalMode));
                 personnel = UnityEngine.Mathf.Max(0f, personnel - MechBattery.ConstructoidCombatPower * constructoids);
+            }
+            else if (RimSiegeMod.Settings?.HumanMechEscorts == true &&
+                     raidPoints >= RimSiegeMod.Settings.HumanMechMinPoints)
+            {
+                TechLevel tech = parms.faction.def.techLevel;
+                float escortBudget = personnel * HumanMechEscorts.BudgetFraction(tech);
+                bool allowBoss = tech >= TechLevel.Ultra &&
+                    raidPoints >= HumanMechEscorts.BossMinimumPoints(RimSiegeMod.Settings.HumanMechMinPoints);
+                escortKinds = HumanMechEscorts.Select(escortBudget, breaching, allowBoss, out float spentEscorts);
+                personnel = UnityEngine.Mathf.Max(0f, personnel - spentEscorts);
             }
             var raid = new ArtilleryRaid
             {
@@ -70,6 +81,7 @@ namespace RimSiege.Raids.Artillery
                 Faction = parms.faction, Strategy = parms.raidStrategy, OriginalParms = parms,
                 Camp = new CampPlan { Guns = guns }, Rolled = true, Selected = true,
                 IndependentCrew = kind != "Siege", ConstructoidCount = constructoids,
+                EscortMechKinds = escortKinds,
                 ConstructionSpeedMultiplier = profile.ConstructionSpeed(raidPoints)
             };
             if (IsGrouped(parms.raidArrivalMode)) return raid;

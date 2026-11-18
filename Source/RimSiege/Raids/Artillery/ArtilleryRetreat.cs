@@ -6,6 +6,7 @@ using HarmonyLib;
 using RimSiege.Integration;
 using RimWorld;
 using Verse;
+using Verse.AI;
 using Verse.AI.Group;
 
 namespace RimSiege.Raids.Artillery
@@ -16,13 +17,6 @@ namespace RimSiege.Raids.Artillery
         private const float ActiveBatteryLossFraction = 0.85f;
 
         private static bool Stubborn => RimSiegeMod.Settings?.StubbornEnemies == true;
-
-        internal static bool IsResoluteHumanCrew(ArtilleryRaid raid) =>
-            RimSiegeMod.Settings?.ResoluteArtillery == true &&
-            raid?.Faction?.def.humanlikeFaction == true && raid.Kind != ArtilleryRaidKind.Mechanoid;
-
-        internal static bool ShouldDisablePostAssaultSupplies(ArtilleryRaid raid) =>
-            raid != null && raid.AssaultEnded && IsResoluteHumanCrew(raid);
 
         internal static void Review(ArtilleryMap artillery)
         {
@@ -44,32 +38,38 @@ namespace RimSiege.Raids.Artillery
                 foreach (ArtilleryRaid wave in waves) ReviewWave(wave);
                 foreach (Lord lord in incident.NativeLords.ToArray()) Review(lord);
             }
-            foreach (ArtilleryRaid raid in artillery.TrackedRaids.ToArray())
-                if (HasCrewCollapsed(raid)) Review(raid.CampLord);
         }
 
-        internal static bool HasActiveBattery(ArtilleryRaid raid)
+        private static bool HasActiveBattery(ArtilleryRaid raid)
         {
             Lord camp = raid?.CampLord;
             if (raid == null || raid.Phase == ArtilleryPhase.Abandoned || raid.Camp?.Guns == null ||
                 camp?.CurLordToil is not LordToil_Siege) return false;
-            return raid.Camp.Guns.Any(gun => ArtilleryCamp.IsActiveBuiltSupportGun(raid, camp, gun));
+            foreach (ArtilleryPlacement gun in raid.Camp.Guns)
+            {
+                if (!gun.IsSupport || gun.Building is not { Spawned: true, Destroyed: false } building ||
+                    building.Faction != raid.Faction ||
+                    building.TryGetComp<CompBreakdownable>()?.BrokenDown == true) continue;
+                Pawn op = null;
+                if (gun.NeedsOperator)
+                {
+                    op = gun.Operator;
+                    if (op == null || op.Dead || op.Downed || !op.Spawned || op.Map != building.Map ||
+                        op.InMentalState || op.Faction != raid.Faction || op.GetLord() != camp ||
+                        !op.health.capacities.CapableOf(PawnCapacityDefOf.Manipulation))
+                        continue;
+                }
+                if (building is Building_TurretGunCE turret)
+                {
+                    CompAmmoUser ammo = turret.GetAmmo();
+                    if (ammo != null && ammo.UseAmmo && !ammo.HasAmmoOrMagazine &&
+                        (op == null || ArtilleryGunnerPatch.FindAmmo(op, turret) == null))
+                        continue;
+                }
+                return true;
+            }
+            return false;
         }
-
-        internal static bool HasCrewCollapsed(ArtilleryRaid raid)
-        {
-            if (raid == null || !raid.InfantryReleased || raid.Phase == ArtilleryPhase.Abandoned ||
-                raid.CampLord?.CurLordToil is not LordToil_Siege campToil)
-                return false;
-            int lost = raid.CampViolentLosses.Count;
-            int alive = campToil.lord.ownedPawns.Count;
-            return lost >= 2 && ShouldRetreat(raid.Faction, lost + alive, lost, false, false, raid.RaidSeed) != null;
-        }
-
-        private static bool ShouldKeepCampStanding(ArtilleryRaid raid) =>
-            IsResoluteHumanCrew(raid) && raid.CampLord?.CurLordToil is LordToil_Siege &&
-            (raid.AssaultEnded || (raid.InfantryReleased && (raid.AssaultCreated || raid.AssaultLord != null))) &&
-            !HasCrewCollapsed(raid) && (raid.AssaultEnded || HasActiveBattery(raid));
 
         private static float? ShouldRetreat(Faction faction, int initial, int lost, bool reachedDefenses,
             bool breaches, int seed)
@@ -83,8 +83,9 @@ namespace RimSiege.Raids.Artillery
         private static void ReviewWave(ArtilleryRaid raid)
         {
             Review(raid.VanguardLord);
+            Review(raid.MechEscortLord);
             Review(raid.AssaultLord);
-            if (!ShouldKeepCampStanding(raid)) Review(raid.CampLord);
+            Review(raid.CampLord);
         }
 
         internal static void ReviewTribal(SiegeRaidMap raids)
@@ -110,6 +111,35 @@ namespace RimSiege.Raids.Artillery
             lord.Graph.transitions.FirstOrDefault(transition => transition.target is LordToil_PanicFlee &&
                 transition.sources.Contains(lord.CurLordToil) &&
                 transition.triggers.Any(trigger => trigger is Trigger_FractionPawnsLost))?.Execute(lord);
+        }
+
+        internal static void RestoreEscortExits(ArtilleryRaid raid)
+        {
+            foreach (Pawn pawn in raid.Members)
+                if (pawn?.GetLord()?.CurLordToil is LordToil_PanicFlee)
+                    SetEscortExitDuty(pawn);
+        }
+
+        private static void SetEscortExitDuty(Pawn pawn)
+        {
+            if (!SiegeRoles.IsHumanRaidEscortMech(pawn) || pawn.mindState.duty?.def != DutyDefOf.ExitMapRandom) return;
+            pawn.mindState.duty = new PawnDuty(DutyDefOf.ExitMapBest) { locomotion = LocomotionUrgency.Jog };
+            if (pawn.Spawned && pawn.CurJob is { exitMapOnArrival: false } job && job.def != JobDefOf.ExitMapFlying)
+                pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
+        }
+
+        [HarmonyPatch(typeof(LordToil_PanicFlee), nameof(LordToil_PanicFlee.UpdateAllDuties))]
+        private static class EscortExitDuty
+        {
+            private static void Postfix(LordToil_PanicFlee __instance)
+            {
+                Lord lord = __instance.lord;
+                if (lord.faction?.def.humanlikeFaction != true) return;
+                ArtilleryMap artillery = lord.Map.GetComponent<ArtilleryMap>();
+                if (artillery.ForLord(lord) == null) return;
+                foreach (Pawn pawn in lord.ownedPawns)
+                    SetEscortExitDuty(pawn);
+            }
         }
 
         [HarmonyPatch(typeof(TransitionAction_Message), nameof(TransitionAction_Message.DoAction))]
@@ -229,25 +259,21 @@ namespace RimSiege.Raids.Artillery
         private static class CountRaidLoss
         {
             private static void Prefix(Lord __instance, Pawn pawn, PawnLostCondition cond,
-                out (HashSet<int> Main, HashSet<int> Camp) __state)
+                out HashSet<int> __state)
             {
-                __state = default;
+                __state = null;
                 if (__instance.faction?.def.humanlikeFaction != true ||
                     cond is not (PawnLostCondition.Incapped or PawnLostCondition.Killed or PawnLostCondition.MadePrisoner) ||
                     !__instance.ownedPawns.Contains(pawn)) return;
                 ArtilleryMap artillery = __instance.Map.GetComponent<ArtilleryMap>();
-                HashSet<int> main = artillery.IncidentForLord(__instance)?.ViolentLosses ?? artillery.ForPawn(pawn)?.ViolentLosses ??
+                __state = artillery.IncidentForLord(__instance)?.ViolentLosses ?? artillery.ForPawn(pawn)?.ViolentLosses ??
                     __instance.Map.GetComponent<SiegeRaidMap>().TribalSmokeFor(__instance)?.ViolentLosses;
-                HashSet<int> camp = artillery.ForLord(__instance) is { InfantryReleased: true } campRaid &&
-                    campRaid.CampLord == __instance ? campRaid.CampViolentLosses : null;
-                __state = (main, camp);
             }
 
-            private static void Postfix(Lord __instance, Pawn pawn, (HashSet<int> Main, HashSet<int> Camp) __state)
+            private static void Postfix(Lord __instance, Pawn pawn, HashSet<int> __state)
             {
-                if (__instance.ownedPawns.Contains(pawn)) return;
-                __state.Main?.Add(pawn.thingIDNumber);
-                __state.Camp?.Add(pawn.thingIDNumber);
+                if (__state != null && !__instance.ownedPawns.Contains(pawn))
+                    __state.Add(pawn.thingIDNumber);
             }
         }
     }

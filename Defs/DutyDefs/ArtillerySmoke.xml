@@ -17,4 +17,35 @@
       </subNodes>
     </thinkNode>
   </DutyDef>
+
+  <DutyDef>
+    <defName>RS_ArtilleryMechSmokeEscort</defName>
+    <alwaysShowWeapon>true</alwaysShowWeapon>
+    <thinkNode Class="ThinkNode_Priority">
+      <subNodes>
+        <li Class="RimSiege.Raids.Artillery.JobGiver_ArtilleryMechSmokeCombat">
+          <targetAcquireRadius>90</targetAcquireRadius>
+          <targetKeepRadius>96</targetKeepRadius>
+        </li>
+        <li Class="RimSiege.Raids.Artillery.JobGiver_ArtillerySmokeFollowers">
+          <locomotionUrgencyOutsideRadius>Jog</locomotionUrgencyOutsideRadius>
+          <expiryInterval>60</expiryInterval>
+        </li>
+      </subNodes>
+    </thinkNode>
+  </DutyDef>
+
+  <DutyDef>
+    <defName>RS_ArtilleryInfantryHold</defName>
+    <thinkNode Class="ThinkNode_Priority">
+      <subNodes>
+        <li Class="RimSiege.Raids.Artillery.JobGiver_CollectArtillerySmoke" />
+        <li Class="RimSiege.Raids.Artillery.JobGiver_ArtillerySmoke" />
+        <li Class="RimSiege.Raids.Artillery.JobGiver_ArtillerySmokeWander">
+          <wanderRadius>3</wanderRadius>
+          <expiryInterval>60</expiryInterval>
+        </li>
+      </subNodes>
+    </thinkNode>
+  </DutyDef>
 </Defs>

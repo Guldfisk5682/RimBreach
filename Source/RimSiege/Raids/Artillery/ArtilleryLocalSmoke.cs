@@ -23,7 +23,8 @@ namespace RimSiege.Raids.Artillery
             Work = opening.LocalScreen(focus);
         }
 
-        internal void Review(ArtilleryRaid raid, Lord camp, IReadOnlyCollection<Pawn> carriers, int now)
+        internal void Review(ArtilleryRaid raid, Lord camp, IReadOnlyCollection<Pawn> carriers, int now,
+            System.Predicate<IntVec3> dropPosition = null)
         {
             foreach (SmokeAssignment assignment in Work.Assignments.ToArray())
             {
@@ -41,7 +42,7 @@ namespace RimSiege.Raids.Artillery
                 else Work.Assignments.Add(new SmokeAssignment { Pawn = pawn, LoadoutRestored = true });
             }
 
-            if (ArtilleryRetreat.ShouldDisablePostAssaultSupplies(raid) || now < nextSupplyTick || IsOutstanding(camp.Map) ||
+            if (now < nextSupplyTick || IsOutstanding(camp.Map) ||
                 !carriers.Any(pawn => Work.FindSmokeWeapon(pawn) == null &&
                     pawn.CurJobDef != ArtillerySmokeDefOf.RS_LayArtillerySmoke)) return;
 
@@ -51,7 +52,7 @@ namespace RimSiege.Raids.Artillery
             var groups = new List<List<Thing>> { new() { payload } };
             if (CampSupplies.DropGroups(camp.Map, raid, groups, 110, instaDrop: false,
                 leaveSlag: false, canRoofPunch: true, forbid: false, allowFogged: true, faction: raid.Faction,
-                dropCenter: Work.Rally)) Supply = payload;
+                dropCenter: Work.Rally, dropPosition: dropPosition)) Supply = payload;
             else CampSupplies.Discard(groups);
         }
 
