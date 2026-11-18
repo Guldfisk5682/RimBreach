@@ -18,6 +18,9 @@ namespace RimSiege.Fortress
         internal FortressFacilityPlan Facilities;
         internal List<FortressStock> Stock;
         internal List<FortressDefensePiece> Defenses;
+        internal IntVec3 LootShelfGround = IntVec3.Invalid;
+        internal int LootShelfFloor;
+        internal bool HarassmentLootPlaced;
 
         internal FortressLayout Rebuild(Map map) => FortressLayout.Plan(map, Outer, GateSide,
             new HashSet<IntVec3>(NaturalBarrier),
@@ -36,6 +39,9 @@ namespace RimSiege.Fortress
             Scribe_Collections.Look(ref NaturalBarrier, "naturalBarrier", LookMode.Value);
             Scribe_Collections.Look(ref Stock, "stock", LookMode.Deep);
             Scribe_Collections.Look(ref Defenses, "defenses", LookMode.Deep);
+            Scribe_Values.Look(ref LootShelfGround, "lootShelfGround", IntVec3.Invalid);
+            Scribe_Values.Look(ref LootShelfFloor, "lootShelfFloor");
+            Scribe_Values.Look(ref HarassmentLootPlaced, "harassmentLootPlaced");
 
             FortressLot living = LookLot(Facilities.Living, "living");
             FortressLot supply = LookLot(Facilities.Supply, "supply");

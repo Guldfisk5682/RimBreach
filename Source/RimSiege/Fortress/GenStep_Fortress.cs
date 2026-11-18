@@ -91,21 +91,25 @@ namespace RimSiege.Fortress
                     return;
                 }
 
+                IntVec3 lootShelf = FortressStronghold.Furnish(map, layout, blueprint.Stuff, site?.Harassment == true);
                 if (site != null)
                 {
+                    blueprint.LootShelfGround = lootShelf.IsValid ? Api.GroundCellOf(lootShelf, map) : IntVec3.Invalid;
+                    blueprint.LootShelfFloor = lootShelf.IsValid ? Api.FloorOf(lootShelf, map) : 0;
                     if (blueprint.Stock == null) blueprint.Stock = FortressStock.Capture(map, layout.Facilities);
                     else FortressStock.Restore(map, layout.Facilities, blueprint.Stock);
                 }
 
                 blueprint.Defenses ??= FortressDefensePlanner.Plan(map, layout, site?.OriginalPoints ?? 5000f);
                 List<ArmedEmplacement> emplacements = FortressArmament.Spawn(map, layout, blueprint.Defenses);
-                var ammunition = new FortressAmmunition(map, layout, blueprint.Stuff);
+                var ammunition = new FortressAmmunition(map, layout, blueprint.Stuff, lootShelf);
                 ammunition.StockEmplacements(emplacements);
                 if (!layout.Facilities.Power.IsEmpty) FortressPower.Connect(map, layout);
 
                 if (site == null) return;
                 site.Blueprint = blueprint;
                 ammunition.StockInfantry(FortressGarrison.Spawn(map, layout, parms.sitePart), emplacements);
+                FortressLoot.PlaceHarassmentLoot(map, site, lootShelf);
                 MapGenUtility.ForbidAllItems(map);
                 if (RimSiegeMod.Settings.FortressFog)
                     map.GetComponent<FortressFog>().Conceal(layout);

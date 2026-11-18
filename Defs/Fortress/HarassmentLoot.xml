@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <RimSiege.Fortress.FortressLootDef>
+    <defName>RS_FortressLoot_Healer</defName>
+    <thing>MechSerumHealer</thing>
+  </RimSiege.Fortress.FortressLootDef>
+  <RimSiege.Fortress.FortressLootDef>
+    <defName>RS_FortressLoot_ShockLance</defName>
+    <thing>Apparel_PsychicShockLance</thing>
+  </RimSiege.Fortress.FortressLootDef>
+  <RimSiege.Fortress.FortressLootDef MayRequire="Ludeon.RimWorld.Anomaly">
+    <defName>RS_FortressLoot_Shards</defName>
+    <thing>Shard</thing>
+    <count>5</count>
+  </RimSiege.Fortress.FortressLootDef>
+
+  <RimSiege.Fortress.FortressLootDef>
+    <defName>RS_FortressLoot_Techprof</defName>
+    <thing>TechprofSubpersonaCore</thing>
+    <weight>9</weight>
+    <minTech>Industrial</minTech>
+    <maxTech>Industrial</maxTech>
+  </RimSiege.Fortress.FortressLootDef>
+  <RimSiege.Fortress.FortressLootDef Name="RS_IndustrialLargeLoot" Abstract="True">
+    <minTech>Industrial</minTech>
+    <maxTech>Industrial</maxTech>
+    <largeOnly>true</largeOnly>
+  </RimSiege.Fortress.FortressLootDef>
+  <RimSiege.Fortress.FortressLootDef ParentName="RS_IndustrialLargeLoot">
+    <defName>RS_FortressLoot_Resurrector</defName>
+    <thing>MechSerumResurrector</thing>
+    <weight>3</weight>
+  </RimSiege.Fortress.FortressLootDef>
+  <RimSiege.Fortress.FortressLootDef ParentName="RS_IndustrialLargeLoot">
+    <defName>RS_FortressLoot_ArchotechEye</defName>
+    <thing>ArchotechEye</thing>
+    <weight>1</weight>
+  </RimSiege.Fortress.FortressLootDef>
+  <RimSiege.Fortress.FortressLootDef ParentName="RS_IndustrialLargeLoot">
+    <defName>RS_FortressLoot_ArchotechArm</defName>
+    <thing>ArchotechArm</thing>
+    <weight>1</weight>
+  </RimSiege.Fortress.FortressLootDef>
+  <RimSiege.Fortress.FortressLootDef ParentName="RS_IndustrialLargeLoot">
+    <defName>RS_FortressLoot_ArchotechLeg</defName>
+    <thing>ArchotechLeg</thing>
+    <weight>1</weight>
+  </RimSiege.Fortress.FortressLootDef>
+
+  <RimSiege.Fortress.FortressLootDef MayRequire="Ludeon.RimWorld.Odyssey">
+    <defName>RS_FortressLoot_Greatbow</defName>
+    <thing>Bow_Great_Unique</thing>
+    <weight>9</weight>
+    <maxTech>Medieval</maxTech>
+  </RimSiege.Fortress.FortressLootDef>
+  <RimSiege.Fortress.FortressLootDef MayRequire="Ludeon.RimWorld.Odyssey">
+    <defName>RS_FortressLoot_AssaultRifle</defName>
+    <thing>Gun_AssaultRifle_Unique</thing>
+    <weight>6</weight>
+    <minTech>Industrial</minTech>
+    <maxTech>Industrial</maxTech>
+  </RimSiege.Fortress.FortressLootDef>
+  <RimSiege.Fortress.FortressLootDef MayRequire="Ludeon.RimWorld.Odyssey">
+    <defName>RS_FortressLoot_Lmg</defName>
+    <thing>Gun_LMG_Unique</thing>
+    <weight>3</weight>
+    <minTech>Industrial</minTech>
+    <maxTech>Industrial</maxTech>
+    <minPoints>5000</minPoints>
+  </RimSiege.Fortress.FortressLootDef>
+  <RimSiege.Fortress.FortressLootDef MayRequire="Ludeon.RimWorld.Odyssey">
+    <defName>RS_FortressLoot_ChargeRifle</defName>
+    <thing>Gun_ChargeRifle_Unique</thing>
+    <weight>6</weight>
+    <minTech>Ultra</minTech>
+  </RimSiege.Fortress.FortressLootDef>
+  <RimSiege.Fortress.FortressLootDef MayRequire="Ludeon.RimWorld.Odyssey">
+    <defName>RS_FortressLoot_ChargeLance</defName>
+    <thing>Gun_ChargeLance_Unique</thing>
+    <weight>3</weight>
+    <minTech>Ultra</minTech>
+    <minPoints>5000</minPoints>
+  </RimSiege.Fortress.FortressLootDef>
+</Defs>

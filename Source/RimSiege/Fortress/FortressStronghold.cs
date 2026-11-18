@@ -9,7 +9,7 @@ namespace RimSiege.Fortress
 {
     internal static class FortressStronghold
     {
-        internal static void Furnish(Map map, FortressLayout layout, ThingDef stuff)
+        internal static IntVec3 Furnish(Map map, FortressLayout layout, ThingDef stuff, bool reserveLootShelf)
         {
             CellRect keep = layout.Modules.First(module => module.Kind == FortressModuleKind.Keep).Ground;
             CellRect room = keep.ContractedBy(1);
@@ -25,9 +25,16 @@ namespace RimSiege.Fortress
                 BaseGen.symbolStack.Push("chargeBatteries", new ResolveParams { rect = room, faction = map.ParentFaction });
             PlanBeds(map, room, access, keep.Width >= 13 ? 2 : 1);
             BaseGen.Generate();
+            bool hasUpperRoom = layout.Tiers.Length > 2;
+            IntVec3 lootShelf = reserveLootShelf && !hasUpperRoom
+                ? PlaceLootShelf(map, room, stuff, access)
+                : IntVec3.Invalid;
             FortressStorage.PlaceShelves(map, room, stuff, access, limit: 2);
-            if (layout.Tiers.Length > 2)
-                FurnishUpperKeep(map, layout, keep, stuff);
+            if (hasUpperRoom)
+            {
+                lootShelf = FurnishUpperKeep(map, layout, keep, stuff, reserveLootShelf);
+                if (reserveLootShelf && !lootShelf.IsValid) lootShelf = PlaceLootShelf(map, room, stuff, access);
+            }
 
             foreach (FortressModule module in layout.Modules.Where(module => module.Kind == FortressModuleKind.Tower))
             {
@@ -41,9 +48,52 @@ namespace RimSiege.Fortress
                 }
                 FortressStorage.PlaceShelves(map, tower, stuff, towerAccess, limit: 2);
             }
+            return lootShelf;
         }
 
-        private static void FurnishUpperKeep(Map map, FortressLayout layout, CellRect keep, ThingDef stuff)
+        private static IEnumerable<IntVec3> KeepLootPositions(CellRect room)
+        {
+            IntVec3 center = room.CenterCell;
+            var preferred = new[]
+            {
+                center + new IntVec3(1, 0, 1),
+                center + new IntVec3(2, 0, 1),
+                center + new IntVec3(1, 0, -1),
+                center + new IntVec3(2, 0, -1)
+            };
+            var seen = new HashSet<IntVec3>();
+            foreach (IntVec3 cell in preferred)
+                if (room.Contains(cell) && seen.Add(cell)) yield return cell;
+            foreach (IntVec3 cell in room
+                .OrderBy(candidate => room.IsOnEdge(candidate))
+                .ThenBy(candidate => (candidate - center).LengthHorizontalSquared))
+                if (seen.Add(cell)) yield return cell;
+        }
+
+        private static IntVec3 PlaceLootShelf(Map map, CellRect room, ThingDef stuff, HashSet<IntVec3> access)
+        {
+            ThingDef def = ThingDefOf.ShelfSmall;
+            foreach (IntVec3 cell in KeepLootPositions(room))
+            {
+                if (access.Contains(cell) || !cell.Standable(map) || cell.GetFirstBuilding(map) != null ||
+                    !GenConstruct.CanBuildOnTerrain(def, cell, map, Rot4.North, stuffDef: stuff) ||
+                    !GenSpawn.CanSpawnAt(def, cell, map, Rot4.North, canWipeEdifices: false))
+                    continue;
+                IntVec3 workingCell = GenAdj.CardinalDirections.Select(dir => cell + dir).FirstOrDefault(neighbor =>
+                    room.Contains(neighbor) && neighbor.Standable(map) && neighbor.GetFirstBuilding(map) == null,
+                    IntVec3.Invalid);
+                if (!workingCell.IsValid) continue;
+                var shelf = (Building_Storage)FortressConstruction.Spawn(def, cell, Rot4.North, stuff, map);
+                shelf.GetStoreSettings().filter.SetDisallowAll();
+                access.Add(cell);
+                access.Add(workingCell);
+                return cell;
+            }
+            return IntVec3.Invalid;
+        }
+
+        private static IntVec3 FurnishUpperKeep(Map map, FortressLayout layout, CellRect keep, ThingDef stuff,
+            bool reserveLootShelf)
         {
             CellRect inside = keep.ContractedBy(1);
             CellRect room = CellRect.FromLimits(Api.CellOnFloor(inside.Min, 1, map), Api.CellOnFloor(inside.Max, 1, map));
@@ -64,6 +114,7 @@ namespace RimSiege.Fortress
                 access.UnionWith(stair.footprint.AdjacentCellsCardinal.Where(room.Contains));
             }
 
+            IntVec3 lootShelf = reserveLootShelf ? PlaceLootShelf(map, room, stuff, access) : IntVec3.Invalid;
             List<Building_Storage> shelves = FortressStorage.PlaceShelves(map, room, stuff, access,
                 limit: keep.Width >= 13 ? 8 : 6);
             foreach (Building_Storage shelf in shelves)
@@ -75,6 +126,7 @@ namespace RimSiege.Fortress
                 PlanBeds(map, room, access, 1);
                 BaseGen.Generate();
             }
+            return lootShelf;
         }
 
         private static HashSet<IntVec3> Approaches(CellRect room, Map map) => new(room.Where(cell =>

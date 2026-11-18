@@ -62,9 +62,9 @@ namespace RimSiege.Fortress
         public override void Notify_QuestSignalReceived(Signal signal)
         {
             base.Notify_QuestSignalReceived(signal);
-            if (signal.tag != Signal || Site.Resolved) return;
+            if (signal.tag != Signal || Site == null || Site.Resolved) return;
             Site.Resolved = true;
-            FortressGarrison.PlaceLoot(Site.Map, Site.Blueprint, Site.parts[0].parms.lootMarketValue);
+            FortressLoot.PlaceVictoryLoot(Site);
         }
 
         public override void ExposeData()

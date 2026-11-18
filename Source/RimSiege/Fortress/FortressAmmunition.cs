@@ -19,11 +19,13 @@ namespace RimSiege.Fortress
         private readonly HashSet<IntVec3> shelfAccess = new();
         private readonly Dictionary<IntVec3, Building_Storage> readyShelves = new();
         private readonly ThingDef shelfStuff;
+        private readonly IntVec3 lootShelf;
 
-        internal FortressAmmunition(Map map, FortressLayout layout, ThingDef shelfStuff)
+        internal FortressAmmunition(Map map, FortressLayout layout, ThingDef shelfStuff, IntVec3 lootShelf)
         {
             this.map = map;
             this.shelfStuff = shelfStuff;
+            this.lootShelf = lootShelf;
             keep = layout.Modules.First(module => module.Kind == FortressModuleKind.Keep);
             towers = layout.Modules.Where(module => module.Kind == FortressModuleKind.Tower).ToArray();
             storage = towers.Prepend(keep).ToDictionary(module => module, SlotsFor);
@@ -42,6 +44,7 @@ namespace RimSiege.Fortress
                 .SelectMany(floor => CellRect.FromLimits(
                     Api.CellOnFloor(inside.Min, floor, map),
                     Api.CellOnFloor(inside.Max, floor, map)).Cells)
+                .Where(cell => cell != lootShelf)
                 .Select(cell => cell.GetFirstBuilding(map)).OfType<Building_Storage>().Distinct()
                 .SelectMany(shelf => shelf.GetSlotGroup().CellsList).ToArray();
         }

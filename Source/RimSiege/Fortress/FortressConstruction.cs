@@ -108,7 +108,6 @@ namespace RimSiege.Fortress
             }
 
             FortressFacilities.Furnish(map, layout, material);
-            FortressStronghold.Furnish(map, layout, material.Stuff);
 
             CellRect ground = Api.GroundRect(map);
             Log.Message($"[RimSiege] Fortress generated on tile {map.Tile}: {layout.Outer}, gate {layout.Gate}, " +
