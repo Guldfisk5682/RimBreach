@@ -27,6 +27,7 @@
         <li Class="RimSiege.Fortress.JobGiver_FortressMobileFight">
           <targetAcquireRadius>65</targetAcquireRadius>
           <targetKeepRadius>75</targetKeepRadius>
+          <needLOSToAcquireNonPawnTargets>true</needLOSToAcquireNonPawnTargets>
         </li>
         <li Class="RimSiege.Fortress.JobGiver_FortressSeekIntruder" />
       </subNodes>
@@ -74,7 +75,9 @@
         <li Class="RimSiege.Fortress.JobGiver_FortressMobileFight">
           <targetAcquireRadius>65</targetAcquireRadius>
           <targetKeepRadius>75</targetKeepRadius>
+          <needLOSToAcquireNonPawnTargets>true</needLOSToAcquireNonPawnTargets>
         </li>
+        <li Class="RimSiege.Fortress.JobGiver_FortressSortieAdvance" />
         <li Class="RimSiege.Fortress.JobGiver_FortressSortieFallback" />
         <li Class="JobGiver_WanderNearDutyLocation"><wanderRadius>5</wanderRadius></li>
       </subNodes>

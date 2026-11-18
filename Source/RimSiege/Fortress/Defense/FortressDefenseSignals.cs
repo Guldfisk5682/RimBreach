@@ -1,3 +1,9 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using CombatExtended;
 using CombatExtended.AI;
 using HarmonyLib;
@@ -98,20 +104,163 @@ namespace RimSiege.Fortress
         }
     }
 
-    [HarmonyPatch(typeof(Verb_LaunchProjectileCE), nameof(Verb_LaunchProjectileCE.TryCastShot))]
-    internal static class FortressTurretRetaliationPatch
+    internal static class FortressNonMortarHitScope
     {
-        private static void Postfix(Verb_LaunchProjectileCE __instance, bool __result)
+        [ThreadStatic] internal static bool InMortarHit;
+        [ThreadStatic] internal static bool ThrowingMortarFrags;
+        [ThreadStatic] internal static bool SpawningMortarFrag;
+        private static readonly ConditionalWeakTable<ProjectileCE, object> MortarFragments = new();
+        private static readonly object Marker = new();
+
+        internal static void MarkMortarFragment(ProjectileCE projectile)
         {
-            if (!__result || __instance.Caster is not Building_TurretGunCE gun ||
-                gun.Map?.Parent is not FortressSite || __instance.CurrentTarget.Thing is not Thing target) return;
-            foreach (Lord lord in gun.Map.lordManager.lords)
-                if (lord.faction == gun.Faction && lord.CurLordToil is LordToil_FortressDefense &&
-                    lord.LordJob is LordJob_FortressDefense defense)
-                {
-                    defense.RecordRetaliation(target);
-                    break;
-                }
+            if (projectile != null) MortarFragments.AddOrUpdate(projectile, Marker);
+        }
+
+        internal static bool IsMortarProjectile(ProjectileCE projectile) =>
+            projectile != null && (IsMortarWeapon(projectile.def) || IsMortarWeapon(projectile.equipmentDef) ||
+                MortarFragments.TryGetValue(projectile, out _));
+
+        internal static bool IsMortarWeapon(ThingDef weapon)
+        {
+            if (weapon == null) return false;
+            if (weapon.building?.IsMortar == true || weapon.projectile?.flyOverhead == true) return true;
+            if (weapon.Verbs == null) return false;
+            foreach (VerbProperties verb in weapon.Verbs)
+                if (typeof(Verb_ShootMortarCE).IsAssignableFrom(verb.verbClass) ||
+                    verb.defaultProjectile?.projectile?.flyOverhead == true)
+                    return true;
+            return false;
+        }
+
+        internal static bool IsOverheadVerb(Verb verb)
+        {
+            if (verb == null || verb.verbProps.IsMeleeAttack) return false;
+            if (verb is Verb_ShootMortarCE) return true;
+            ThingDef projectile = (verb as Verb_LaunchProjectileCE)?.Projectile ?? verb.GetProjectile();
+            return projectile?.projectile?.flyOverhead == true ||
+                verb.verbProps?.defaultProjectile?.projectile?.flyOverhead == true;
+        }
+
+        internal static IEnumerator WrapMortarFragRoutine(IEnumerator inner)
+        {
+            while (true)
+            {
+                bool previous = SpawningMortarFrag;
+                SpawningMortarFrag = true;
+                bool moved;
+                try { moved = inner.MoveNext(); }
+                finally { SpawningMortarFrag = previous; }
+                if (!moved) yield break;
+                yield return inner.Current;
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(CompFragments), nameof(CompFragments.Throw))]
+    internal static class FortressMortarFragmentsThrowPatch
+    {
+        private static void Prefix(CompFragments __instance, out bool __state)
+        {
+            __state = FortressNonMortarHitScope.ThrowingMortarFrags;
+            FortressNonMortarHitScope.ThrowingMortarFrags = __instance.parent is ProjectileCE projectile
+                ? FortressNonMortarHitScope.IsMortarProjectile(projectile)
+                : FortressNonMortarHitScope.IsMortarWeapon(__instance.parent?.def);
+        }
+
+        private static void Finalizer(bool __state) => FortressNonMortarHitScope.ThrowingMortarFrags = __state;
+    }
+
+    [HarmonyPatch(typeof(CompFragments), nameof(CompFragments.FragRoutine))]
+    internal static class FortressMortarFragmentsRoutinePatch
+    {
+        private static void Postfix(ref IEnumerator __result)
+        {
+            if (FortressNonMortarHitScope.ThrowingMortarFrags && __result != null)
+                __result = FortressNonMortarHitScope.WrapMortarFragRoutine(__result);
+        }
+    }
+
+    [HarmonyPatch]
+    internal static class FortressMortarFragmentLaunchPatch
+    {
+        private static IEnumerable<MethodBase> TargetMethods() =>
+            AccessTools.GetDeclaredMethods(typeof(ProjectileCE)).Where(m => m.Name == nameof(ProjectileCE.Launch));
+
+        private static void Postfix(ProjectileCE __instance)
+        {
+            if (FortressNonMortarHitScope.SpawningMortarFrag)
+                FortressNonMortarHitScope.MarkMortarFragment(__instance);
+        }
+    }
+
+    [HarmonyPatch]
+    internal static class FortressProjectileMortarHitScopePatch
+    {
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            yield return AccessTools.DeclaredMethod(typeof(ProjectileCE), nameof(ProjectileCE.Impact), new[] { typeof(Thing) });
+            yield return AccessTools.DeclaredMethod(typeof(BulletCE), nameof(BulletCE.Impact), new[] { typeof(Thing) });
+        }
+
+        private static void Prefix(ProjectileCE __instance, out bool __state)
+        {
+            __state = FortressNonMortarHitScope.InMortarHit;
+            if (FortressNonMortarHitScope.IsMortarProjectile(__instance))
+                FortressNonMortarHitScope.InMortarHit = true;
+        }
+
+        private static void Finalizer(bool __state) => FortressNonMortarHitScope.InMortarHit = __state;
+    }
+
+    [HarmonyPatch(typeof(Explosion), "AffectCell")]
+    internal static class FortressExplosionMortarHitScopePatch
+    {
+        private static void Prefix(Explosion __instance, out bool __state)
+        {
+            __state = FortressNonMortarHitScope.InMortarHit;
+            if (FortressNonMortarHitScope.IsMortarWeapon(__instance.weapon) ||
+                FortressNonMortarHitScope.IsMortarWeapon(__instance.projectile))
+                FortressNonMortarHitScope.InMortarHit = true;
+        }
+
+        private static void Finalizer(bool __state) => FortressNonMortarHitScope.InMortarHit = __state;
+    }
+
+    [HarmonyPatch(typeof(Thing), nameof(Thing.PostApplyDamage))]
+    internal static class FortressNonMortarHitPatch
+    {
+        private static void Postfix(Thing __instance, DamageInfo dinfo, float totalDamageDealt)
+        {
+            if (totalDamageDealt <= 0f || !FortressTargeting.IsCombatTarget(__instance) ||
+                dinfo.Instigator is not Thing instigator || instigator.Faction == null) return;
+            Map map = instigator.Map ?? __instance.MapHeld;
+            if (map?.Parent is not FortressSite) return;
+            foreach (Lord lord in map.lordManager.lords)
+            {
+                if (lord.faction != instigator.Faction || lord.CurLordToil is not LordToil_FortressDefense ||
+                    lord.LordJob is not LordJob_FortressDefense defense) continue;
+                if (defense.HasPendingCounterSortie && lord.faction.HostileTo(__instance.Faction) &&
+                    !IsMortarOrOverhead(dinfo, instigator))
+                    defense.CancelCounterSortie();
+                break;
+            }
+        }
+
+        private static bool IsMortarOrOverhead(DamageInfo dinfo, Thing instigator)
+        {
+            if (FortressNonMortarHitScope.InMortarHit || FortressNonMortarHitScope.IsMortarWeapon(dinfo.Weapon))
+                return true;
+            if (dinfo.Weapon != null) return false;
+            if (instigator is Building_Turret turret)
+                return turret.def.building?.IsMortar == true || FortressNonMortarHitScope.IsOverheadVerb(turret.AttackVerb);
+            if (instigator is Pawn pawn)
+            {
+                if (pawn.CurJobDef == JobDefOf.ManTurret && pawn.CurJob?.targetA.Thing is Building_Turret manned)
+                    return manned.def.building?.IsMortar == true || FortressNonMortarHitScope.IsOverheadVerb(manned.AttackVerb);
+                return FortressNonMortarHitScope.IsOverheadVerb(pawn.CurrentEffectiveVerb);
+            }
+            return false;
         }
     }
 

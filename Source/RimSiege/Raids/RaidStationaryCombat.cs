@@ -77,6 +77,7 @@ namespace RimSiege.Raids
         internal static bool IsIndirectRangedVerb(Verb verb)
         {
             if (verb == null || verb.verbProps.IsMeleeAttack || verb is Verb_CastAbility) return false;
+            if (verb is Verb_ShootMortarCE) return true;
             ThingDef projectile = ProjectileOf(verb);
             if (projectile?.projectile?.flyOverhead == true) return true;
             return !verb.verbProps.requireLineOfSight && verb.verbProps.LaunchesProjectile;
@@ -123,10 +124,30 @@ namespace RimSiege.Raids
         internal static LocalTargetInfo CastTarget(Verb verb, Thing target) =>
             verb.verbProps.ai_RangedAlawaysShootGroundBelowTarget ? new LocalTargetInfo(target.Position) : target;
 
+        internal static bool TryMakeStationaryCombatJob(Pawn pawn, out Job job, bool checkAutoShootTarget = true)
+        {
+            job = null;
+            if (!pawn.Position.WalkableBy(pawn.Map, pawn) ||
+                !pawn.Map.pawnDestinationReservationManager.CanReserve(pawn.Position, pawn, pawn.Drafted))
+                return false;
+
+            if (checkAutoShootTarget &&
+                (pawn.CurrentEffectiveVerb is not { } effectiveVerb || !HasAutoShootTarget(pawn, effectiveVerb)))
+                return false;
+
+            pawn.pather?.StopDead();
+            job = JobMaker.MakeJob(JobDefOf.Wait_Combat,
+                JobGiver_AIFightEnemy.ExpiryInterval_ShooterSucceeded.RandomInRange, checkOverrideOnExpiry: true);
+            return true;
+        }
+
         private static bool TryPreferJob(bool canHit, Pawn pawn, out Job job)
         {
             job = null;
             // The native job giver has already handled melee and selected a ranged verb.
+            if (pawn.GetLord()?.LordJob is Fortress.LordJob_FortressSortie)
+                return canHit && TryMakeStationaryCombatJob(pawn, out job);
+
             if (!SiegeRaidMap.Enabled) return false;
             SiegeRaidMap raids = pawn.Map.GetComponent<SiegeRaidMap>();
             if (!AppliesTo(pawn, raids)) return false;
@@ -143,18 +164,8 @@ namespace RimSiege.Raids
             bool escort = SiegeRoles.IsHumanRaidEscortMech(pawn);
             if (!escort && SiegeRoles.CloseAssault(pawn)) return false;
 
-            if (!pawn.Position.WalkableBy(pawn.Map, pawn) ||
-                !pawn.Map.pawnDestinationReservationManager.CanReserve(pawn.Position, pawn, pawn.Drafted))
-                return false;
-
             // The escort already checked its current target with the actual verb.
-            if (!escort && (pawn.CurrentEffectiveVerb is not { } effectiveVerb || !HasAutoShootTarget(pawn, effectiveVerb)))
-                return false;
-
-            pawn.pather.StopDead();
-            job = JobMaker.MakeJob(JobDefOf.Wait_Combat,
-                JobGiver_AIFightEnemy.ExpiryInterval_ShooterSucceeded.RandomInRange, checkOverrideOnExpiry: true);
-            return true;
+            return TryMakeStationaryCombatJob(pawn, out job, checkAutoShootTarget: !escort);
         }
     }
 
@@ -241,14 +252,22 @@ namespace RimSiege.Raids
     {
         private static void Prefix(ref CastPositionRequest newReq)
         {
-            if (newReq.caster is not { Spawned: true, Map: { } map } ||
-                !RaidStationaryCombat.IsIndirectRangedVerb(newReq.verb) ||
+            if (newReq.caster is not { Spawned: true, Map: { } map }) return;
+            if (newReq.caster.GetLord()?.LordJob is Fortress.LordJob_FortressSortie sortie &&
+                sortie.Ground.Outside(newReq.caster.Position))
+            {
+                Func<IntVec3, bool> existing = newReq.validator;
+                newReq.validator = existing == null
+                    ? c => sortie.Ground.Outside(c)
+                    : c => existing(c) && sortie.Ground.Outside(c);
+            }
+            if (!RaidStationaryCombat.IsIndirectRangedVerb(newReq.verb) ||
                 !RaidStationaryCombat.ProjectileFliesOverhead(newReq.verb))
                 return;
-            Func<IntVec3, bool> existing = newReq.validator;
-            newReq.validator = existing == null
+            Func<IntVec3, bool> current = newReq.validator;
+            newReq.validator = current == null
                 ? c => IsoFloor.OpenSkyOver(c, map)
-                : c => existing(c) && IsoFloor.OpenSkyOver(c, map);
+                : c => current(c) && IsoFloor.OpenSkyOver(c, map);
         }
     }
 
@@ -279,7 +298,9 @@ namespace RimSiege.Raids
             Predicate<Thing> validator, float minDistance, float maxDistance)
         {
             if (searcher is Pawn pawn && pawn.CurrentEffectiveVerb is { } verb &&
-                RaidStationaryCombat.IsIndirectRangedVerb(verb))
+                RaidStationaryCombat.IsIndirectRangedVerb(verb) &&
+                (pawn.GetLord()?.LordJob is not (Fortress.LordJob_FortressDefense or Fortress.LordJob_FortressSortie) ||
+                    Fortress.FortressCombatSearch.AllowIndirect(pawn, pawn.GetLord()?.LordJob)))
                 return (IAttackTarget)RaidStationaryCombat.BestIndirectShootTargetFromCurrentPosition(pawn, verb);
             return AttackTargetFinder.BestShootTargetFromCurrentPosition(searcher, flags, validator, minDistance, maxDistance);
         }

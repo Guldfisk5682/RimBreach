@@ -47,7 +47,7 @@ namespace RimSiege.Fortress
 
         internal static bool CanFight(Pawn pawn) => pawn.Spawned && !pawn.Downed && !pawn.Dead && !pawn.IsPrisoner;
 
-        private static bool CanAnswer(Pawn pawn) => CanFight(pawn) && !pawn.InMentalState &&
+        internal static bool CanAnswer(Pawn pawn) => CanFight(pawn) && !pawn.InMentalState &&
             !Recovering(pawn) && pawn.health.hediffSet.BleedRateTotal <= 0f;
 
         private static bool Ready(Pawn pawn) => CanFight(pawn) && !pawn.InMentalState &&
@@ -56,14 +56,22 @@ namespace RimSiege.Fortress
             (pawn.needs.food?.CurLevelPercentage ?? 1f) >= FoodThreshold &&
             (pawn.needs.rest?.CurLevelPercentage ?? 1f) >= RestThreshold;
 
-        private static bool Guard(Pawn pawn) => pawn.mindState?.duty?.def == FortressDutyDefOf.RS_FortressGuard;
+        internal static bool Guard(Pawn pawn) => pawn.mindState?.duty?.def == FortressDutyDefOf.RS_FortressGuard;
         private static bool Reserve(Pawn pawn) => pawn.mindState?.duty?.def == FortressDutyDefOf.RS_FortressReserve;
         internal static bool Intercepting(Pawn pawn) =>
             pawn.mindState?.duty?.def == FortressDutyDefOf.RS_FortressIntercept;
-        private static bool Sortie(Pawn pawn) => pawn.mindState.duty?.def == FortressDutyDefOf.RS_FortressSortie;
         private static bool Recovering(Pawn pawn) => pawn.mindState.duty?.def == FortressDutyDefOf.RS_FortressRecover;
         internal static bool Patrol(Pawn pawn) => Guard(pawn) &&
             pawn.mindState.duty.tag?.StartsWith(PatrolTag, StringComparison.Ordinal) == true;
+        internal static bool TryGetDutySector(Pawn pawn, out int sector)
+        {
+            sector = -1;
+            string tag = pawn.mindState?.duty?.tag;
+            if (tag == null) return false;
+            if (tag.StartsWith(PatrolTag, StringComparison.Ordinal))
+                tag = tag.Substring(PatrolTag.Length);
+            return int.TryParse(tag, out sector) && sector >= 0 && sector < 4;
+        }
         private static bool OnSector(Pawn pawn, int sector) =>
             pawn.mindState.duty.tag == (Patrol(pawn) ? PatrolTag + sector : sector.ToString());
         private static bool Indirect(Building_TurretGunCE gun) =>
@@ -105,7 +113,7 @@ namespace RimSiege.Fortress
         }
 
         internal void Assign(Lord lord, LordJob_FortressDefense defense, List<FortressWatch> watches,
-            bool sortieActive, int now, bool sameLine)
+            int now, bool sameLine)
         {
             FortressLine line = defense.Line;
             var healthy = new List<Pawn>();
@@ -117,7 +125,7 @@ namespace RimSiege.Fortress
                 {
                     Recover(pawn, line);
                 }
-                else if (!pawn.InMentalState && !(Sortie(pawn) && sortieActive)) healthy.Add(pawn);
+                else if (!pawn.InMentalState) healthy.Add(pawn);
             }
 
             int current = GarrisonSize(lord);
@@ -272,7 +280,7 @@ namespace RimSiege.Fortress
                     pawn.CurJobDef == CE_JobDefOf.ReloadTurret || FortressSupportJobs.CanReload(pawn, gun));
         }
 
-        private int GarrisonSize(Lord lord) => lord.ownedPawns.Count(pawn =>
+        internal int GarrisonSize(Lord lord) => lord.ownedPawns.Count(pawn =>
             pawn.Spawned && !pawn.Dead && !pawn.IsPrisoner && !ground.Outside(pawn.Position));
 
         internal bool FillMedical(Lord lord, FortressLine line)
@@ -476,21 +484,31 @@ namespace RimSiege.Fortress
             if (reserves.Count == 0 && !local.Any(pawn => pawn.mindState.duty.focusSecond.HasThing)) return;
 
             IntVec3 front = blueprint.Outer.GetCenterCellOnEdge(new Rot4(sector));
-            Thing[] targets = map.mapPawns.PawnsInFaction(Faction.OfPlayer)
-                .Where(pawn => pawn.RaceProps.Humanlike || pawn.RaceProps.IsMechanoid).Cast<Thing>()
+            Thing[] targets = defense.Targeting.CombatTargets()
                 .Concat(map.listerBuildings.allBuildingsColonist)
                 .Prepend(contact).Where(target => target != null && defense.ValidTarget(target) &&
-                    defense.Targeting.Allows(target) && ground.Sector(target.Position) == sector)
+                    defense.Targeting.Allows(target))
                 .Distinct().OrderByDescending(FortressTargeting.IsCombatTarget)
+                .ThenByDescending(target => ground.Sector(target.Position) == sector)
                 .ThenBy(target => Api.Distance3D(front, target.Position, map)).ToArray();
 
+            int opposite = (sector + 2) & 3;
             foreach (Building_TurretGunCE gun in Guns.Where(gun => EligibleGun(defense, sector, gun))
                 .OrderByDescending(Indirect).ThenBy(gun => Api.Distance3D(front, gun.Position, map)))
             {
                 Pawn gunner = crews[gun].FirstOrDefault();
-                if (gunner != null && !OnSector(gunner, sector) || gunner == null && reserves.Count == 0) continue;
+                bool stealGunner = gunner != null && !OnSector(gunner, sector);
+                if (stealGunner && (gun.CurrentTarget.Thing is Thing active && defense.ValidTarget(active) ||
+                    TryGetDutySector(gunner, out int gunnerSector) && defense.SectorHasContact(gunnerSector)))
+                    continue;
+                if (gunner == null && reserves.Count == 0) continue;
 
-                Thing target = targets.Where(candidate => CanAimAt(gun, candidate))
+                bool anySector = Indirect(gun) || defense.Line == FortressLine.Keep || ground.InKeep(gun.Position);
+                bool middle = ground.TowerMiddle(gun.Position);
+                Thing target = targets.Where(candidate =>
+                        (anySector || candidate == contact || ground.Sector(candidate.Position) != opposite) &&
+                        (!middle || defense.MiddleOpen(gun.Position, ground.Sector(candidate.Position))) &&
+                        CanAimAt(gun, candidate))
                     .Take(ShotChecksPerGun).FirstOrDefault(candidate => gun.AttackVerb.CanHitTargetFrom(gun.Position, candidate));
                 if (target == null) continue;
 
@@ -504,6 +522,10 @@ namespace RimSiege.Fortress
                     if (gunner == null) continue;
                     SetDuty(gunner, FortressDutyDefOf.RS_FortressGuard, gun.InteractionCell, 6f, gun, sectorTag);
                     reserves.Remove(gunner);
+                }
+                else if (stealGunner)
+                {
+                    gunner.mindState.duty.tag = sectorTag;
                 }
                 gunner.mindState.duty.focusThird = target;
             }
@@ -543,15 +565,23 @@ namespace RimSiege.Fortress
             }
         }
 
+        internal List<Building_TurretGunCE> DirectLookoutGuns(LordJob_FortressDefense defense) =>
+            Guns.Where(gun => Usable(gun) && gun.Active && gun.MannableComp != null && !Indirect(gun) &&
+                (defense.Line != FortressLine.Keep || ground.InKeep(gun.Position) && Api.FloorOf(gun.Position, map) > 0) &&
+                (!ground.OnCurtain(gun.Position) || defense.Line == FortressLine.Curtain)).ToList();
+
+        internal bool IsGunEligibleForSector(LordJob_FortressDefense defense, int sector, Building_TurretGunCE gun) =>
+            EligibleGun(defense, sector, gun);
+
         private bool EligibleGun(LordJob_FortressDefense defense, int sector, Building_TurretGunCE gun) =>
             Usable(gun) && gun.Active && gun.MannableComp != null &&
             (defense.Line != FortressLine.Keep || ground.InKeep(gun.Position) && Api.FloorOf(gun.Position, map) > 0) &&
             (!ground.OnCurtain(gun.Position) || defense.Line == FortressLine.Curtain) &&
             (!ground.TowerMiddle(gun.Position) || defense.MiddleOpen(gun.Position, sector)) &&
-            (defense.Line == FortressLine.Keep || Indirect(gun) || ground.Sector(gun.Position) == sector ||
-                ground.TowerFaces(gun.Position, sector));
+            (defense.Line == FortressLine.Keep || Indirect(gun) || ground.InKeep(gun.Position) ||
+                ground.Sector(gun.Position) == sector || ground.TowerFaces(gun.Position, sector));
 
-        private bool CanAimAt(Building_TurretGunCE gun, Thing target) =>
+        internal bool CanAimAt(Building_TurretGunCE gun, Thing target) =>
             Api.RangeDistance(gun.Position, target.Position, map) <= gun.AttackVerb.EffectiveRange &&
             (gun.CompFireArc?.WithinFireArc(target) ?? true);
 
@@ -579,26 +609,32 @@ namespace RimSiege.Fortress
             }
         }
 
-        internal bool Dispatch(Lord lord, LordJob_FortressDefense defense, Thing target, int count, bool counterSortie)
+        internal bool Dispatch(Lord lord, LordJob_FortressDefense defense, Thing target, int readyInside, bool counterSortie)
         {
-            if (count <= 0) return false;
-            IEnumerable<Pawn> pool = counterSortie ? ResponsePool(lord, defense) : FreeReserve(lord);
-            Pawn[] candidates = pool.Where(pawn => ground.Inside(pawn.Position) &&
+            IEnumerable<Pawn> pool = counterSortie ? ResponsePool(lord) : FreeReserve(lord);
+            Pawn[] candidates = pool.Where(pawn => !ground.Outside(pawn.Position) &&
                 !pawn.WorkTagIsDisabled(WorkTags.Violent)).ToArray();
-            int minRequired = counterSortie ? Math.Min(4, count) : count;
-            if (candidates.Length < minRequired) return false;
+            int desired = counterSortie ? Math.Max(4, (candidates.Length * 3 + 9) / 10) : Math.Max(1, readyInside / 10);
+            int retained = (readyInside * 3 + 9) / 10;
+            int count = Math.Min(desired, Math.Min(candidates.Length, readyInside - retained));
+            int minRequired = counterSortie ? 4 : Math.Min(4, desired);
+            if (count < minRequired) return false;
             foreach (IntVec3 exit in FortressLayout.GateSides(blueprint.GateSide, blueprint.FourGates)
                 .Select(side => blueprint.Outer.GetCenterCellOnEdge(side) + side.FacingCell)
                 .Where(cell => cell.Standable(map))
                 .OrderBy(cell => Api.Distance3D(cell, target.Position, map)))
             {
-                Pawn[] raiders = candidates.OrderBy(pawn => Api.Distance3D(pawn.Position, exit, map))
-                    .Take(count * 2)
+                Pawn[] raiders = candidates.OrderBy(pawn => SortiePriority(pawn, defense))
+                    .ThenBy(pawn => Api.Distance3D(pawn.Position, exit, map))
                     .Where(pawn => pawn.CanReach(exit, PathEndMode.OnCell, Danger.Deadly)).Take(count).ToArray();
                 if (raiders.Length < minRequired) continue;
                 foreach (Pawn pawn in raiders)
-                    SetDuty(pawn, FortressDutyDefOf.RS_FortressSortie, target.Position, second: exit,
-                        tag: counterSortie ? CounterSortieTag : null);
+                {
+                    lord.RemovePawn(pawn);
+                    if (!pawn.Downed && pawn.CurJob is Job current && current.lord == lord)
+                        pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
+                }
+                LordMaker.MakeNewLord(lord.faction, new LordJob_FortressSortie(target, exit, counterSortie), map, raiders);
                 return true;
             }
             return false;
@@ -607,10 +643,17 @@ namespace RimSiege.Fortress
         private static IEnumerable<Pawn> FreeReserve(Lord lord) =>
             lord.ownedPawns.Where(pawn => Reserve(pawn) && Ready(pawn) && !pawn.mindState.duty.focusSecond.IsValid);
 
-        private static IEnumerable<Pawn> ResponsePool(Lord lord, LordJob_FortressDefense defense) =>
-            FreeReserve(lord).Concat(lord.ownedPawns.Where(pawn => Guard(pawn) && !Patrol(pawn) && Ready(pawn) &&
-                !pawn.mindState.duty.focusSecond.IsValid &&
-                int.TryParse(pawn.mindState.duty.tag, out int sector) && !defense.SectorUnderWatch(sector)));
+        private static IEnumerable<Pawn> ResponsePool(Lord lord) => lord.ownedPawns.Where(pawn => Ready(pawn) &&
+            (Reserve(pawn) && (!pawn.mindState.duty.focusSecond.IsValid ||
+                pawn.mindState.duty.tag == FortressMaintenance.DutyTag) ||
+             Guard(pawn) && !Patrol(pawn) && !pawn.mindState.duty.focusSecond.IsValid));
+
+        private static int SortiePriority(Pawn pawn, LordJob_FortressDefense defense)
+        {
+            if (Reserve(pawn) && !pawn.mindState.duty.focusSecond.IsValid) return 0;
+            if (Guard(pawn) && TryGetDutySector(pawn, out int sector) && !defense.SectorUnderWatch(sector)) return 1;
+            return Reserve(pawn) ? 2 : 3;
+        }
 
         private static IEnumerable<Pawn> DefenseResponsePool(Lord lord, LordJob_FortressDefense defense) =>
             lord.ownedPawns.Where(pawn => CanAnswer(pawn) &&

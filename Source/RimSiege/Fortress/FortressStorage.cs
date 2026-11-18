@@ -103,11 +103,13 @@ namespace RimSiege.Fortress
             }
         }
 
-        internal static void Stock(Map map, ThingDef def, IntVec3 cell, int count = int.MaxValue)
+        internal static int Stock(Map map, ThingDef def, IntVec3 cell, int count = int.MaxValue)
         {
             Thing stack = ThingMaker.MakeThing(def);
             stack.stackCount = System.Math.Min(count, def.stackLimit);
-            GenPlace.TryPlaceThing(stack, cell, map, ThingPlaceMode.Direct);
+            int requested = stack.stackCount;
+            return GenPlace.TryPlaceThing(stack, cell, map, ThingPlaceMode.Direct)
+                ? requested : requested - stack.stackCount;
         }
     }
 }

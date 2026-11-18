@@ -46,7 +46,8 @@ namespace RimSiege.Fortress
                     towerAccess.Add(ladder.Foot);
                     towerAccess.UnionWith(GenAdj.CardinalDirections.Select(direction => ladder.Foot + direction).Where(tower.Contains));
                 }
-                FortressStorage.PlaceShelves(map, tower, stuff, towerAccess, limit: 2);
+                // Large 7x7 towers (5x5 interior) have room for up to 4 edge shelves without blocking doors or ladders.
+                FortressStorage.PlaceShelves(map, tower, stuff, towerAccess, limit: tower.Width >= 5 ? 4 : 2);
             }
             return lootShelf;
         }

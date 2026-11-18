@@ -1,9 +1,13 @@
+using System;
 using System.Linq;
 using CombatExtended;
 using CombatExtended.Compatibility;
 using CombatExtended.CombatExtended.Jobs.Utils;
+using HarmonyLib;
 using ProjectZ;
+using RimSiege.Raids;
 using RimWorld;
+using UnityEngine;
 using Verse;
 using Verse.AI;
 using Verse.AI.Group;
@@ -27,47 +31,113 @@ namespace RimSiege.Fortress
         protected override Job TryGiveJob(Pawn pawn)
         {
             PawnDuty duty = pawn.mindState.duty;
-            var defense = (LordJob_FortressDefense)pawn.GetLord().LordJob;
-            bool sortie = duty.def == FortressDutyDefOf.RS_FortressSortie;
-            if (sortie && defense.Ground.Outside(pawn.Position))
+            if (duty == null) return null;
+            if (duty.def == FortressDutyDefOf.RS_FortressSortie &&
+                pawn.GetLord()?.LordJob is LordJob_FortressSortie sortie)
             {
-                if (duty.tag != FortressDefensePosts.CounterSortieTag ||
-                    defense.SortieAdvanceTarget(pawn) is not Thing target ||
-                    pawn.CurrentEffectiveVerb?.CanHitTarget(target) == true ||
-                    Api.RangeDistance(pawn.Position, target.Position, pawn.Map) <= 16f) return null;
-                Map map = pawn.Map;
-                IntVec3 ground = Api.GroundCellOf(target.Position, map);
-                IntVec3 near = Api.CellOnFloor(ground, Api.FloorOf(pawn.Position, map), map);
-                if (!CellFinder.TryFindRandomReachableCellNearPosition(pawn.Position, near, map, 12f,
-                    TraverseParms.For(pawn, Danger.Deadly),
-                    cell => defense.Ground.Outside(cell) && Api.SameFloor(cell, near, map) &&
-                        cell.Standable(map) && cell.GetFirstPawn(map) == null, null, out IntVec3 advance,
-                    maxRegions: 64)) return null;
-                Job charge = JobMaker.MakeJob(JobDefOf.Goto, advance);
-                charge.locomotionUrgency = LocomotionUrgency.Sprint;
-                charge.expiryInterval = 120;
-                charge.checkOverrideOnExpire = true;
-                return charge;
+                if (sortie.Ground.Outside(pawn.Position) || GenAI.EnemyIsNear(pawn, 12f) ||
+                    pawn.mindState.enemyTarget is { } target && sortie.ValidTarget(target) &&
+                    pawn.CurrentEffectiveVerb?.CanHitTarget(target) == true)
+                    return null;
+                IntVec3 exit = duty.focusSecond.Cell;
+                if (!exit.IsValid || !pawn.CanReach(exit, PathEndMode.OnCell, Danger.Deadly)) return null;
+                Job exitJob = JobMaker.MakeJob(JobDefOf.Goto, exit);
+                exitJob.locomotionUrgency = LocomotionUrgency.Sprint;
+                exitJob.expiryInterval = 120;
+                exitJob.checkOverrideOnExpire = true;
+                return exitJob;
             }
-            IntVec3 cell = sortie ? duty.focusSecond.Cell : duty.focus.Cell;
-            if (!sortie && Api.SameFloor(pawn.Position, cell, pawn.Map) && pawn.Position.InHorDistOf(cell, duty.radius))
+            IntVec3 cell = duty.focus.Cell;
+            if (Api.SameFloor(pawn.Position, cell, pawn.Map) && pawn.Position.InHorDistOf(cell, duty.radius))
                 return null;
             if (!cell.IsValid || !pawn.CanReach(cell, PathEndMode.OnCell, Danger.Deadly)) return null;
             Job job = JobMaker.MakeJob(JobDefOf.Goto, cell);
-            job.locomotionUrgency = sortie || duty.def == FortressDutyDefOf.RS_FortressGuard
+            job.locomotionUrgency = duty.def == FortressDutyDefOf.RS_FortressGuard
                 ? LocomotionUrgency.Sprint : LocomotionUrgency.Jog;
             return job;
+        }
+    }
+
+    internal static class FortressCombatSearch
+    {
+        private static readonly AccessTools.FieldRef<JobGiver_AIFightEnemy, bool> NeedLosNonPawns =
+            AccessTools.FieldRefAccess<JobGiver_AIFightEnemy, bool>("needLOSToAcquireNonPawnTargets");
+
+        internal static Thing FindAttackTarget(JobGiver_AIFightEnemy giver, Pawn pawn, float baseAcquireRadius,
+            bool ignoreNonCombatants, Predicate<Thing> extraValidator, IntVec3 flagPos, float flagRadius,
+            bool onlyUseRangedSearch)
+        {
+            Verb verb = pawn.TryGetAttackVerb(null, !pawn.IsColonist && !pawn.IsColonySubhuman);
+            if (verb == null) return null;
+
+            LordJob lordJob = pawn.GetLord()?.LordJob;
+            bool isSortie = lordJob is LordJob_FortressSortie;
+            bool indirect = RaidStationaryCombat.IsIndirectRangedVerb(verb) && AllowIndirect(pawn, lordJob);
+
+            TargetScanFlags flags = TargetScanFlags.NeedReachableIfCantHitFromMyPos |
+                TargetScanFlags.NeedThreat | TargetScanFlags.NeedAutoTargetable;
+            if (!indirect)
+            {
+                flags |= TargetScanFlags.NeedLOSToPawns;
+                if (NeedLosNonPawns(giver)) flags |= TargetScanFlags.NeedLOSToNonPawns;
+            }
+            else if (RaidStationaryCombat.ProjectileFliesOverhead(verb))
+            {
+                flags |= TargetScanFlags.NeedNotUnderThickRoof;
+            }
+            if (verb.IsIncendiary_Ranged()) flags |= TargetScanFlags.NeedNonBurning;
+            if (ignoreNonCombatants) flags |= TargetScanFlags.IgnoreNonCombatants;
+
+            bool meleeSortie = isSortie && verb.verbProps.IsMeleeAttack;
+            float maxDist = meleeSortie ? 9999f : Mathf.Max(baseAcquireRadius, verb.EffectiveRange + (isSortie ? 12f : 0f));
+            return FortressTargeting.PreferCombat(pawn, () => (Thing)AttackTargetFinder.BestAttackTarget(
+                pawn, flags, extraValidator, 0f, maxDist, flagPos, flagRadius,
+                canBashDoors: false, canTakeTargetsCloserThanEffectiveMinRange: true,
+                canBashFences: false, onlyUseRangedSearch));
+        }
+
+        internal static bool ShouldLoseTarget(Pawn pawn, float baseKeepRadius, int ticksSinceEngageToLoseTarget)
+        {
+            LordJob lordJob = pawn.GetLord()?.LordJob;
+            Thing enemyTarget = pawn.mindState.enemyTarget;
+            if (enemyTarget == null) return true;
+            if (lordJob != null && !lordJob.ValidateAttackTarget(pawn, enemyTarget)) return true;
+            if (enemyTarget.Destroyed || !enemyTarget.Spawned ||
+                Find.TickManager.TicksGame - pawn.mindState.lastEngageTargetTick > ticksSinceEngageToLoseTarget)
+                return true;
+            if (!pawn.CanReach(enemyTarget, PathEndMode.Touch, Danger.Deadly) &&
+                pawn.CurrentEffectiveVerb?.CanHitTarget(enemyTarget) != true)
+                return true;
+            if (lordJob is not LordJob_FortressSortie)
+            {
+                Verb verb = pawn.TryGetAttackVerb(enemyTarget, !pawn.IsColonist && !pawn.IsColonySubhuman);
+                float keepRadius = Mathf.Max(baseKeepRadius, (verb?.EffectiveRange ?? 0f) + 10f);
+                if (Api.RangeDistance(pawn.Position, enemyTarget.Position, pawn.Map) > keepRadius)
+                    return true;
+            }
+            return (enemyTarget as IAttackTarget)?.ThreatDisabled(pawn) ?? false;
+        }
+
+        internal static bool AllowIndirect(Pawn pawn, LordJob lordJob)
+        {
+            if (lordJob is LordJob_FortressSortie sortie) return sortie.Ground.Outside(pawn.Position);
+            if (lordJob is not LordJob_FortressDefense defense) return false;
+            if (defense.IntrusionActive || FortressDefensePosts.Intercepting(pawn)) return true;
+            return FortressDefensePosts.TryGetDutySector(pawn, out int sector)
+                ? defense.SectorUnderWatch(sector)
+                : defense.AnySectorUnderWatch();
         }
     }
 
     public sealed class JobGiver_FortressFight : JobGiver_AIDefendPoint
     {
         protected override Thing FindAttackTarget(Pawn pawn) =>
-            FortressTargeting.PreferCombat(pawn, () => base.FindAttackTarget(pawn));
+            FortressCombatSearch.FindAttackTarget(this, pawn, targetAcquireRadius, ignoreNonCombatants,
+                target => ExtraTargetValidator(pawn, target), GetFlagPosition(pawn), GetFlagRadius(pawn),
+                OnlyUseRangedSearch);
 
         protected override bool ShouldLoseTarget(Pawn pawn) =>
-            !((LordJob_FortressDefense)pawn.GetLord().LordJob).ValidateAttackTarget(pawn, pawn.mindState.enemyTarget) ||
-            base.ShouldLoseTarget(pawn);
+            FortressCombatSearch.ShouldLoseTarget(pawn, targetKeepRadius, TicksSinceEngageToLoseTarget);
 
         protected override bool TryFindShootingPosition(Pawn pawn, out IntVec3 dest, Verb verbToUse = null)
         {
@@ -77,7 +147,7 @@ namespace RimSiege.Fortress
             if (verb != null && pawn.Position.InHorDistOf(duty.focus.Cell, duty.radius) &&
                 pawn.Position.WalkableBy(pawn.Map, pawn) &&
                 pawn.Map.pawnDestinationReservationManager.CanReserve(pawn.Position, pawn, pawn.Drafted) &&
-                verb.CanHitTarget(target))
+                verb.CanHitTarget(target) && RaidStationaryCombat.CanShootOverheadFrom(pawn, verb))
             {
                 dest = pawn.Position;
                 return true;
@@ -88,12 +158,87 @@ namespace RimSiege.Fortress
 
     public sealed class JobGiver_FortressMobileFight : JobGiver_AIFightEnemies
     {
+        protected override Job TryGiveJob(Pawn pawn)
+        {
+            Job job = base.TryGiveJob(pawn);
+            if (job != null && job.def == JobDefOf.Goto && pawn.GetLord()?.LordJob is LordJob_FortressSortie)
+            {
+                job.locomotionUrgency = LocomotionUrgency.Sprint;
+                job.expiryInterval = job.expiryInterval > 0 ? Math.Min(job.expiryInterval, 90) : 90;
+                job.checkOverrideOnExpire = true;
+                job.expireRequiresEnemiesNearby = false;
+            }
+            return job;
+        }
+
+        protected override bool TryFindShootingPosition(Pawn pawn, out IntVec3 dest, Verb verbToUse = null)
+        {
+            Thing enemyTarget = pawn.mindState.enemyTarget;
+            bool allowManualCastWeapons = !pawn.IsColonist && !pawn.IsColonySubhuman;
+            Verb verb = verbToUse ?? pawn.TryGetAttackVerb(enemyTarget, allowManualCastWeapons, allowTurrets);
+            if (verb == null)
+            {
+                dest = IntVec3.Invalid;
+                return false;
+            }
+            return CastPositionFinder.TryFindCastPosition(new CastPositionRequest
+            {
+                caster = pawn,
+                target = enemyTarget,
+                verb = verb,
+                maxRangeFromTarget = verb.EffectiveRange,
+                maxRangeFromCaster = 14f,
+                maxRegions = 12,
+                wantCoverFromTarget = verb.EffectiveRange > 5f
+            }, out dest);
+        }
+
         protected override Thing FindAttackTarget(Pawn pawn) =>
-            FortressTargeting.PreferCombat(pawn, () => base.FindAttackTarget(pawn));
+            FortressCombatSearch.FindAttackTarget(this, pawn, targetAcquireRadius, ignoreNonCombatants,
+                target => ExtraTargetValidator(pawn, target), GetFlagPosition(pawn), GetFlagRadius(pawn),
+                OnlyUseRangedSearch);
 
         protected override bool ShouldLoseTarget(Pawn pawn) =>
-            !((LordJob_FortressDefense)pawn.GetLord().LordJob).ValidateAttackTarget(pawn, pawn.mindState.enemyTarget) ||
-            base.ShouldLoseTarget(pawn);
+            FortressCombatSearch.ShouldLoseTarget(pawn, targetKeepRadius, TicksSinceEngageToLoseTarget);
+    }
+
+    public sealed class JobGiver_FortressSortieAdvance : ThinkNode_JobGiver
+    {
+        private const int RecheckTicks = 90;
+
+        protected override Job TryGiveJob(Pawn pawn)
+        {
+            if (pawn.GetLord()?.LordJob is not LordJob_FortressSortie sortie) return null;
+            Map map = pawn.Map;
+            var targets = sortie.Targeting.CombatTargets()
+                .Where(candidate => FortressTargeting.IsActivePlayerCombatThreat(candidate, pawn.Faction, map) &&
+                    sortie.Ground.Outside(candidate.Position) && sortie.ValidateAttackTarget(pawn, candidate))
+                .OrderBy(candidate => Api.Distance3D(pawn.Position, candidate.Position, map))
+                .Take(4);
+            foreach (Thing target in targets)
+            {
+                if (pawn.CanReachImmediate(target, PathEndMode.Touch)) return null;
+                IntVec3 approach = GenAdj.CellsAdjacent8Way(target)
+                    .Where(cell => cell.InBounds(map) && cell.StandableBy(map, pawn) &&
+                        Api.SameFloor(cell, target.Position, map) && sortie.Ground.Outside(cell))
+                    .OrderBy(cell => Api.Distance3D(pawn.Position, cell, map))
+                    .FirstOrDefault(cell => map.pawnDestinationReservationManager.CanReserve(cell, pawn, pawn.Drafted) &&
+                        pawn.CanReach(cell, PathEndMode.OnCell, Danger.Deadly), IntVec3.Invalid);
+                if (approach.IsValid) return Advance(approach);
+            }
+            return null;
+        }
+
+        private static Job Advance(IntVec3 approach)
+        {
+            Job job = JobMaker.MakeJob(JobDefOf.Goto, approach);
+            job.locomotionUrgency = LocomotionUrgency.Sprint;
+            job.expiryInterval = RecheckTicks;
+            job.checkOverrideOnExpire = true;
+            job.expireRequiresEnemiesNearby = false;
+            job.collideWithPawns = true;
+            return job;
+        }
     }
 
     public sealed class JobGiver_FortressSeekIntruder : ThinkNode_JobGiver
@@ -135,8 +280,9 @@ namespace RimSiege.Fortress
     public sealed class JobGiver_FortressSortieFallback : JobGiver_AITrashDutyFocus
     {
         protected override Job TryGiveJob(Pawn pawn) =>
-            pawn.mindState.duty.focus.Thing is Thing target &&
-            ((LordJob_FortressDefense)pawn.GetLord().LordJob).ValidateAttackTarget(pawn, target)
+            pawn.mindState.duty?.focus.Thing is Thing target &&
+            pawn.GetLord()?.LordJob is { } lordJob &&
+            lordJob.ValidateAttackTarget(pawn, target)
                 ? base.TryGiveJob(pawn) : null;
     }
 
@@ -188,9 +334,9 @@ namespace RimSiege.Fortress
 
             // A hungry defender can take a portable ration directly from its dining room.
             Map map = pawn.Map;
-            var site = (FortressSite)map.Parent;
-            CellRect dining = site.Blueprint.Facilities.Living.Interior(map, 1);
-            ThingDef ration = site.Blueprint.Facilities.Industrial ? ThingDefOf.MealSurvivalPack : ThingDefOf.Pemmican;
+            if (map.Parent is not FortressSite { Blueprint: { } blueprint }) return null;
+            CellRect dining = blueprint.Facilities.Living.Interior(map, 1);
+            ThingDef ration = blueprint.Facilities.Industrial ? ThingDefOf.MealSurvivalPack : ThingDefOf.Pemmican;
             Thing source = map.listerThings.ThingsOfDef(ration)
                 .Where(thing => dining.Contains(thing.Position) && thing.IngestibleNow &&
                     !thing.IsForbidden(pawn) && pawn.WillEat(thing))

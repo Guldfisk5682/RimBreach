@@ -13,27 +13,59 @@ namespace RimSiege.Fortress
         private const int RefreshInterval = 30;
         private const float SupportRadius = 10f;
         [ThreadStatic] private static Pawn combatOnly;
+        [ThreadStatic] private static bool skippedNonCombat;
         private readonly List<Thing> threats = new();
         private readonly Dictionary<Thing, bool> supported = new();
         private int nextRefresh;
 
         internal static bool IsCombatTarget(Thing thing) => thing is Pawn or Building_Turret;
 
+        internal static bool IsActivePlayerCombatThreat(Thing target, Faction faction, Map map)
+        {
+            if (!IsCombatTarget(target) || target is not IAttackTarget attack ||
+                !target.Spawned || target.Map != map ||
+                target.Faction != Faction.OfPlayer || !faction.HostileTo(Faction.OfPlayer) ||
+                attack.ThreatDisabled(null))
+                return false;
+            if (target is Pawn pawn)
+                return !pawn.Downed && !pawn.Dead &&
+                    (!pawn.IsAnimal || pawn.training?.HasLearned(TrainableDefOf.Release) == true);
+            return true;
+        }
+
+        internal bool HasPlayerCombatThreats() =>
+            CombatTargets().Any(target => IsActivePlayerCombatThreat(target, faction, map));
+
         internal static Thing PreferCombat(Pawn pawn, Func<Thing> find)
         {
             Pawn previous = combatOnly;
+            bool previousSkipped = skippedNonCombat;
             Thing target;
+            bool skipped;
             combatOnly = pawn;
-            try { target = find(); }
-            finally { combatOnly = previous; }
-            return target ?? find();
+            skippedNonCombat = false;
+            try
+            {
+                target = find();
+                skipped = skippedNonCombat;
+            }
+            finally
+            {
+                combatOnly = previous;
+                skippedNonCombat = previousSkipped;
+            }
+            return target ?? (skipped ? find() : null);
         }
 
         internal bool Allows(Thing target, Pawn searcher = null)
         {
             if (IsCombatTarget(target)) return ActiveThreat(target, searcher);
-            if (searcher != null && combatOnly == searcher) return false;
             if (target is not Building { Spawned: true } || !faction.HostileTo(target.Faction)) return false;
+            if (searcher != null && combatOnly == searcher)
+            {
+                skippedNonCombat = true;
+                return false;
+            }
             Refresh();
             if (!supported.TryGetValue(target, out bool result))
             {

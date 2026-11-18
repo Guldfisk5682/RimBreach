@@ -13,9 +13,15 @@ namespace RimSiege.Fortress
     public sealed class LordJob_FortressDefense : LordJob
     {
         internal const int ReviewInterval = 1800;
+        private const int CounterSortieCooldown = GenDate.TicksPerDay / 2;
         private const int ResponseReviewDelay = GenTicks.TicksPerRealSecond;
         private const int IntrusionCheckInterval = 60;
         private const int InteriorManningInterval = 180;
+        private const int LookoutInterval = 210;
+        private const float LookoutRange = 120f;
+        private const int LookoutChecksPerTarget = 6;
+        private const int LookoutChecksPerScan = 24;
+        private const int LookoutTargetsPerScan = 8;
         private const int MaintenanceRetryDelay = 300;
         private const int MaintenanceRetries = 2;
         private const string Rout = "RimSiege.Fortress.Rout";
@@ -28,11 +34,12 @@ namespace RimSiege.Fortress
         private int openSectors;
         private int breachedSectors;
         private List<FortressWatch> watches = Enumerable.Range(0, 4).Select(_ => new FortressWatch()).ToList();
-        private Thing sortieTarget;
-        private int sortieUntil;
         private Thing bombardmentSource;
         private int bombardmentUntil;
         private int counterSortieAt;
+        private bool counterSortiesClosed;
+        private int nextLookout;
+        private int lookoutCursor;
 
         private FortressDefenseGround ground;
         private FortressDefensePosts posts;
@@ -90,6 +97,7 @@ namespace RimSiege.Fortress
             if (lord.CurLordToil is not LordToil_FortressDefense || initialStrength == 0) return;
             int now = GenTicks.TicksGame;
             if (now >= nextIntrusionCheck) CheckIntrusion(now);
+            if (!IntrusionActive && now >= nextLookout) LookoutScan(now);
             if (now >= nextRelief)
             {
                 bool postLost = false;
@@ -98,7 +106,7 @@ namespace RimSiege.Fortress
                 nextRelief = int.MaxValue;
                 if (postLost) RequestResponseReview(now);
             }
-            bool reviewDue = now >= nextReview || sortieUntil != 0 && now >= sortieUntil;
+            bool reviewDue = now >= nextReview;
             if (maintenanceReviewRequested || contactSectors != 0)
             {
                 maintenanceReviewRequested = false;
@@ -185,19 +193,39 @@ namespace RimSiege.Fortress
 
         internal void RequestResupply() => resupplyRequested = true;
 
-        internal void RecordRetaliation(Thing target)
+        internal bool HasPendingCounterSortie => counterSortieAt != 0 || bombardmentSource != null || bombardmentUntil != 0;
+
+        internal void CancelCounterSortie()
         {
-            int now = GenTicks.TicksGame;
-            if (bombardmentSource == null || target == null || now >= bombardmentUntil) return;
-            if (target == bombardmentSource ||
-                bombardmentSource is Building_Turret turret && turret.TryGetComp<CompMannable>()?.ManningPawn == target ||
-                target is Building_Turret targetGun && targetGun.TryGetComp<CompMannable>()?.ManningPawn == bombardmentSource)
-                counterSortieAt = now + ReviewInterval;
+            bombardmentSource = null;
+            bombardmentUntil = 0;
+            counterSortieAt = 0;
         }
 
         private void RequestResponseReview(int now) => nextReview = Math.Min(nextReview, now + ResponseReviewDelay);
 
+        internal void RequestRoutCheck(int now) => RequestResponseReview(now);
+
         internal bool SectorUnderWatch(int sector) => watches[sector].Until > GenTicks.TicksGame;
+
+        internal bool SectorHasContact(int sector) =>
+            SectorUnderWatch(sector) && AimAt(watches[sector]) != null;
+
+        internal bool AnySectorUnderWatch()
+        {
+            int now = GenTicks.TicksGame;
+            return watches.Any(watch => watch.Until > now);
+        }
+
+        internal void MergeSortie(List<Pawn> returning, int now)
+        {
+            if (returning == null || returning.Count == 0) return;
+            lord.AddPawns(returning, updateDuties: true);
+            foreach (Pawn pawn in returning)
+                if (!pawn.Downed && pawn.CurJob != null)
+                    pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
+            Review(now);
+        }
 
         internal bool CanMaintain(IntVec3 cell)
         {
@@ -244,7 +272,8 @@ namespace RimSiege.Fortress
             int responseSector = attacker.Spawned && attacker.Map == Map && Ground.Outside(attacker.Position)
                 ? Ground.Sector(attacker.Position) : damagedSector;
             Alarm(responseSector, attacker, sighted: false);
-            if (line != FortressLine.Curtain || !ValidTarget(attacker) || !Ground.Outside(attacker.Position)) return;
+            if (counterSortiesClosed || line != FortressLine.Curtain || !ValidTarget(attacker) ||
+                !Ground.Outside(attacker.Position) || now < Site.NextCounterSortieTick || SortieActive(counter: true)) return;
             if (counterSortieAt == 0 || now >= bombardmentUntil)
                 counterSortieAt = now + ReviewInterval;
             bombardmentSource = attacker;
@@ -254,27 +283,8 @@ namespace RimSiege.Fortress
         internal void Sighted(Pawn guard, Thing target)
         {
             if (!guard.HostileTo(target)) return;
-            RecordSortieContact(guard, target);
             int sector = Ground.Sector(target.Position);
             Alarm(sector, target);
-        }
-
-        internal void RecordSortieContact(Pawn pawn, Thing target)
-        {
-            if (sortieUntil == 0 || pawn.mindState.duty?.def != FortressDutyDefOf.RS_FortressSortie ||
-                !Ground.Outside(pawn.Position) || !FortressTargeting.IsCombatTarget(target) ||
-                !ValidateAttackTarget(pawn, target)) return;
-            sortieUntil = GenTicks.TicksGame + ReviewInterval;
-        }
-
-        internal Thing SortieAdvanceTarget(Pawn pawn)
-        {
-            Thing current = pawn.mindState.enemyTarget;
-            if (FortressTargeting.IsCombatTarget(current) && ValidateAttackTarget(pawn, current)) return current;
-            return Targeting.CombatTargets().Where(target => ValidateAttackTarget(pawn, target) &&
-                    Api.RangeDistance(pawn.Position, target.Position, Map) <= 75f)
-                .MinBy(target => Api.Distance3D(pawn.Position, target.Position, Map)) ??
-                (sortieTarget != null && ValidateAttackTarget(pawn, sortieTarget) ? sortieTarget : null);
         }
 
         internal Thing AimAt(FortressWatch watch) =>
@@ -352,8 +362,6 @@ namespace RimSiege.Fortress
             if (!Targeting.Allows(target, pawn)) return false;
             if (IntrusionActive && FortressDefensePosts.Intercepting(pawn))
                 return FortressTargeting.IsCombatTarget(target);
-            if (pawn.mindState.duty?.def == FortressDutyDefOf.RS_FortressSortie)
-                return Ground.Outside(target.Position);
             PawnDuty duty = pawn.mindState.duty;
             if (duty?.def == FortressDutyDefOf.RS_FortressReserve && !Ground.Inside(target.Position)) return false;
             if (FortressDefensePosts.Patrol(pawn) && !Ground.OnCurtain(pawn.Position) ||
@@ -410,10 +418,14 @@ namespace RimSiege.Fortress
             }
             changedCurtain = 0;
 
-            int ready = lord.ownedPawns.Count(FortressDefensePosts.CanFight);
+            int ready = lord.ownedPawns.Count(FortressDefensePosts.CanFight) +
+                ActiveSortieLords().Sum(sortie => sortie.ownedPawns.Count(FortressDefensePosts.CanFight));
+            if (!counterSortiesClosed) CloseCounterSortiesIfDepleted();
             if (ready > 0 && ready * 10 <= initialStrength)
             {
                 lord.ReceiveMemo(Rout);
+                foreach (Lord sortie in ActiveSortieLords())
+                    ((LordJob_FortressSortie)sortie.LordJob).TriggerRout();
                 return;
             }
 
@@ -422,25 +434,99 @@ namespace RimSiege.Fortress
             else if (IntrusionActive) line = FortressLine.Courtyard;
             else line = FortressLine.Curtain;
 
-            if (line != FortressLine.Curtain || now >= sortieUntil)
-            {
-                sortieTarget = null;
-                sortieUntil = 0;
-            }
-            if (line != FortressLine.Curtain)
-            {
-                bombardmentSource = null;
-                counterSortieAt = 0;
-            }
+            if (line != FortressLine.Curtain) CancelCounterSortie();
             contactSectors = 0;
             if (IntrusionActive) nextInteriorManning = now;
-            else Posts.Assign(lord, this, watches, sortieUntil != 0, now, sameLine: previousLine == line);
+            else Posts.Assign(lord, this, watches, now, sameLine: previousLine == line);
             resupplyRequested = true;
             slabPlansRequested = true;
             RequestSupport(now);
-            if (line == FortressLine.Curtain && sortieUntil == 0 && now >= Site.NextSortieTick)
+            if (line == FortressLine.Curtain && !SortieActive(counter: false) && now >= Site.NextSortieTick)
                 TrySortie(attackers, now);
         }
+
+        private void LookoutScan(int now)
+        {
+            nextLookout = now + LookoutInterval;
+            if (!AnySectorNeedsSight(now)) return;
+
+            Thing[] targets = Targeting.CombatTargets().Where(target => ValidTarget(target) &&
+                (target is not Pawn pawn || !pawn.IsPsychologicallyInvisible() &&
+                    (!pawn.IsAnimal || pawn.training?.HasLearned(TrainableDefOf.Release) == true))).ToArray();
+            if (targets.Length == 0) return;
+
+            Pawn[] lookouts = lord.ownedPawns.Where(pawn =>
+                FortressDefensePosts.Guard(pawn) && FortressDefensePosts.CanAnswer(pawn) &&
+                Api.FloorOf(pawn.Position, Map) > 0).ToArray();
+            List<Building_TurretGunCE> guns = Posts.DirectLookoutGuns(this);
+            int[] sectorChecks = new int[4];
+            int checksLeft = LookoutChecksPerScan;
+
+            for (int i = 0; i < Math.Min(targets.Length, LookoutTargetsPerScan) && checksLeft > 0; i++)
+            {
+                Thing target = targets[lookoutCursor % targets.Length];
+                lookoutCursor = (lookoutCursor + 1) % targets.Length;
+                int targetSector = Ground.Sector(target.Position);
+                if (SectorNeedsSight(targetSector, now))
+                {
+                    foreach (Pawn guard in lookouts
+                        .Where(guard => Api.RangeDistance(guard.Position, target.Position, Map) <= LookoutRange)
+                        .OrderBy(guard => Api.Distance3D(guard.Position, target.Position, Map))
+                        .Take(Math.Min(LookoutChecksPerTarget, checksLeft)))
+                    {
+                        checksLeft--;
+                        if (!guard.CanSee(target)) continue;
+                        Alarm(targetSector, target, sighted: true);
+                        break;
+                    }
+                }
+
+                if (checksLeft == 0) break;
+                Array.Clear(sectorChecks, 0, sectorChecks.Length);
+                foreach (Building_TurretGunCE gun in guns
+                    .Where(gun =>
+                    {
+                        int gunSector = Ground.Sector(gun.Position);
+                        bool needTargetSector = SectorNeedsSight(targetSector, now);
+                        bool needGunSector = gunSector != targetSector &&
+                            !Posts.IsGunEligibleForSector(this, targetSector, gun) && SectorNeedsSight(gunSector, now);
+                        return (needTargetSector || needGunSector) &&
+                            (!Ground.TowerMiddle(gun.Position) || MiddleOpen(gun.Position, targetSector)) &&
+                            Posts.CanAimAt(gun, target);
+                    })
+                    .OrderBy(gun => Api.Distance3D(gun.Position, target.Position, Map)))
+                {
+                    int gunSector = Ground.Sector(gun.Position);
+                    bool needTargetSector = SectorNeedsSight(targetSector, now) && sectorChecks[targetSector] < LookoutChecksPerTarget;
+                    bool needGunSector = gunSector != targetSector &&
+                        !Posts.IsGunEligibleForSector(this, targetSector, gun) &&
+                        SectorNeedsSight(gunSector, now) && sectorChecks[gunSector] < LookoutChecksPerTarget;
+                    if (!needTargetSector && !needGunSector) continue;
+
+                    if (needTargetSector) sectorChecks[targetSector]++;
+                    if (needGunSector) sectorChecks[gunSector]++;
+                    checksLeft--;
+                    if (gun.AttackVerb.CanHitTargetFrom(gun.Position, target))
+                    {
+                        if (needTargetSector) Alarm(targetSector, target, sighted: true);
+                        if (needGunSector) Alarm(gunSector, target, sighted: true);
+                    }
+                    if (checksLeft == 0) break;
+                }
+
+                if (!AnySectorNeedsSight(now)) break;
+            }
+        }
+
+        private bool AnySectorNeedsSight(int now)
+        {
+            for (int sector = 0; sector < 4; sector++)
+                if (SectorNeedsSight(sector, now)) return true;
+            return false;
+        }
+
+        private bool SectorNeedsSight(int sector, int now) =>
+            watches[sector].Until <= now || !ValidTarget(watches[sector].Target);
 
         private void UpdateContacts(int now)
         {
@@ -479,40 +565,60 @@ namespace RimSiege.Fortress
             }
         }
 
+        private IEnumerable<Lord> ActiveSortieLords() => Map.lordManager.lords.Where(other =>
+            other.faction == lord.faction && other.LordJob is LordJob_FortressSortie);
+
+        private bool SortieActive(bool counter) => ActiveSortieLords().Any(sortie =>
+            ((LordJob_FortressSortie)sortie.LordJob).CounterSortie == counter &&
+            sortie.CurLordToil is LordToil_FortressSortie &&
+            sortie.ownedPawns.Any(FortressDefensePosts.CanFight));
+
+        private int ReadyInsideCount() =>
+            lord.ownedPawns.Count(pawn => FortressDefensePosts.CanFight(pawn) && !Ground.Outside(pawn.Position));
+
+        private bool CloseCounterSortiesIfDepleted()
+        {
+            int inside = Posts.GarrisonSize(lord);
+            if (inside * 2 >= initialStrength) return false;
+            inside += ActiveSortieLords().Sum(Posts.GarrisonSize);
+            if (inside * 2 >= initialStrength) return false;
+            counterSortiesClosed = true;
+            CancelCounterSortie();
+            return true;
+        }
+
         private void TrySortie(Pawn[] attackers, int now)
         {
-            int inside = lord.ownedPawns.Count(pawn => pawn.Spawned && !Ground.Outside(pawn.Position));
-            if (inside <= 30 || !attackers.Any(pawn => Ground.Outside(pawn.Position))) return;
-            Pawn target = watches.Select(watch => watch.Target).OfType<Pawn>()
-                .FirstOrDefault(pawn => ValidTarget(pawn) && Ground.Outside(pawn.Position));
+            int readyInside = ReadyInsideCount();
+            if (readyInside <= 30 || !attackers.Any(pawn => Ground.Outside(pawn.Position))) return;
+            Thing target = watches.Select(AimAt)
+                .FirstOrDefault(candidate => ValidTarget(candidate) && Ground.Outside(candidate.Position));
             if (target == null || StorytellerUtility.DefaultThreatPointsNow(Map) >= SortiePoints) return;
-            if (!Posts.Dispatch(lord, this, target, inside / 10, counterSortie: false)) return;
-            sortieTarget = target;
-            sortieUntil = now + ReviewInterval;
+            if (!Posts.Dispatch(lord, this, target, readyInside, counterSortie: false)) return;
             Site.NextSortieTick = now + GenDate.TicksPerDay;
         }
 
         private void CheckCounterSortie(int now)
         {
             Thing target = bombardmentSource;
-            if (line != FortressLine.Curtain || now >= bombardmentUntil ||
+            if (counterSortiesClosed || line != FortressLine.Curtain || now >= bombardmentUntil ||
+                now < Site.NextCounterSortieTick || SortieActive(counter: true) ||
                 !ValidTarget(target) || !Ground.Outside(target.Position))
             {
-                bombardmentSource = null;
-                counterSortieAt = 0;
+                CancelCounterSortie();
                 return;
             }
 
-            counterSortieAt = now + ReviewInterval;
-            if (sortieUntil != 0) return;
-            int inside = lord.ownedPawns.Count(pawn => FortressDefensePosts.CanFight(pawn) && !Ground.Outside(pawn.Position));
-            if (inside < 12) return;
-            int count = Math.Clamp(inside / 4, 4, 12);
-            if (Posts.Dispatch(lord, this, target, count, counterSortie: true))
+            if (CloseCounterSortiesIfDepleted()) return;
+            int readyInside = ReadyInsideCount();
+            if (readyInside < 12 || !Posts.Dispatch(lord, this, target, readyInside, counterSortie: true))
             {
-                sortieTarget = target;
-                sortieUntil = now + ReviewInterval;
+                counterSortieAt = now + ReviewInterval;
+                return;
             }
+
+            Site.NextCounterSortieTick = now + CounterSortieCooldown;
+            CancelCounterSortie();
         }
 
         internal bool ValidTarget(Thing target) => target is { Spawned: true } && target.Map == Map &&
@@ -541,14 +647,13 @@ namespace RimSiege.Fortress
             Scribe_Values.Look(ref contactSectors, "contactSectors");
             Scribe_Values.Look(ref bombardmentUntil, "bombardmentUntil");
             Scribe_Values.Look(ref counterSortieAt, "counterSortieAt");
+            Scribe_Values.Look(ref counterSortiesClosed, "counterSortiesClosed");
             Scribe_References.Look(ref bombardmentSource, "bombardmentSource");
             Scribe_Collections.Look(ref watches, "watches", LookMode.Deep);
-            Scribe_References.Look(ref sortieTarget, "sortieTarget");
-            Scribe_Values.Look(ref sortieUntil, "sortieUntil");
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
             {
                 nextReview = 0;
-                if (sortieUntil == 0 && sortieTarget != null) sortieUntil = GenTicks.TicksGame + ReviewInterval;
+                nextLookout = 0;
             }
         }
     }

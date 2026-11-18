@@ -133,7 +133,23 @@ namespace RimSiege.Fortress
                 cell.x == storage.CenterCell.x || cell.z == storage.CenterCell.z)) { entry };
             List<Building_Storage> supply = FortressStorage.PlaceShelves(map, storage, material.Stuff, storageAccess);
             int componentStacks = layout.Outer.Width == FortressDimensions.Large.OuterSide ? 2 : 1;
-            FortressStorage.Fill(map, supply, SupplyItem);
+            // Reserve shelf capacity in Supply for courtyard mortar and nearby wall-support ordnance.
+            int ordnanceShelves = supply.Count >= 3 ? 2 : supply.Count > 1 ? 1 : 0;
+            if (ordnanceShelves > 0)
+            {
+                FortressStorage.Fill(map, supply.Take(supply.Count - ordnanceShelves), SupplyItem);
+            }
+            else if (supply.Count == 1)
+            {
+                List<IntVec3> cells = supply[0].GetSlotGroup().CellsList;
+                int fillCells = System.Math.Max(1, cells.Count / 2);
+                int index = 0;
+                foreach (IntVec3 cell in cells.Take(fillCells))
+                {
+                    int slots = cell.GetMaxItemsAllowedInCell(map) - cell.GetItemCount(map);
+                    for (int i = 0; i < slots; i++) FortressStorage.Stock(map, SupplyItem(index++), cell);
+                }
+            }
 
             if (!plan.Power.IsEmpty) FurnishPower(map, plan.Power, material.Stuff);
 

@@ -1,37 +1,28 @@
 using HarmonyLib;
 using RimSiege.Raids;
-using RimWorld;
 using Verse;
-using Verse.AI;
 using Verse.AI.Group;
 
 namespace RimSiege.Fortress
 {
-    [HarmonyPatch(typeof(Pawn_MindState), "Notify_AttackedTarget")]
+    [HarmonyPatch(typeof(Verb), nameof(Verb.TryStartCastOn), typeof(LocalTargetInfo), typeof(LocalTargetInfo),
+        typeof(bool), typeof(bool), typeof(bool), typeof(bool))]
     internal static class FortressSortieCover
     {
-        private static void Postfix(Pawn_MindState __instance, LocalTargetInfo target)
+        private static void Postfix(Verb __instance, LocalTargetInfo __0, bool __result)
         {
-            PawnDuty duty = __instance.duty;
-            if (duty == null) return;
-            Pawn pawn = __instance.pawn;
+            if (!__result || __instance.Caster is not Pawn { Spawned: true, Downed: false } pawn) return;
             Lord lord = pawn.GetLord();
-            if (lord?.CurLordToil is not LordToil_FortressDefense ||
-                lord.LordJob is not LordJob_FortressDefense defense) return;
-            if (duty.def != FortressDutyDefOf.RS_FortressSortie)
-            {
-                defense.RecordRetaliation(target.Thing);
-                return;
-            }
-            defense.RecordSortieContact(pawn, target.Thing);
-            if (duty.focusThird.IsValid) return;
-            if (!FortressDefensePosts.CanFight(pawn) ||
-                !defense.Ground.Outside(pawn.Position) ||
-                pawn.CurrentEffectiveVerb?.verbProps.IsMeleeAttack != false ||
-                !defense.ValidTarget(target.Thing)) return;
+            Thing target = __0.Thing ?? pawn.mindState.enemyTarget;
+            if (lord?.CurLordToil is not LordToil_FortressSortie ||
+                lord.LordJob is not LordJob_FortressSortie sortie ||
+                !FortressDefensePosts.CanFight(pawn) ||
+                !sortie.Ground.Outside(pawn.Position) ||
+                !sortie.ValidTarget(target) || SmokeCombat.IsSmokeWeapon(__instance.EquipmentSource?.def)) return;
 
-            IntVec3 cover = FieldCover.TryPlace(pawn, target.Cell, defense.Ground.Outside);
-            if (cover.IsValid) duty.focusThird = cover;
+            if (__0.HasThing || __0.Cell == target.Position) sortie.RecordContact(target);
+            if (!__instance.IsMeleeAttack && pawn.pather?.Moving == false && __0.HasThing)
+                FieldCover.TryPlace(pawn, target.Position, sortie.Ground.Outside);
         }
     }
 }
