@@ -110,7 +110,7 @@ namespace RimSiege.Fortress
             FortressFacilities.Furnish(map, layout, material);
 
             CellRect ground = Api.GroundRect(map);
-            Log.Message($"[RimSiege] Fortress generated on tile {map.Tile}: {layout.Outer}, gate {layout.Gate}, " +
+            Log.Message($"[RimSiege] Fortress generated on tile {map.Tile}: {layout.Kind} {layout.Size} {layout.Outer}, gate {layout.Gate}, " +
                 $"ground {ground.Width}x{ground.Height}, {layout.Tiers.Length} levels, {layout.Ladders.Count} ladders, " +
                 $"{material.Stuff.defName}, reinforced={reinforced}, {layout.NaturalBarrier.Count} natural wall cells.");
             return true;
@@ -118,7 +118,7 @@ namespace RimSiege.Fortress
 
         private static void PrepareGround(Map map, FortressLayout layout)
         {
-            foreach (IntVec3 cell in layout.Outer)
+            foreach (IntVec3 cell in layout.Geometry.Footprint)
             {
                 if (layout.NaturalBarrier.Contains(cell)) continue;
 

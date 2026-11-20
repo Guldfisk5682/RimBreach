@@ -19,12 +19,42 @@ namespace RimSiege.Fortress
 
         internal static void Connect(Map map, FortressLayout layout)
         {
-            CellRect trunk = layout.Outer.ContractedBy(FortressLayout.CurtainThickness - 1);
+            FortressGeometry geo = layout.Geometry;
+            CellRect trunk = geo.CourtyardBounds.ExpandedBy(1);
             var cables = new HashSet<IntVec3>();
             foreach (IntVec3 cell in trunk.EdgeCells)
             {
+                if (!geo.Footprint.Contains(cell)) continue;
                 cables.Add(cell);
-                cables.Add(Api.CellOnFloor(cell, 1, map));
+                Add(cell, 1);
+            }
+
+            if (layout.Kind == FortressLayoutKind.HumanBastion)
+            {
+                // Run Floor 1 spurs along each bastion's center diagonal out to its salient nose.
+                foreach (FortressBastionZone zone in geo.Zones)
+                {
+                    IntVec3 from = zone.Ground.CenterCell;
+                    IntVec3 to = zone.DeckAnchor + zone.XSide.FacingCell * 3 + zone.ZSide.FacingCell * 3;
+                    int xStep = to.x >= from.x ? 1 : -1;
+                    int zStep = to.z >= from.z ? 1 : -1;
+                    int x = from.x;
+                    int z = from.z;
+                    Add(new IntVec3(x, 0, z), 1);
+                    while (x != to.x || z != to.z)
+                    {
+                        if (x != to.x)
+                        {
+                            x += xStep;
+                            Add(new IntVec3(x, 0, z), 1);
+                        }
+                        if (z != to.z)
+                        {
+                            z += zStep;
+                            Add(new IntVec3(x, 0, z), 1);
+                        }
+                    }
+                }
             }
 
             foreach (FortressModule module in layout.Modules)
@@ -47,7 +77,8 @@ namespace RimSiege.Fortress
                 int wall = left ? trunk.minX : trunk.maxX;
                 int edge = left ? room.minX : room.maxX;
                 for (int x = System.Math.Min(wall, edge); x <= System.Math.Max(wall, edge); x++)
-                    cables.Add(new IntVec3(x, 0, center.z));
+                    if (geo.Footprint.Contains(new IntVec3(x, 0, center.z)))
+                        cables.Add(new IntVec3(x, 0, center.z));
             }
 
             ThingDef conduit = ThingDefOf.HiddenConduit;

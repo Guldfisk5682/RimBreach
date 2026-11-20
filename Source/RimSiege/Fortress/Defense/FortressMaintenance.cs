@@ -19,7 +19,7 @@ namespace RimSiege.Fortress
             if (__result != null || mode != DestroyMode.KillFinalize || thing is not Building ||
                 buildingDef.blueprintDef == null || map.Parent is not FortressSite { Blueprint: { } fortress } ||
                 thing.Faction == null || thing.Faction == Faction.OfPlayer || thing.Faction != map.ParentFaction ||
-                !fortress.Outer.Contains(Api.GroundCellOf(thing.Position, map))) return;
+                !fortress.ContainsGround(Api.GroundCellOf(thing.Position, map))) return;
             if (GenConstruct.CanPlaceBlueprintAt(buildingDef, thing.Position, thing.Rotation, map, stuffDef: thing.Stuff).Accepted)
                 __result = GenConstruct.PlaceBlueprintForBuild(buildingDef, thing.Position, map, thing.Rotation,
                     thing.Faction, thing.Stuff, thing.StyleSourcePrecept, thing.StyleDef);

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using ProjectZ;
@@ -12,6 +13,9 @@ namespace RimSiege.Fortress
     {
         internal static readonly FortressDimensions Large = new(49, 7, 13);
         internal static readonly FortressDimensions Compact = new(41, 5, 9);
+
+        internal static FortressDimensions For(FortressSize size) =>
+            size == FortressSize.Large ? Large : Compact;
     }
 
     internal readonly record struct FortressLadder(IntVec3 Foot, IntVec3 Landing, Rot4 Rotation);
@@ -33,20 +37,26 @@ namespace RimSiege.Fortress
         internal const int CurtainThickness = 4;
         private const int TowerClearance = 3;
 
+        internal FortressLayoutKind Kind { get; }
+        internal FortressSize Size { get; }
         internal CellRect Outer { get; }
-        internal IntVec3 Gate { get; }
+        internal IntVec3 Gate { get; private set; }
         internal Rot4 GateSide { get; }
         internal bool FourGates { get; }
         internal static IEnumerable<Rot4> GateSides(Rot4 primary, bool fourGates) =>
             fourGates ? GenAdj.CardinalDirections.Select(Rot4.FromIntVec3) : new[] { primary };
         internal HashSet<IntVec3> NaturalBarrier { get; }
         internal FortressTier[] Tiers { get; }
+        internal FortressGeometry Geometry { get; private set; }
         internal readonly List<FortressLadder> Ladders = new();
         internal readonly List<FortressModule> Modules = new();
         internal FortressFacilityPlan Facilities { get; private set; }
 
-        private FortressLayout(CellRect outer, Rot4 gateSide, HashSet<IntVec3> naturalBarrier, int top, bool fourGates)
+        private FortressLayout(FortressLayoutKind kind, FortressSize size, CellRect outer, Rot4 gateSide,
+            HashSet<IntVec3> naturalBarrier, int top, bool fourGates)
         {
+            Kind = kind;
+            Size = size;
             Outer = outer;
             GateSide = gateSide;
             FourGates = fourGates;
@@ -56,29 +66,59 @@ namespace RimSiege.Fortress
         }
 
         internal static FortressLayout Plan(Map map, CellRect outer, Rot4 gateSide,
-            HashSet<IntVec3> naturalBarrier, FortressDimensions dimensions, int? savedTop = null,
+            HashSet<IntVec3> naturalBarrier, FortressSize size,
+            FortressLayoutKind kind = FortressLayoutKind.SquareKeep, int? savedTop = null,
             FortressFacilityPlan? savedFacilities = null, bool fourGates = true)
         {
-            int top = savedTop ?? (Api.CellOnFloor(outer.CenterCell, 2, map).IsValid ? 2 : 1);
-            if (!Api.CellOnFloor(outer.CenterCell, top, map).IsValid) return null;
-            var plan = new FortressLayout(outer, gateSide, naturalBarrier, top, fourGates);
-            return plan.Compose(map, gateSide, top, dimensions, savedFacilities) ? plan : null;
+            int defaultTop = kind == FortressLayoutKind.HumanBastion
+                ? 1
+                : (Api.CellOnFloor(outer.CenterCell, 2, map).IsValid ? 2 : 1);
+            int top = savedTop ?? defaultTop;
+            if (top < 1 || !Api.CellOnFloor(outer.CenterCell, top, map).IsValid) return null;
+            var plan = new FortressLayout(kind, size, outer, gateSide, naturalBarrier, top, fourGates);
+            bool ok = kind == FortressLayoutKind.HumanBastion
+                ? plan.ComposeHumanBastion(map, gateSide, top, BastionDimensions.For(size), savedFacilities)
+                : plan.ComposeSquareKeep(map, gateSide, top, FortressDimensions.For(size), savedFacilities);
+            return ok ? plan : null;
         }
 
-        private bool Compose(Map map, Rot4 gateSide, int top, FortressDimensions dimensions,
+        private bool ComposeSquareKeep(Map map, Rot4 gateSide, int top, FortressDimensions dimensions,
             FortressFacilityPlan? savedFacilities)
         {
             ThingDef embrasure = DefDatabase<ThingDef>.GetNamed("CE_Embrasure");
-            var passages = GateSides(gateSide, FourGates).SelectMany(side => Enumerable.Range(0, CurtainThickness)
-                .Select(depth => (Cell: Outer.GetCenterCellOnEdge(side) - side.FacingCell * depth, Side: side)))
-                .ToDictionary(entry => entry.Cell, entry => entry.Side);
+            Gate = Outer.GetCenterCellOnEdge(gateSide);
+
+            var gates = new List<FortressGate>();
+            var passages = new Dictionary<IntVec3, Rot4>();
+            foreach (Rot4 side in OrderedGateSides(gateSide, FourGates))
+            {
+                IntVec3 gateCell = Outer.GetCenterCellOnEdge(side);
+                gates.Add(new FortressGate(gateCell, gateCell + side.FacingCell, side, CurtainThickness));
+                for (int depth = 0; depth < CurtainThickness; depth++)
+                    passages[gateCell - side.FacingCell * depth] = side;
+            }
+
+            var footprint = new HashSet<IntVec3>();
+            var interior = new HashSet<IntVec3>();
+            var perimeter = new HashSet<IntVec3>();
+            var perimeterOuterEdge = new HashSet<IntVec3>(Outer.EdgeCells);
+            var rampartDeckGround = new HashSet<IntVec3>();
+            CellRect courtyard = Outer.ContractedBy(CurtainThickness);
 
             foreach (IntVec3 cell in Outer)
             {
+                footprint.Add(cell);
                 int depth = Depth(Outer, cell);
-                if (depth >= CurtainThickness || NaturalBarrier.Contains(cell)) continue;
+                if (depth >= CurtainThickness)
+                {
+                    interior.Add(cell);
+                    continue;
+                }
+                perimeter.Add(cell);
+                if (NaturalBarrier.Contains(cell)) continue;
                 IntVec3 upper = Api.CellOnFloor(cell, 1, map);
                 Tiers[1].Deck.Add(upper);
+                rampartDeckGround.Add(cell);
                 if (depth == 0)
                     Tiers[1].Buildings.Add(new FortressBuilding(Merlon(Outer, cell, embrasure), upper, Rot4.North));
                 if (passages.TryGetValue(cell, out Rot4 doorSide))
@@ -89,7 +129,6 @@ namespace RimSiege.Fortress
                 Tiers[0].Buildings.Add(new FortressBuilding(ThingDefOf.Wall, cell, Rot4.North));
             }
 
-            CellRect courtyard = Outer.ContractedBy(CurtainThickness);
             foreach (int x in new[] { courtyard.minX, courtyard.maxX })
             {
                 if (!AddStair(map, 0, new IntVec3(x, 0, courtyard.minZ + 2), Rot4.South) ||
@@ -113,7 +152,23 @@ namespace RimSiege.Fortress
                     return false;
             }
             AddParapet(map, keep, top, embrasure);
-            AddTowers(map, dimensions.TowerSide, top, embrasure);
+
+            var zones = new List<FortressBastionZone>(4);
+            AddTowers(map, dimensions.TowerSide, top, embrasure, zones);
+
+            var curtainPosts = new IntVec3[4];
+            var interiorPosts = new IntVec3[4];
+            for (int sector = 0; sector < 4; sector++)
+            {
+                Rot4 side = new(sector);
+                curtainPosts[sector] = Outer.GetCenterCellOnEdge(side) - side.FacingCell * (CurtainThickness - 1);
+                interiorPosts[sector] = courtyard.GetCenterCellOnEdge(side) - side.FacingCell * 2;
+            }
+
+            Geometry = new FortressGeometry(
+                Kind, Size, Outer, footprint, interior, perimeter, perimeterOuterEdge, rampartDeckGround,
+                courtyard, keep, gates, zones, new List<FortressEmplacementSlot>(), curtainPosts, interiorPosts);
+
             FortressFacilityPlan facilities = savedFacilities.GetValueOrDefault();
             if (!savedFacilities.HasValue && !FortressFacilityPlan.TryPlace(map, this, out facilities)) return false;
             Facilities = facilities;
@@ -122,6 +177,329 @@ namespace RimSiege.Fortress
             if (!facilities.Power.IsEmpty) AddFacility(map, facilities.Power, upperRoom: false);
             return VerticalLinksFit();
         }
+
+        private bool ComposeHumanBastion(Map map, Rot4 gateSide, int top, BastionDimensions dim,
+            FortressFacilityPlan? savedFacilities)
+        {
+            ThingDef embrasure = DefDatabase<ThingDef>.GetNamed("CE_Embrasure");
+            IntVec3 center = Outer.CenterCell;
+            FortressShapeMask mask = FortressGeometry.ShapeFor(Kind, Size);
+            var footprint = new HashSet<IntVec3>(mask.Footprint.Select(offset => center + offset));
+            var outerEdge = new HashSet<IntVec3>(mask.OuterEdge.Select(offset => center + offset));
+            Gate = mask.GateCell(center, gateSide);
+
+            var gates = new List<FortressGate>();
+            var passages = new Dictionary<IntVec3, (Rot4 Side, int Depth)>();
+            foreach (Rot4 side in OrderedGateSides(gateSide, FourGates))
+            {
+                IntVec3 gateCell = mask.GateCell(center, side);
+                gates.Add(new FortressGate(gateCell, gateCell + side.FacingCell, side, dim.CurtainThickness));
+                for (int depth = 0; depth < dim.CurtainThickness; depth++)
+                    passages[gateCell - side.FacingCell * depth] = (side, depth);
+            }
+
+            int cIn = dim.CourtyardHalf;
+            CellRect courtyardBounds = CellRect.CenteredOn(center, cIn * 2 + 1, cIn * 2 + 1);
+
+            // Define the 4 corner bastion casemates (ground-floor magazines & internal access).
+            var casemates = new CellRect[4];
+            var casemateInteriors = new HashSet<IntVec3>();
+            var casemateDoors = new Dictionary<IntVec3, Rot4>();
+            var zones = new List<FortressBastionZone>(4);
+            (int Sx, int Sz, Rot4 XSide, Rot4 ZSide)[] corners =
+            {
+                (-1,  1, Rot4.West, Rot4.North),
+                ( 1,  1, Rot4.East, Rot4.North),
+                ( 1, -1, Rot4.East, Rot4.South),
+                (-1, -1, Rot4.West, Rot4.South)
+            };
+
+            for (int i = 0; i < corners.Length; i++)
+            {
+                var (sx, sz, xSide, zSide) = corners[i];
+                int minX = sx > 0 ? center.x + dim.CasemateMin : center.x - dim.CasemateMax;
+                int maxX = sx > 0 ? center.x + dim.CasemateMax : center.x - dim.CasemateMin;
+                int minZ = sz > 0 ? center.z + dim.CasemateMin : center.z - dim.CasemateMax;
+                int maxZ = sz > 0 ? center.z + dim.CasemateMax : center.z - dim.CasemateMin;
+                var casemate = CellRect.FromLimits(new IntVec3(minX, 0, minZ), new IntVec3(maxX, 0, maxZ));
+                casemates[i] = casemate;
+                Modules.Add(new FortressModule(casemate, top, FortressModuleKind.Tower));
+
+                foreach (IntVec3 cell in casemate.ContractedBy(1))
+                    casemateInteriors.Add(cell);
+
+                // Two straight wall-flanked doors opening directly into the courtyard corner.
+                IntVec3 xDoor = new(center.x + sx * dim.CasemateMin, 0, center.z + sz * (dim.CasemateMin + 1));
+                IntVec3 zDoor = new(center.x + sx * (dim.CasemateMin + 1), 0, center.z + sz * dim.CasemateMin);
+                casemateDoors[xDoor] = xSide.Opposite;
+                casemateDoors[zDoor] = zSide.Opposite;
+
+                IntVec3 deckAnchor = new(center.x + sx * (dim.CurtainOuter + 1), 0, center.z + sz * (dim.CurtainOuter + 1));
+                int sectorMask = FortressGeometry.SectorBit(xSide) | FortressGeometry.SectorBit(zSide);
+                zones.Add(new FortressBastionZone(i, casemate, top, sectorMask, deckAnchor, xSide, zSide));
+
+                AddInterior(map, casemate, 0);
+                // Internal ladder up from the casemate into the Floor 1 bastion platform.
+                IntVec3 foot = new(center.x + sx * (dim.CasemateMin + 2), 0, center.z + sz * (dim.CasemateMin + 2));
+                AddLadder(map, 0, foot, xSide);
+            }
+
+            var interior = new HashSet<IntVec3>();
+            var perimeter = new HashSet<IntVec3>();
+            var solidGround = new HashSet<IntVec3>(NaturalBarrier);
+            var rampartDeckGround = new HashSet<IntVec3>();
+            var supportedDeck = new List<IntVec3>();
+            var casemateRoofDeck = new List<IntVec3>();
+
+            foreach (IntVec3 cell in footprint)
+            {
+                int ax = Math.Abs(cell.x - center.x);
+                int az = Math.Abs(cell.z - center.z);
+                bool inCasemateInterior = casemateInteriors.Contains(cell);
+                bool isCasemateDoor = casemateDoors.TryGetValue(cell, out Rot4 casDoorRot);
+                bool inCasemateWall = !inCasemateInterior && casemates.Any(rect => rect.Contains(cell));
+                bool inOpenCourtyard = ax <= cIn && az <= cIn && !inCasemateInterior && !inCasemateWall;
+
+                if (inOpenCourtyard)
+                {
+                    interior.Add(cell);
+                    continue;
+                }
+
+                if (inCasemateInterior)
+                {
+                    interior.Add(cell);
+                    if (!NaturalBarrier.Contains(cell))
+                    {
+                        rampartDeckGround.Add(cell);
+                        casemateRoofDeck.Add(cell);
+                    }
+                    continue;
+                }
+
+                perimeter.Add(cell);
+                if (NaturalBarrier.Contains(cell)) continue;
+
+                rampartDeckGround.Add(cell);
+                supportedDeck.Add(cell);
+
+                if (isCasemateDoor)
+                {
+                    Tiers[0].Buildings.Add(new FortressBuilding(ThingDefOf.Door, cell, casDoorRot));
+                    solidGround.Add(cell);
+                    continue;
+                }
+
+                if (passages.TryGetValue(cell, out var passage))
+                {
+                    if (passage.Depth == 0)
+                    {
+                        Tiers[0].Buildings.Add(new FortressBuilding(ThingDefOf.Door, cell, passage.Side));
+                        solidGround.Add(cell);
+                    }
+                    continue;
+                }
+
+                Tiers[0].Buildings.Add(new FortressBuilding(ThingDefOf.Wall, cell, Rot4.North));
+                solidGround.Add(cell);
+            }
+
+            // Lay Floor 1 deck from ground-wall-supported cells inward over casemate interiors.
+            foreach (IntVec3 cell in supportedDeck)
+                Tiers[1].Deck.Add(Api.CellOnFloor(cell, 1, map));
+            foreach (IntVec3 cell in casemateRoofDeck.OrderBy(c => MinCasemateDepth(c, casemates)))
+                Tiers[1].Deck.Add(Api.CellOnFloor(cell, 1, map));
+
+            // Floor 1 outer parapet: curtain merlons, straight flank embrasures, outward stepped barricades.
+            foreach (IntVec3 cell in outerEdge)
+            {
+                if (NaturalBarrier.Contains(cell)) continue;
+                ThingDef parapet = BastionParapet(cell, center, dim, embrasure);
+                Tiers[1].Buildings.Add(new FortressBuilding(parapet, Api.CellOnFloor(cell, 1, map), Rot4.North));
+            }
+
+            // Four courtyard stairs up to the East/West curtain rampart walkway.
+            int stairZOffset = dim.FlankInner - 3;
+            foreach (int sx in new[] { -1, 1 })
+            {
+                int stairX = center.x + sx * cIn;
+                if (!AddStair(map, 0, new IntVec3(stairX, 0, center.z - stairZOffset), Rot4.South) ||
+                    !AddStair(map, 0, new IntVec3(stairX, 0, center.z + stairZOffset), Rot4.North))
+                    return false;
+            }
+
+            // Central low supply/command Core building (2 levels: ground room + Floor 1 parapet roof).
+            CellRect core = KeepFootprint(Outer, dim.CoreSide);
+            Modules.Add(new FortressModule(core, top, FortressModuleKind.Keep));
+            AddPerimeter(map, core, 0, gateSide, fourDoors: FourGates);
+            AddInterior(map, core, 0);
+            AddDeck(map, core, 1);
+            AddParapet(map, core, 1, embrasure);
+            if (dim.CoreSide >= 9)
+            {
+                if (!AddStair(map, 0, new IntVec3(core.minX + 3, 0, core.minZ + 3), Rot4.South))
+                    return false;
+            }
+            else
+            {
+                AddLadder(map, 0, new IntVec3(core.minX + 2, 0, core.minZ + 2), Rot4.East);
+            }
+
+            var slots = BuildBastionSlots(center, dim, corners);
+            var curtainPosts = new IntVec3[4];
+            var interiorPosts = new IntVec3[4];
+            for (int sector = 0; sector < 4; sector++)
+            {
+                Rot4 side = new(sector);
+                curtainPosts[sector] = center + side.FacingCell * (dim.CurtainOuter - 1);
+                interiorPosts[sector] = center + side.FacingCell * (cIn - 2);
+            }
+
+            Geometry = new FortressGeometry(
+                Kind, Size, Outer, footprint, interior, perimeter, outerEdge, rampartDeckGround,
+                courtyardBounds, core, gates, zones, slots, curtainPosts, interiorPosts);
+
+            if (!Geometry.IsAirtight(solidGround)) return false;
+
+            FortressFacilityPlan facilities = savedFacilities.GetValueOrDefault();
+            if (!savedFacilities.HasValue && (!BastionFlanksFit(map) ||
+                !FortressFacilityPlan.TryPlace(map, this, out facilities))) return false;
+            Facilities = facilities;
+            AddFacility(map, facilities.Living, upperRoom: true);
+            AddFacility(map, facilities.Supply, upperRoom: true, sterile: facilities.Industrial);
+            if (!facilities.Power.IsEmpty) AddFacility(map, facilities.Power, upperRoom: false);
+            return VerticalLinksFit();
+        }
+
+        private bool BastionFlanksFit(Map map)
+        {
+            // Each end of a curtain has its own flank. Preserve a usable slot for every gun in the profile.
+            var guns = FortressDefenseProfileDef.For(map.ParentFaction).machineGuns;
+            return Geometry.Slots.Where(slot => slot.Role == FortressEmplacementRole.FlankCurtain)
+                .GroupBy(slot => (slot.ZoneIndex, slot.Facing))
+                .All(flank => guns.All(gun => flank.Any(slot => Fits(slot, gun))));
+
+            bool Fits(FortressEmplacementSlot slot, ThingDef gun)
+            {
+                IntVec3 root = slot.Ground;
+                if (!HasFlankPort(slot) ||
+                    !GenAdj.OccupiedRect(root, slot.Facing, gun.Size).All(UsableDeck)) return false;
+                return !gun.hasInteractionCell || UsableDeck(ThingUtility.InteractionCellWhenAt(gun, root, slot.Facing, map));
+            }
+
+            bool UsableDeck(IntVec3 cell) => Geometry.IsRampartGunCell(cell) &&
+                !Tiers[1].Openings.Contains(Api.CellOnFloor(cell, 1, map));
+        }
+
+        internal bool HasFlankPort(FortressEmplacementSlot slot) =>
+            !NaturalBarrier.Contains(slot.Ground + slot.Facing.FacingCell);
+
+        private static ThingDef BastionParapet(IntVec3 cell, IntVec3 center, BastionDimensions dim, ThingDef embrasure)
+        {
+            int ax = Math.Abs(cell.x - center.x);
+            int az = Math.Abs(cell.z - center.z);
+
+            // Re-entrant corner where curtain meets bastion flank: solid wall merlon.
+            if (ax == dim.FlankInner && az == dim.CurtainOuter || az == dim.FlankInner && ax == dim.CurtainOuter)
+                return ThingDefOf.Wall;
+
+            // Straight X-flank (vertical short edge protecting North/South curtain):
+            // emb at +1 (wall-foot), wall at +2, emb at +3, wall at +4, barricade at shoulder.
+            if (ax == dim.FlankInner && az > dim.CurtainOuter && az < dim.Shoulder)
+            {
+                int offset = az - dim.CurtainOuter;
+                return offset % 2 == 1 ? embrasure : ThingDefOf.Wall;
+            }
+
+            // Straight Z-flank (horizontal short edge protecting East/West curtain):
+            if (az == dim.FlankInner && ax > dim.CurtainOuter && ax < dim.Shoulder)
+            {
+                int offset = ax - dim.CurtainOuter;
+                return offset % 2 == 1 ? embrasure : ThingDefOf.Wall;
+            }
+
+            // Recessed curtain outer edge: merlon rhythm matching SquareKeep.
+            if (ax == dim.CurtainOuter && az < dim.FlankInner)
+            {
+                int offset = (az + dim.FlankInner) % 4;
+                if (offset == 0) return embrasure;
+                return offset == 2 ? ThingDefOf.Wall : ThingDefOf.Barricade;
+            }
+            if (az == dim.CurtainOuter && ax < dim.FlankInner)
+            {
+                int offset = (ax + dim.FlankInner) % 4;
+                if (offset == 0) return embrasure;
+                return offset == 2 ? ThingDefOf.Wall : ThingDefOf.Barricade;
+            }
+
+            // Outward stepped bastion faces: low cover for wide 3D firing arcs.
+            return ThingDefOf.Barricade;
+        }
+
+        private static List<FortressEmplacementSlot> BuildBastionSlots(
+            IntVec3 center, BastionDimensions dim, (int Sx, int Sz, Rot4 XSide, Rot4 ZSide)[] corners)
+        {
+            var slots = new List<FortressEmplacementSlot>();
+            int[] flankOffsets = dim.FlankLength >= 5 ? new[] { 1, 3 } : new[] { 1 };
+
+            for (int i = 0; i < corners.Length; i++)
+            {
+                var (sx, sz, xSide, zSide) = corners[i];
+                int outwardMask = FortressGeometry.SectorBit(xSide) | FortressGeometry.SectorBit(zSide);
+
+                // Straight X-flank guns cover the adjacent North/South curtain sector.
+                foreach (int offset in flankOffsets)
+                {
+                    IntVec3 gun = new(center.x + sx * (dim.FlankInner + 1), 0, center.z + sz * (dim.CurtainOuter + offset));
+                    slots.Add(new FortressEmplacementSlot(
+                        gun, 1, xSide.Opposite, FortressEmplacementRole.FlankCurtain,
+                        FortressGeometry.SectorBit(zSide), i));
+                }
+
+                // Straight Z-flank guns cover the adjacent East/West curtain sector.
+                foreach (int offset in flankOffsets)
+                {
+                    IntVec3 gun = new(center.x + sx * (dim.CurtainOuter + offset), 0, center.z + sz * (dim.FlankInner + 1));
+                    slots.Add(new FortressEmplacementSlot(
+                        gun, 1, zSide.Opposite, FortressEmplacementRole.FlankCurtain,
+                        FortressGeometry.SectorBit(xSide), i));
+                }
+
+                // Salient nose outward anchor for corner turret & heavy bastion battery.
+                IntVec3 nose = new(center.x + sx * (dim.CurtainOuter + 3), 0, center.z + sz * (dim.CurtainOuter + 3));
+                slots.Add(new FortressEmplacementSlot(
+                    nose, 1, zSide, FortressEmplacementRole.OutwardFace, outwardMask, i));
+            }
+
+            // Recessed curtain wall gun slots aligned behind curtain embrasures ((offset + FlankInner) % 4 == 0).
+            int curtainOffset = dim.FlankInner >= 13 ? 7 : 5;
+            foreach (Rot4 side in GenAdj.CardinalDirections.Select(Rot4.FromIntVec3))
+            {
+                IntVec3 mid = center + side.FacingCell * (dim.CurtainOuter - 1);
+                IntVec3 along = side.Rotated(RotationDirection.Clockwise).FacingCell;
+                int sectorMask = FortressGeometry.SectorBit(side);
+                foreach (int sign in new[] { -1, 1 })
+                {
+                    IntVec3 gun = mid + along * (sign * curtainOffset);
+                    slots.Add(new FortressEmplacementSlot(
+                        gun, 1, side, FortressEmplacementRole.CurtainWall, sectorMask, -1));
+                }
+            }
+
+            return slots;
+        }
+
+        private static int MinCasemateDepth(IntVec3 cell, CellRect[] casemates)
+        {
+            foreach (CellRect rect in casemates)
+                if (rect.Contains(cell)) return Depth(rect, cell);
+            return 0;
+        }
+
+        private static IEnumerable<Rot4> OrderedGateSides(Rot4 primary, bool fourGates) =>
+            fourGates
+                ? GenAdj.CardinalDirections.Select(Rot4.FromIntVec3).OrderByDescending(side => side == primary)
+                : new[] { primary };
 
         private bool VerticalLinksFit()
         {
@@ -154,18 +532,24 @@ namespace RimSiege.Fortress
                     yield return new CellRect(x, z, side, side);
         }
 
-        private void AddTowers(Map map, int side, int top, ThingDef embrasure)
+        private void AddTowers(Map map, int side, int top, ThingDef embrasure, List<FortressBastionZone> zones)
         {
+            int index = 0;
             foreach (CellRect tower in TowerFootprints(Outer, side))
             {
                 bool west = tower.CenterCell.x < Outer.CenterCell.x;
                 bool south = tower.CenterCell.z < Outer.CenterCell.z;
-                Rot4 inward = west ? Rot4.East : Rot4.West;
+                Rot4 xSide = west ? Rot4.West : Rot4.East;
+                Rot4 zSide = south ? Rot4.South : Rot4.North;
+                Rot4 inward = xSide.Opposite;
                 Modules.Add(new FortressModule(tower, top, FortressModuleKind.Tower));
-                Rot4 inwardZ = south ? Rot4.North : Rot4.South;
+                Rot4 inwardZ = zSide.Opposite;
                 IntVec3 inwardCorner = new IntVec3(west ? tower.maxX : tower.minX, 0,
                     south ? tower.maxZ : tower.minZ);
                 IntVec3 lowerFoot = inwardCorner - inward.FacingCell - inwardZ.FacingCell;
+
+                int sectorMask = FortressGeometry.SectorBit(xSide) | FortressGeometry.SectorBit(zSide);
+                zones.Add(new FortressBastionZone(index++, tower, top, sectorMask, tower.CenterCell, xSide, zSide));
 
                 AddTowerBase(tower, inward, inwardZ);
                 AddInterior(map, tower, 0);
@@ -234,8 +618,8 @@ namespace RimSiege.Fortress
             int portHalfWidth = rect.Width >= 9 ? 1 : 0;
             foreach (IntVec3 cell in rect.EdgeCells)
             {
-                bool inPort = System.Math.Abs(cell.x - rect.CenterCell.x) <= portHalfWidth ||
-                    System.Math.Abs(cell.z - rect.CenterCell.z) <= portHalfWidth;
+                bool inPort = Math.Abs(cell.x - rect.CenterCell.x) <= portHalfWidth ||
+                    Math.Abs(cell.z - rect.CenterCell.z) <= portHalfWidth;
                 Rot4 rotation = Rot4.North;
                 bool isDoor = doors != null && doors.TryGetValue(cell, out rotation);
                 ThingDef def = isDoor ? ThingDefOf.Door :
@@ -281,7 +665,7 @@ namespace RimSiege.Fortress
             cell.z == rect.minZ || cell.z == rect.maxZ ? cell.x - rect.minX : cell.z - rect.minZ;
 
         internal static int Depth(CellRect rect, IntVec3 cell) =>
-            System.Math.Min(System.Math.Min(cell.x - rect.minX, rect.maxX - cell.x),
-                System.Math.Min(cell.z - rect.minZ, rect.maxZ - cell.z));
+            Math.Min(Math.Min(cell.x - rect.minX, rect.maxX - cell.x),
+                Math.Min(cell.z - rect.minZ, rect.maxZ - cell.z));
     }
 }

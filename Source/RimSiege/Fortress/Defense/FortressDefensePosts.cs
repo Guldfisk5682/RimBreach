@@ -483,7 +483,7 @@ namespace RimSiege.Fortress
                 .ToLookup(pawn => (Building_TurretGunCE)pawn.mindState.duty.focusSecond.Thing);
             if (reserves.Count == 0 && !local.Any(pawn => pawn.mindState.duty.focusSecond.HasThing)) return;
 
-            IntVec3 front = blueprint.Outer.GetCenterCellOnEdge(new Rot4(sector));
+            IntVec3 front = ground.GateCell(sector);
             Thing[] targets = defense.Targeting.CombatTargets()
                 .Concat(map.listerBuildings.allBuildingsColonist)
                 .Prepend(contact).Where(target => target != null && defense.ValidTarget(target) &&
@@ -505,8 +505,12 @@ namespace RimSiege.Fortress
 
                 bool anySector = Indirect(gun) || defense.Line == FortressLine.Keep || ground.InKeep(gun.Position);
                 bool middle = ground.TowerMiddle(gun.Position);
+                int covered = ground.CoveredSectors(gun.Position);
                 Thing target = targets.Where(candidate =>
-                        (anySector || candidate == contact || ground.Sector(candidate.Position) != opposite) &&
+                        (anySector || candidate == contact ||
+                            (covered != 0
+                                ? (covered & FortressGeometry.SectorBit(ground.Sector(candidate.Position))) != 0
+                                : ground.Sector(candidate.Position) != opposite)) &&
                         (!middle || defense.MiddleOpen(gun.Position, ground.Sector(candidate.Position))) &&
                         CanAimAt(gun, candidate))
                     .Take(ShotChecksPerGun).FirstOrDefault(candidate => gun.AttackVerb.CanHitTargetFrom(gun.Position, candidate));
@@ -573,13 +577,19 @@ namespace RimSiege.Fortress
         internal bool IsGunEligibleForSector(LordJob_FortressDefense defense, int sector, Building_TurretGunCE gun) =>
             EligibleGun(defense, sector, gun);
 
-        private bool EligibleGun(LordJob_FortressDefense defense, int sector, Building_TurretGunCE gun) =>
-            Usable(gun) && gun.Active && gun.MannableComp != null &&
-            (defense.Line != FortressLine.Keep || ground.InKeep(gun.Position) && Api.FloorOf(gun.Position, map) > 0) &&
-            (!ground.OnCurtain(gun.Position) || defense.Line == FortressLine.Curtain) &&
-            (!ground.TowerMiddle(gun.Position) || defense.MiddleOpen(gun.Position, sector)) &&
-            (defense.Line == FortressLine.Keep || Indirect(gun) || ground.InKeep(gun.Position) ||
-                ground.Sector(gun.Position) == sector || ground.TowerFaces(gun.Position, sector));
+        private bool EligibleGun(LordJob_FortressDefense defense, int sector, Building_TurretGunCE gun)
+        {
+            if (!Usable(gun) || !gun.Active || gun.MannableComp == null ||
+                defense.Line == FortressLine.Keep && (!ground.InKeep(gun.Position) || Api.FloorOf(gun.Position, map) <= 0) ||
+                ground.OnCurtain(gun.Position) && defense.Line != FortressLine.Curtain ||
+                ground.TowerMiddle(gun.Position) && !defense.MiddleOpen(gun.Position, sector))
+                return false;
+            if (defense.Line == FortressLine.Keep || Indirect(gun) || ground.InKeep(gun.Position))
+                return true;
+            int covered = ground.CoveredSectors(gun.Position);
+            if (covered != 0) return (covered & FortressGeometry.SectorBit(sector)) != 0;
+            return ground.Sector(gun.Position) == sector || ground.TowerFaces(gun.Position, sector);
+        }
 
         internal bool CanAimAt(Building_TurretGunCE gun, Thing target) =>
             Api.RangeDistance(gun.Position, target.Position, map) <= gun.AttackVerb.EffectiveRange &&
@@ -619,8 +629,8 @@ namespace RimSiege.Fortress
             int count = Math.Min(desired, Math.Min(candidates.Length, readyInside - retained));
             int minRequired = counterSortie ? 4 : Math.Min(4, desired);
             if (count < minRequired) return false;
-            foreach (IntVec3 exit in FortressLayout.GateSides(blueprint.GateSide, blueprint.FourGates)
-                .Select(side => blueprint.Outer.GetCenterCellOnEdge(side) + side.FacingCell)
+            foreach (IntVec3 exit in ground.Gates
+                .Select(gate => gate.Approach)
                 .Where(cell => cell.Standable(map))
                 .OrderBy(cell => Api.Distance3D(cell, target.Position, map)))
             {

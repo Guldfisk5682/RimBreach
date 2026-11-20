@@ -40,14 +40,15 @@ namespace RimSiege.Fortress
             return candidates.OrderBy(rect => (rect.CenterCell - center).LengthHorizontalSquared).ToList();
         }
 
-        private static bool GroundFits(Map map, CellRect rect)
+        private static bool GroundFits(Map map, FortressShapeMask mask, IntVec3 center)
         {
-            foreach (IntVec3 cell in rect)
+            foreach (IntVec3 offset in mask.Footprint)
             {
+                IntVec3 cell = center + offset;
                 Building edifice = cell.GetEdifice(map);
                 if (IsNaturalBarrier(cell, map))
                 {
-                    if (FortressLayout.Depth(rect, cell) < PreservedSkin) continue;
+                    if (mask.PreservedSkin.Contains(offset)) continue;
                     return false;
                 }
                 if (BlocksGround(cell, map)) return false;
@@ -55,44 +56,47 @@ namespace RimSiege.Fortress
                 if (edifice != null)
                 {
                     CellRect occupied = edifice.OccupiedRect();
-                    if (!rect.Contains(occupied.Min) || !rect.Contains(occupied.Max)) return false;
+                    if (!occupied.All(covered => mask.Footprint.Contains(covered - center))) return false;
                 }
             }
             return true;
         }
 
-        internal static FortressSitingResult Plan(Map map, CellRect outer, FortressDimensions dimensions,
-            out FortressLayout layout)
+        internal static FortressSitingResult Plan(Map map, CellRect outer, FortressLayoutKind kind,
+            FortressSize size, out FortressLayout layout)
         {
             layout = null;
-            if (!GroundFits(map, outer)) return FortressSitingResult.Ground;
+            FortressShapeMask mask = FortressGeometry.ShapeFor(kind, size);
+            IntVec3 center = outer.CenterCell;
+            if (!GroundFits(map, mask, center)) return FortressSitingResult.Ground;
+
             CellRect ground = Api.GroundRect(map);
             var sides = GenAdj.CardinalDirections.Select(Rot4.FromIntVec3)
-                .OrderBy(side => FortressLayout.Depth(ground, outer.GetCenterCellOnEdge(side))).ToArray();
+                .OrderBy(side => FortressLayout.Depth(ground, mask.GateCell(center, side))).ToArray();
             if (sides.Any(side =>
             {
-                IntVec3 gate = outer.GetCenterCellOnEdge(side);
+                IntVec3 gate = mask.GateCell(center, side);
                 return !(gate + side.FacingCell).Standable(map) ||
                     Enumerable.Range(0, PreservedSkin)
                         .Any(depth => IsNaturalBarrier(gate - side.FacingCell * depth, map));
             })) return FortressSitingResult.Gates;
 
-            var barrier = new HashSet<IntVec3>(outer.EdgeCells.Where(cell => IsNaturalBarrier(cell, map)));
-            barrier.UnionWith(outer.ContractedBy(1).EdgeCells.Where(cell => IsNaturalBarrier(cell, map)));
+            var barrier = new HashSet<IntVec3>(mask.PreservedSkin.Select(offset => center + offset)
+                .Where(cell => IsNaturalBarrier(cell, map)));
             FortressSitingResult result = FortressSitingResult.Layout;
             foreach (Rot4 side in sides)
             {
-                IntVec3 gate = outer.GetCenterCellOnEdge(side);
+                IntVec3 gate = mask.GateCell(center, side);
                 IntVec3 approach = gate + side.FacingCell;
 
-                FortressLayout candidate = FortressLayout.Plan(map, outer, side, barrier, dimensions);
+                FortressLayout candidate = FortressLayout.Plan(map, outer, side, barrier, size, kind);
                 if (candidate == null) continue;
                 if (!FitsUpperTerrain(map, candidate))
                 {
                     if (result == FortressSitingResult.Layout) result = FortressSitingResult.UpperTerrain;
                     continue;
                 }
-                if (ExteriorRoute(map, ground, outer, approach))
+                if (ExteriorRoute(map, ground, candidate.Geometry.Footprint, approach))
                 {
                     layout = candidate;
                     return FortressSitingResult.Accepted;
@@ -102,13 +106,13 @@ namespace RimSiege.Fortress
             return result;
         }
 
-        private static bool ExteriorRoute(Map map, CellRect ground, CellRect outer, IntVec3 approach)
+        private static bool ExteriorRoute(Map map, CellRect ground, HashSet<IntVec3> footprint, IntVec3 approach)
         {
             // Check the exterior of the proposed walls. A path through the empty
             // construction site would no longer exist after the gate was built.
             bool reached = false;
             map.floodFiller.FloodFill(approach,
-                cell => ground.Contains(cell) && !outer.Contains(cell) && cell.Standable(map) && !cell.GetTerrain(map).IsWater,
+                cell => ground.Contains(cell) && !footprint.Contains(cell) && cell.Standable(map) && !cell.GetTerrain(map).IsWater,
                 cell => reached = FortressLayout.Depth(ground, cell) == 0 &&
                     (map.TileInfo.AllowRoofedEdgeWalkIn || !map.roofGrid.Roofed(cell)));
             return reached;

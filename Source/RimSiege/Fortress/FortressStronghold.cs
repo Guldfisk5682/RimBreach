@@ -16,6 +16,12 @@ namespace RimSiege.Fortress
             HashSet<IntVec3> access = Approaches(room, map);
             foreach (var stair in layout.Tiers[0].Stairs)
                 if (keep.Contains(stair.center)) access.UnionWith(stair.footprint.AdjacentCellsCardinal.Where(room.Contains));
+            foreach (FortressLadder ladder in layout.Ladders)
+            {
+                if (!room.Contains(ladder.Foot)) continue;
+                access.Add(ladder.Foot);
+                access.UnionWith(GenAdj.CardinalDirections.Select(direction => ladder.Foot + direction).Where(room.Contains));
+            }
 
             bool powered = !layout.Facilities.Power.IsEmpty;
             if (powered) AddBatteries(map, room, access);

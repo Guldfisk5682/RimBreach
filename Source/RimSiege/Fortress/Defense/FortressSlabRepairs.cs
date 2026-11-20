@@ -51,7 +51,7 @@ namespace RimSiege.Fortress
         private static void OnFloorChanged(Map map, IntVec3 cell, bool built)
         {
             if (map.Parent is not FortressSite { Blueprint: { } blueprint, Resolved: false } ||
-                !blueprint.Outer.Contains(Api.GroundCellOf(cell, map))) return;
+                !blueprint.ContainsGround(Api.GroundCellOf(cell, map))) return;
             foreach (var lord in map.lordManager.lords)
                 if (lord.CurLordToil is LordToil_FortressDefense && lord.LordJob is LordJob_FortressDefense defense)
                     defense.NotifySlabChanged(cell, built);

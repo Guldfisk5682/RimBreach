@@ -409,14 +409,14 @@ namespace RimSiege.Fortress
                         pawn.IsAnimal && pawn.training?.HasLearned(TrainableDefOf.Release) == true)).ToArray();
 
             UpdateContacts(now);
-            for (int sector = 0; sector < 4; sector++)
+            // A passage can start in one sector and run through walls in another.
+            if (changedCurtain != 0)
             {
-                int mask = 1 << sector;
-                if ((changedCurtain & mask) == 0) continue;
-                if (Ground.PassableBreach(sector)) breachedSectors |= mask;
-                else breachedSectors &= ~mask;
+                breachedSectors = 0;
+                for (int sector = 0; sector < 4; sector++)
+                    if (Ground.PassableBreach(sector)) breachedSectors |= 1 << sector;
+                changedCurtain = 0;
             }
-            changedCurtain = 0;
 
             int ready = lord.ownedPawns.Count(FortressDefensePosts.CanFight) +
                 ActiveSortieLords().Sum(sortie => sortie.ownedPawns.Count(FortressDefensePosts.CanFight));

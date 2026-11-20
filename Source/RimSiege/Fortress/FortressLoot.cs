@@ -34,10 +34,9 @@ namespace RimSiege.Fortress
             FortressBlueprint blueprint = site.Blueprint;
             if (!site.Harassment || site.Resolved || blueprint.HarassmentLootPlaced) return;
 
-            FortressDimensions dimensions = Dimensions(blueprint.Outer);
             TechLevel tech = map.ParentFaction.def.techLevel;
             if (!DefDatabase<FortressLootDef>.AllDefsListForReading
-                .Where(def => def.AppliesTo(tech, dimensions == FortressDimensions.Large, site.OriginalPoints))
+                .Where(def => def.AppliesTo(tech, blueprint.IsLarge, site.OriginalPoints))
                 .TryRandomElementByWeight(def => def.weight, out FortressLootDef reward)) return;
 
             Thing item = reward.Create();
@@ -56,7 +55,12 @@ namespace RimSiege.Fortress
             Faction faction = map.ParentFaction;
             TechLevel tech = faction.def.techLevel;
             FortressBlueprint blueprint = site.Blueprint;
-            CellRect keep = FortressLayout.KeepFootprint(blueprint.Outer, Dimensions(blueprint.Outer).KeepSide).ContractedBy(1);
+            FortressLayout rebuilt = blueprint.Rebuild(map);
+            CellRect core = rebuilt?.Geometry.Core ?? FortressLayout.KeepFootprint(blueprint.Outer,
+                blueprint.LayoutKind == FortressLayoutKind.HumanBastion
+                    ? BastionDimensions.For(blueprint.Size).CoreSide
+                    : FortressDimensions.For(blueprint.Size).KeepSide);
+            CellRect keep = core.ContractedBy(1);
             IntVec3 lootShelf = blueprint.LootShelfGround.IsValid
                 ? Api.CellOnFloor(blueprint.LootShelfGround, blueprint.LootShelfFloor, map)
                 : IntVec3.Invalid;
@@ -84,9 +88,6 @@ namespace RimSiege.Fortress
                 WarnUnplaced(map, thing);
             }
         }
-
-        private static FortressDimensions Dimensions(CellRect outer) =>
-            outer.Width == FortressDimensions.Large.OuterSide ? FortressDimensions.Large : FortressDimensions.Compact;
 
         private static bool PlaceOnLootShelf(Map map, IntVec3 cell, Thing thing)
         {

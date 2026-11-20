@@ -32,11 +32,13 @@ namespace RimSiege.Fortress
         {
             bool industrial = map.ParentFaction.def.techLevel >= TechLevel.Industrial;
             bool powerRequired = industrial && map.ParentFaction.def.humanlikeFaction;
-            CellRect courtyard = layout.Outer.ContractedBy(FortressLayout.CurtainThickness + 1);
+            FortressGeometry geo = layout.Geometry;
+            CellRect courtyard = geo.CourtyardBounds.ContractedBy(1);
             var reserved = new HashSet<IntVec3>(layout.Modules.SelectMany(module => module.Ground.Cells));
+            reserved.UnionWith(geo.Perimeter);
             reserved.UnionWith(CellRect.FromLimits(layout.Gate, layout.Outer.CenterCell).ExpandedBy(1));
-            foreach (Rot4 side in FortressLayout.GateSides(layout.GateSide, layout.FourGates))
-                reserved.UnionWith(CellRect.FromLimits(layout.Outer.GetCenterCellOnEdge(side), layout.Outer.CenterCell));
+            foreach (FortressGate gate in geo.Gates)
+                reserved.UnionWith(CellRect.FromLimits(gate.Cell, layout.Outer.CenterCell));
             foreach (StairGeometry stair in layout.Tiers[0].Stairs)
             {
                 reserved.UnionWith(stair.footprint.ExpandedBy(1));
@@ -51,7 +53,7 @@ namespace RimSiege.Fortress
                 FortressLot power = new(CellRect.Empty, Rot4.Invalid);
                 // Compact courtyards can fit a 4x4 power room between the gate lanes and towers.
                 if (powerRequired && !ReserveRoom(8, 7, used, out power) &&
-                    (layout.Outer.Width != FortressDimensions.Compact.OuterSide ||
+                    (layout.Size != FortressSize.Compact ||
                         !ReserveRoom(6, 6, used, out power))) continue;
                 if (!ReserveRoom(8, 6, used, out FortressLot living) ||
                     !ReserveRoom(7, 6, used, out FortressLot supply)) continue;
@@ -132,7 +134,7 @@ namespace RimSiege.Fortress
             var storageAccess = new HashSet<IntVec3>(storage.Where(cell =>
                 cell.x == storage.CenterCell.x || cell.z == storage.CenterCell.z)) { entry };
             List<Building_Storage> supply = FortressStorage.PlaceShelves(map, storage, material.Stuff, storageAccess);
-            int componentStacks = layout.Outer.Width == FortressDimensions.Large.OuterSide ? 2 : 1;
+            int componentStacks = layout.Size == FortressSize.Large ? 2 : 1;
             // Reserve shelf capacity in Supply for courtyard mortar and nearby wall-support ordnance.
             int ordnanceShelves = supply.Count >= 3 ? 2 : supply.Count > 1 ? 1 : 0;
             if (ordnanceShelves > 0)

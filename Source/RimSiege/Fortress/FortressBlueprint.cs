@@ -7,6 +7,8 @@ namespace RimSiege.Fortress
     // structure to the floor bands of the newly generated map.
     internal sealed class FortressBlueprint : IExposable
     {
+        internal FortressLayoutKind LayoutKind = FortressLayoutKind.SquareKeep;
+        internal FortressSize Size;
         internal CellRect Outer;
         internal Rot4 GateSide;
         internal bool FourGates;
@@ -22,14 +24,24 @@ namespace RimSiege.Fortress
         internal int LootShelfFloor;
         internal bool HarassmentLootPlaced;
 
+        internal bool IsLarge => Size == FortressSize.Large;
+
+        internal bool ContainsGround(IntVec3 cell) => LayoutKind == FortressLayoutKind.SquareKeep
+            ? Outer.Contains(cell)
+            : FortressGeometry.ShapeFor(LayoutKind, Size).Footprint.Contains(cell - Outer.CenterCell);
+
         internal FortressLayout Rebuild(Map map) => FortressLayout.Plan(map, Outer, GateSide,
-            new HashSet<IntVec3>(NaturalBarrier),
-            Outer.Width == FortressDimensions.Large.OuterSide ? FortressDimensions.Large : FortressDimensions.Compact,
-            Top, Facilities, FourGates);
+            new HashSet<IntVec3>(NaturalBarrier ?? new List<IntVec3>()),
+            Size, LayoutKind, Top, Facilities, FourGates);
 
         public void ExposeData()
         {
+            Scribe_Values.Look(ref LayoutKind, "layoutKind", FortressLayoutKind.SquareKeep);
+            bool hasSize = Size == FortressSize.Large;
             Scribe_Values.Look(ref Outer, "outer");
+            Scribe_Values.Look(ref hasSize, "large",
+                Outer.Width == FortressGeometry.OuterSideFor(LayoutKind, FortressSize.Large));
+            Size = hasSize ? FortressSize.Large : FortressSize.Compact;
             Scribe_Values.Look(ref GateSide, "gateSide");
             Scribe_Values.Look(ref FourGates, "fourGates");
             Scribe_Values.Look(ref Top, "top");

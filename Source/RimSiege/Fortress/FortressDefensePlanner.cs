@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using ProjectZ;
+using IsoRimCEPackZ;
+using RimSiege.Integration;
 using RimWorld;
 using Verse;
+using Api = ProjectZ.Api;
 
 namespace RimSiege.Fortress
 {
@@ -48,15 +50,29 @@ namespace RimSiege.Fortress
             ThingDef machineGun = profile.machineGuns.RandomElement();
             ThingDef corner = ModsConfig.RoyaltyActive && map.ParentFaction.def == FactionDefOf.Empire
                 ? profile.imperialCorner : profile.cornerTurrets.RandomElementWithFallback();
-            bool large = layout.Outer.Width == FortressDimensions.Large.OuterSide;
+            bool large = layout.Size == FortressSize.Large;
+            FortressGunOption wallSupport = profile.wallSupport != null && points >= profile.wallSupport.minPoints
+                ? profile.wallSupport : null;
 
             plan.PlaceMortar(layout.Facilities.Mortar, layout.Facilities.MortarDef, profile);
             plan.PlaceMortar(layout.Facilities.SecondMortar, layout.Facilities.SecondMortarDef, profile);
-            if (corner != null) plan.PlaceCorners(corner);
-            plan.PlaceKeep(profile, machineGun, large, points);
-            FortressGunOption wallSupport = profile.wallSupport;
-            plan.PlaceWallGuns(machineGun, wallSupport != null && points >= wallSupport.minPoints ? wallSupport : null, large);
-            plan.PlaceTowers(profile, machineGun, large, points);
+
+            if (layout.Kind == FortressLayoutKind.HumanBastion)
+            {
+                plan.PlaceBastionFlanks(machineGun, wallSupport);
+                if (corner != null) plan.PlaceBastionCorners(corner);
+                plan.PlaceBastionOutward(profile, large, points);
+                plan.PlaceBastionCurtains(machineGun);
+                plan.PlaceKeep(profile, machineGun, large, points);
+            }
+            else
+            {
+                if (corner != null) plan.PlaceCorners(corner);
+                plan.PlaceKeep(profile, machineGun, large, points);
+                plan.PlaceWallGuns(machineGun, wallSupport, large);
+                plan.PlaceTowers(profile, machineGun, large, points);
+            }
+
             plan.PlaceWire();
             if (profile.hunterTrap != null) plan.PlaceTraps(profile.hunterTrap, large ? 2 : 1);
             return plan.pieces;
@@ -82,6 +98,158 @@ namespace RimSiege.Fortress
             if (piece != null) Add(piece);
         }
 
+        private void PlaceBastionFlanks(ThingDef machineGun, FortressGunOption wallSupport)
+        {
+            var flanks = layout.Geometry.Slots.Where(slot =>
+                    slot.Role == FortressEmplacementRole.FlankCurtain && layout.HasFlankPort(slot))
+                .GroupBy(slot => (slot.ZoneIndex, slot.Facing));
+            foreach (var flank in flanks)
+            {
+                var candidates = flank.Select(slot => (Slot: slot, Gun: FlankPiece(slot, machineGun, null)))
+                    .Where(candidate => candidate.Gun != null).ToArray();
+                if (candidates.Length == 0) continue;
+
+                FortressDefensePiece primary = candidates.FirstOrDefault(candidate => candidate.Gun.CoveredSectors != 0).Gun
+                    ?? candidates[0].Gun;
+                Add(primary);
+
+                foreach (var (slot, machine) in candidates)
+                {
+                    if (machine == primary) continue;
+                    FortressDefensePiece support = wallSupport == null
+                        ? null : FlankPiece(slot, wallSupport.turret, wallSupport.ammo);
+                    bool machineFits = FitsOnRampart(machine);
+                    if (support != null && (support.CoveredSectors != 0 || machine.CoveredSectors == 0 || !machineFits))
+                        Add(support);
+                    else if (machineFits) Add(machine);
+                }
+            }
+        }
+
+        private FortressDefensePiece FlankPiece(FortressEmplacementSlot slot, ThingDef def, ThingDef ammo)
+        {
+            IntVec3 cell = Api.CellOnFloor(slot.Ground, slot.Floor, map);
+            FortressDefensePiece piece = At(def, cell, slot.Facing, ammo);
+            if (!FitsOnRampart(piece)) return null;
+
+            // A missed sample keeps the gun available to the normal live target checks.
+            if (CoversCurtain(piece, slot)) piece.CoveredSectors = slot.CoveredSectors;
+            return piece;
+        }
+
+        private bool CoversCurtain(FortressDefensePiece piece, FortressEmplacementSlot slot)
+        {
+            EmplacementSpec placement = new(piece.Def, FortressArmament.StuffFor(piece.Def), piece.Ammo,
+                piece.CellOn(map), piece.Rotation, null);
+            if (CeArtillerySight.Open(map, map.ParentFaction, placement, out var query) != GeometryStatus.Success)
+                return false;
+            using (query)
+            {
+                Rot4 side = Faces.First(face => slot.CoveredSectors == FortressGeometry.SectorBit(face));
+                FortressShapeMask shape = FortressGeometry.ShapeFor(layout.Kind, layout.Size);
+                IntVec3 approach = shape.GateCell(layout.Outer.CenterCell, side) + side.FacingCell;
+                IntVec3 along = slot.Facing.Opposite.FacingCell;
+                // Sample the gate approach, the wall foot and the lane further outside the curtain.
+                return Clear(approach) || Clear(approach + along * 5) ||
+                    Clear(approach + along * 3 + side.FacingCell * 3);
+
+                bool Clear(IntVec3 target) =>
+                    query.CheckRangeAndArc(target, out var range) == GeometryStatus.Success &&
+                    range.InRange && range.WithinArc &&
+                    query.TraceFixedCorridor(target, out var corridor) == GeometryStatus.Success && corridor.Clear;
+            }
+        }
+
+        private void PlaceBastionCorners(ThingDef def)
+        {
+            FortressGeometry geo = layout.Geometry;
+            foreach (FortressEmplacementSlot slot in geo.Slots
+                .Where(slot => slot.Role == FortressEmplacementRole.OutwardFace))
+            {
+                FortressBastionZone zone = geo.Zones[slot.ZoneIndex];
+                IntVec3 anchor = Api.CellOnFloor(slot.Ground, slot.Floor, map);
+                CellRect area = CellRect.CenteredOn(anchor, 5, 5).ClipInsideMap(map);
+                FortressDefensePiece piece = area
+                    .OrderBy(cell => (cell - anchor).LengthHorizontalSquared)
+                    .SelectMany(cell => new[]
+                    {
+                        At(def, cell, zone.XSide, null, slot.CoveredSectors),
+                        At(def, cell, zone.ZSide, null, slot.CoveredSectors)
+                    })
+                    .FirstOrDefault(FitsOnRampart);
+                if (piece != null) Add(piece);
+            }
+        }
+
+        private void PlaceBastionOutward(FortressDefenseProfileDef profile, bool large, float points)
+        {
+            FortressGeometry geo = layout.Geometry;
+            IReadOnlyList<FortressBastionZone> zones = geo.Zones;
+            FortressGunOption roof = (large ? profile.largeRoof : profile.smallRoof)
+                .Where(option => option.minPoints <= points &&
+                    PowerDraw(option.turret) * option.count * zones.Count <= powerRemaining)
+                .RandomElementWithFallback();
+            if (roof == null) return;
+
+            foreach (FortressBastionZone zone in zones)
+            {
+                IntVec3 anchor = Api.CellOnFloor(zone.DeckAnchor, zone.Top, map);
+                CellRect deck = CellRect.CenteredOn(anchor, large ? 9 : 7, large ? 9 : 7).ClipInsideMap(map);
+                PlaceBastionRoof(roof, deck, zone.XSide, zone.ZSide, zone.SectorMask);
+            }
+        }
+
+        private void PlaceBastionRoof(FortressGunOption roof, CellRect area, Rot4 x, Rot4 z, int coveredSectors)
+        {
+            foreach (int count in Enumerable.Range(1, roof.count).Reverse())
+            {
+                foreach (Rot4 face in new[] { x, z })
+                {
+                    IntVec3 along = face.Rotated(RotationDirection.Clockwise).FacingCell;
+                    int stride = (face.IsHorizontal ? roof.turret.Size.x : roof.turret.Size.z) + 1;
+                    IEnumerable<IntVec3> roots = roof.centered
+                        ? area.OrderBy(cell => (cell - area.CenterCell).LengthHorizontalSquared)
+                        : area.OrderByDescending(cell => Projection(cell - area.CenterCell, face.FacingCell))
+                            .ThenBy(cell => Math.Abs(2 * Projection(cell - area.CenterCell, along) + stride * (count - 1)));
+
+                    foreach (IntVec3 root in roots)
+                    {
+                        FortressDefensePiece[] row = Enumerable.Range(0, count)
+                            .Select(i => At(roof.turret, root + along * (i * stride), face, roof.ammo, coveredSectors))
+                            .ToArray();
+                        if (!row.All(FitsOnRampart)) continue;
+                        foreach (FortressDefensePiece gun in row) Add(gun);
+                        return;
+                    }
+                }
+            }
+        }
+
+        private void PlaceBastionCurtains(ThingDef machineGun)
+        {
+            foreach (FortressEmplacementSlot slot in layout.Geometry.Slots
+                .Where(slot => slot.Role == FortressEmplacementRole.CurtainWall))
+            {
+                IntVec3 cell = Api.CellOnFloor(slot.Ground, slot.Floor, map);
+                FortressDefensePiece piece = At(machineGun, cell, slot.Facing, null, slot.CoveredSectors);
+                if (FitsOnRampart(piece)) Add(piece);
+            }
+        }
+
+        private bool FitsOnRampart(FortressDefensePiece piece)
+        {
+            FortressGeometry geo = layout.Geometry;
+            CellRect footprint = Footprint(piece);
+            if (!footprint.All(cell => IsUsableRampartCell(cell, geo))) return false;
+            if (piece.Def.hasInteractionCell && !IsUsableRampartCell(OperatorCell(piece), geo)) return false;
+            return Fits(piece, OnFloor(layout.Outer, piece.Floor));
+        }
+
+        private bool IsUsableRampartCell(IntVec3 cell, FortressGeometry geo)
+        {
+            return geo.IsRampartGunCell(Api.GroundCellOf(cell, map));
+        }
+
         private void PlaceCorners(ThingDef def)
         {
             CellRect deck = OnFloor(layout.Outer.ContractedBy(1), 1);
@@ -92,10 +260,11 @@ namespace RimSiege.Fortress
                 {
                     IntVec3 corner = new(x == Rot4.West ? deck.minX : deck.maxX, 0,
                         z == Rot4.South ? deck.minZ : deck.maxZ);
+                    int covered = FortressGeometry.SectorBit(x) | FortressGeometry.SectorBit(z);
                     var area = CellRect.CenteredOn(corner, 5, 5).ClipInsideMap(map);
                     FortressDefensePiece piece = area.Where(deck.Contains)
                         .OrderBy(cell => (cell - corner).LengthHorizontalSquared)
-                        .SelectMany(cell => new[] { At(def, cell, x), At(def, cell, z) })
+                        .SelectMany(cell => new[] { At(def, cell, x, null, covered), At(def, cell, z, null, covered) })
                         .FirstOrDefault(candidate => Fits(candidate, deck) &&
                             !Footprint(candidate).Any(interior.Contains));
                     if (piece != null) Add(piece);
@@ -112,6 +281,7 @@ namespace RimSiege.Fortress
             {
                 IntVec3 center = wall.GetCenterCellOnEdge(face) - face.FacingCell;
                 IntVec3 along = face.Rotated(RotationDirection.Clockwise).FacingCell;
+                int covered = FortressGeometry.SectorBit(face);
                 int[] preferred = large ? new[] { 5, 7, 13, 15 } : new[] { 1, 5, 7 };
                 int supportOffset = large ? 13 : 7;
                 bool supportPair = support != null && TryPair(support.turret, supportOffset, support.ammo);
@@ -173,7 +343,7 @@ namespace RimSiege.Fortress
                     // The gun faces along the parapet and its native rear
                     // interaction cell sits beside it behind the solid merlon.
                     IntVec3 facing = along * (offset % 4 == 1 ? -side : side);
-                    return At(def, center + along * (offset * side), Rot4.FromIntVec3(facing), ammo);
+                    return At(def, center + along * (offset * side), Rot4.FromIntVec3(facing), ammo, covered);
                 }
 
                 bool FitsWallGun(FortressDefensePiece gun) => Fits(gun, deck) &&
@@ -194,15 +364,16 @@ namespace RimSiege.Fortress
                 CellRect top = OnFloor(tower.Ground.ContractedBy(1), tower.Top);
                 Rot4 x = tower.Ground.CenterCell.x < layout.Outer.CenterCell.x ? Rot4.West : Rot4.East;
                 Rot4 z = tower.Ground.CenterCell.z < layout.Outer.CenterCell.z ? Rot4.South : Rot4.North;
+                int covered = FortressGeometry.SectorBit(x) | FortressGeometry.SectorBit(z);
 
-                if (roof != null) PlaceRoof(roof, top, x, z);
+                if (roof != null) PlaceRoof(roof, top, x, z, covered);
                 if (!large || !profile.middleMachineGuns || tower.Top < 2) continue;
                 CellRect middle = OnFloor(tower.Ground.ContractedBy(1), 1);
                 foreach (Rot4 face in Faces)
                 {
                     IntVec3 port = middle.GetCenterCellOnEdge(face);
-                    FortressDefensePiece gun = At(machineGun, port, face);
-                    if (!Fits(gun, middle)) gun = At(machineGun, port - face.FacingCell, face);
+                    FortressDefensePiece gun = At(machineGun, port, face, null, covered);
+                    if (!Fits(gun, middle)) gun = At(machineGun, port - face.FacingCell, face, null, covered);
                     if (Fits(gun, middle)) Add(gun);
                 }
             }
@@ -300,7 +471,7 @@ namespace RimSiege.Fortress
                 CellRect rotatedFootprint = CellRect.FromLimits(
                     RotateCell(footprint.Min, area.CenterCell, turns), RotateCell(footprint.Max, area.CenterCell, turns));
                 root += rotatedFootprint.Min - GenAdj.OccupiedRect(root, rotation, seed.Def.Size).Min;
-                FortressDefensePiece piece = At(seed.Def, root, rotation, seed.Ammo);
+                FortressDefensePiece piece = At(seed.Def, root, rotation, seed.Ammo, seed.CoveredSectors);
                 CellRect placed = Footprint(piece);
                 if (!Fits(piece, area) || placed.Any(cell => !occupied.Add(cell))) return false;
                 if (keepGap && i != 0 && placed.ExpandedBy(1).Overlaps(footprint)) return false;
@@ -319,7 +490,7 @@ namespace RimSiege.Fortress
             return center + offset;
         }
 
-        private void PlaceRoof(FortressGunOption roof, CellRect top, Rot4 x, Rot4 z)
+        private void PlaceRoof(FortressGunOption roof, CellRect top, Rot4 x, Rot4 z, int coveredSectors)
         {
             foreach (int count in Enumerable.Range(1, roof.count).Reverse())
             {
@@ -334,7 +505,8 @@ namespace RimSiege.Fortress
                     foreach (IntVec3 root in roots)
                     {
                         FortressDefensePiece[] row = Enumerable.Range(0, count)
-                            .Select(i => At(roof.turret, root + along * (i * stride), face, roof.ammo)).ToArray();
+                            .Select(i => At(roof.turret, root + along * (i * stride), face, roof.ammo, coveredSectors))
+                            .ToArray();
                         if (!row.All(gun => Fits(gun, top))) continue;
                         foreach (FortressDefensePiece gun in row) Add(gun);
                         return;
@@ -348,12 +520,11 @@ namespace RimSiege.Fortress
             ThingDef wire = DefDatabase<ThingDef>.GetNamed("CE_BarbedWire");
             IntVec3 entrance = layout.Gate + layout.GateSide.FacingCell * WireSetback;
             IntVec3 along = layout.GateSide.Rotated(RotationDirection.Clockwise).FacingCell;
-            CellRect ring = layout.Outer.ExpandedBy(WireSetback);
-            foreach (IntVec3 cell in ring.EdgeCells)
+            foreach (IntVec3 cell in layout.Geometry.WireRing(WireSetback, ground))
             {
                 if (!ground.Contains(cell) || cell.GetTerrain(map).IsWater ||
                     Math.Abs(Projection(cell - entrance, along)) <= 1 &&
-                    Projection(cell - entrance, layout.GateSide.FacingCell) == 0) continue;
+                    Math.Abs(Projection(cell - entrance, layout.GateSide.FacingCell)) <= 1) continue;
                 FortressDefensePiece piece = At(wire, cell, Rot4.North);
                 if (Fits(piece, ground)) Add(piece);
             }
@@ -361,7 +532,8 @@ namespace RimSiege.Fortress
 
         private void PlaceTraps(ThingDef def, int perSide)
         {
-            CellRect courtyard = layout.Outer.ContractedBy(FortressLayout.CurtainThickness);
+            FortressGeometry geo = layout.Geometry;
+            CellRect courtyard = geo.CourtyardBounds;
             var traps = new List<IntVec3>();
             foreach (Rot4 face in Faces)
             {
@@ -374,7 +546,8 @@ namespace RimSiege.Fortress
                     {
                         IntVec3 cell = center + along * (sign * offset);
                         FortressDefensePiece piece = At(def, cell, Rot4.North);
-                        if (traps.Any(other => other.AdjacentTo8WayOrInside(cell)) || !Fits(piece, courtyard) ||
+                        if (!geo.Interior.Contains(cell) ||
+                            traps.Any(other => other.AdjacentTo8WayOrInside(cell)) || !Fits(piece, courtyard) ||
                             def.PlaceWorkers.Any(worker => !worker.AllowsPlacing(def, cell, Rot4.North, map).Accepted))
                             continue;
                         Add(piece);
@@ -386,13 +559,15 @@ namespace RimSiege.Fortress
             }
         }
 
-        private FortressDefensePiece At(ThingDef def, IntVec3 cell, Rot4 rotation, ThingDef ammo = null) => new()
+        private FortressDefensePiece At(ThingDef def, IntVec3 cell, Rot4 rotation, ThingDef ammo = null,
+            int coveredSectors = 0) => new()
         {
             Def = def,
             Ammo = ammo ?? FortressArmament.DefaultAmmo(def),
             Ground = Api.GroundCellOf(cell, map),
             Floor = Api.FloorOf(cell, map),
-            Rotation = rotation
+            Rotation = rotation,
+            CoveredSectors = coveredSectors
         };
 
         private CellRect Footprint(FortressDefensePiece piece) =>

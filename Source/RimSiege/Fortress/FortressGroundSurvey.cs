@@ -27,8 +27,11 @@ namespace RimSiege.Fortress
                 }
         }
 
-        internal IEnumerable<CellRect> AdditionalCandidates(int side)
+        internal IEnumerable<CellRect> AdditionalCandidates(FortressLayoutKind kind, FortressSize size)
         {
+            int side = FortressGeometry.OuterSideFor(kind, size);
+            int innerSide = FortressGeometry.ShapeFor(kind, size).InnerSide;
+
             CellRect usable = ground.ContractedBy(FortressSiting.EdgeMargin);
             IntVec3 center = ground.CenterCell;
             var candidates = new List<CellRect>();
@@ -36,9 +39,12 @@ namespace RimSiege.Fortress
                 for (int x = usable.minX; x <= usable.maxX - side + 1; x++)
                 {
                     CellRect rect = new(x, z, side, side);
-                    if (!FortressSiting.IsCoarseCenter(rect.CenterCell - center) &&
-                        Count(fixedObstacles, rect) == 0 &&
-                        Count(naturalBarriers, rect.ContractedBy(FortressSiting.PreservedSkin)) == 0)
+                    if (FortressSiting.IsCoarseCenter(rect.CenterCell - center)) continue;
+                    CellRect inner = CellRect.CenteredOn(rect.CenterCell, innerSide, innerSide);
+                    bool obstacleFree = kind == FortressLayoutKind.SquareKeep
+                        ? Count(fixedObstacles, rect) == 0
+                        : Count(fixedObstacles, inner) == 0;
+                    if (obstacleFree && Count(naturalBarriers, inner) == 0)
                         candidates.Add(rect);
                 }
             return candidates.OrderBy(rect => (rect.CenterCell - center).LengthHorizontalSquared);

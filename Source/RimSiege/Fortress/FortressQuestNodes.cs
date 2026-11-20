@@ -15,7 +15,9 @@ namespace RimSiege.Fortress
 
         protected override bool TestRunInt(Slate slate)
         {
-            if (slate.Get("points", 0f) < 2000f || !SlotAvailable) return false;
+            if (slate.Get("points", 0f) < 2000f) return false;
+            if (slate.Get("fortressIgnoreEligibility", false)) return true;
+            if (!SlotAvailable) return false;
             if (!slate.Get("fortressHarassment", false)) return true;
 
             Map map = slate.Get<Map>("map");
@@ -36,6 +38,8 @@ namespace RimSiege.Fortress
             site.OriginalPoints = slate.Get<float>("pointsOriginal");
             site.DefenderPoints = slate.Get<float>("points");
             site.Harassment = slate.Get("fortressHarassment", false);
+            if (slate.TryGet("fortressForcedLayout", out FortressLayoutKind forced))
+                site.ForcedLayoutKind = forced;
             if (site.Harassment) site.RaidTarget = slate.Get<Map>("map").Parent;
         }
     }

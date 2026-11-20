@@ -11,6 +11,7 @@ namespace RimSiege.Fortress
         internal IntVec3 Ground;
         internal int Floor;
         internal Rot4 Rotation;
+        internal int CoveredSectors;
 
         internal IntVec3 CellOn(Map map) => Api.CellOnFloor(Ground, Floor, map);
 
@@ -21,6 +22,7 @@ namespace RimSiege.Fortress
             Scribe_Values.Look(ref Ground, "ground");
             Scribe_Values.Look(ref Floor, "floor");
             Scribe_Values.Look(ref Rotation, "rotation");
+            Scribe_Values.Look(ref CoveredSectors, "coveredSectors");
         }
     }
 }

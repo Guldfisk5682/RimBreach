@@ -17,7 +17,14 @@ namespace RimSiege.Fortress
         internal int NextSortieTick;
         internal int NextCounterSortieTick;
 
+        private int forcedLayoutKind = -1;
         private int nextRaidTick;
+
+        internal FortressLayoutKind? ForcedLayoutKind
+        {
+            get => forcedLayoutKind >= 0 ? (FortressLayoutKind)forcedLayoutKind : null;
+            set => forcedLayoutKind = value.HasValue ? (int)value.Value : -1;
+        }
 
         internal int TicksUntilRaid => System.Math.Max(0, nextRaidTick - Find.TickManager.TicksGame);
 
@@ -88,6 +95,7 @@ namespace RimSiege.Fortress
             Scribe_Values.Look(ref Resolved, "fortressResolved");
             Scribe_Values.Look(ref NextSortieTick, "fortressNextSortieTick");
             Scribe_Values.Look(ref NextCounterSortieTick, "fortressNextCounterSortieTick");
+            Scribe_Values.Look(ref forcedLayoutKind, "fortressForcedLayoutKind", -1);
             Scribe_Values.Look(ref nextRaidTick, "fortressNextRaidTick");
         }
     }

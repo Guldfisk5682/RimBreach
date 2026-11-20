@@ -15,8 +15,8 @@ namespace RimSiege.Fortress
 
         public override int SeedPart => 1496780451;
 
-        private FortressDimensions Dimensions(FortressSite site) => compact || site is { OriginalPoints: < 5000f }
-            ? FortressDimensions.Compact : FortressDimensions.Large;
+        private FortressSize TargetSize(FortressSite site) => compact || site is { OriginalPoints: < 5000f }
+            ? FortressSize.Compact : FortressSize.Large;
 
         public override void Generate(Map map, GenStepParams parms)
         {
@@ -53,7 +53,11 @@ namespace RimSiege.Fortress
                     return;
                 }
 
-                FortressLayout layout = FindLayout(map, Dimensions(site), seed);
+                FortressLayoutKind? forcedKind = site?.ForcedLayoutKind;
+                FortressLayoutKind preferredKind = forcedKind ?? (Rand.Bool
+                    ? FortressLayoutKind.HumanBastion : FortressLayoutKind.SquareKeep);
+                FortressLayout layout = FindLayout(map, TargetSize(site), preferredKind, seed,
+                    allowFallbackToSquare: !forcedKind.HasValue);
                 if (layout == null)
                 {
                     site?.GenerationFailed();
@@ -62,6 +66,8 @@ namespace RimSiege.Fortress
 
                 Build(map, parms, site, layout, new FortressBlueprint
                 {
+                    LayoutKind = layout.Kind,
+                    Size = layout.Size,
                     Outer = layout.Outer,
                     GateSide = layout.GateSide,
                     FourGates = layout.FourGates,
@@ -79,8 +85,7 @@ namespace RimSiege.Fortress
         private static void Build(Map map, GenStepParams parms, FortressSite site, FortressLayout layout,
             FortressBlueprint blueprint)
         {
-            bool large = blueprint.Outer.Width == FortressDimensions.Large.OuterSide;
-            bool reinforced = site != null && site.OriginalPoints >= (large ? 7000f : 5000f);
+            bool reinforced = site != null && site.OriginalPoints >= (blueprint.IsLarge ? 7000f : 5000f);
             Rand.PushState(blueprint.FurnishingSeed);
             try
             {
@@ -117,35 +122,48 @@ namespace RimSiege.Fortress
             finally { Rand.PopState(); }
         }
 
-        private static FortressLayout FindLayout(Map map, FortressDimensions dimensions, int seed)
+        private static FortressLayout FindLayout(Map map, FortressSize targetSize,
+            FortressLayoutKind preferredKind, int seed, bool allowFallbackToSquare = true)
         {
             var attempts = new List<string>();
-            FortressDimensions[] sizes = dimensions == FortressDimensions.Large
-                ? new[] { dimensions, FortressDimensions.Compact } : new[] { dimensions };
-            foreach (FortressDimensions size in sizes)
-                if (Search(FortressSiting.GroundCandidates(map, size.OuterSide), size) is { } layout)
-                    return layout;
+            FortressSize[] sizes = targetSize == FortressSize.Large
+                ? new[] { FortressSize.Large, FortressSize.Compact } : new[] { targetSize };
+            // If a bastion cannot fit on this terrain, fall back to the same-tier square keep before shrinking.
+            FortressLayoutKind[] kinds = preferredKind == FortressLayoutKind.HumanBastion && allowFallbackToSquare
+                ? new[] { FortressLayoutKind.HumanBastion, FortressLayoutKind.SquareKeep }
+                : new[] { preferredKind };
 
-            var survey = new FortressGroundSurvey(map);
-            foreach (FortressDimensions size in sizes)
-                if (Search(survey.AdditionalCandidates(size.OuterSide), size, fallback: true) is { } layout)
+            FortressGroundSurvey survey = null;
+            foreach (FortressSize size in sizes)
+            {
+                foreach (FortressLayoutKind kind in kinds)
                 {
-                    Log.Message($"[RimSiege] Fortress fallback found a {size.OuterSide}-cell layout on tile " +
-                        $"{map.Tile}, layout seed {seed}: {layout.Outer}. {string.Join("; ", attempts)}");
-                    return layout;
+                    int side = FortressGeometry.OuterSideFor(kind, size);
+                    if (Search(FortressSiting.GroundCandidates(map, side), kind, size) is { } layout)
+                        return layout;
+
+                    survey ??= new FortressGroundSurvey(map);
+                    if (Search(survey.AdditionalCandidates(kind, size), kind, size, fallback: true) is { } fallbackLayout)
+                    {
+                        Log.Message($"[RimSiege] Fortress fallback found a {kind} {side}-cell layout on tile " +
+                            $"{map.Tile}, layout seed {seed}: {fallbackLayout.Outer}. {string.Join("; ", attempts)}");
+                        return fallbackLayout;
+                    }
                 }
+            }
 
             Log.Warning($"[RimSiege] No compatible fortress layout on tile {map.Tile}, layout seed {seed}. " +
                 string.Join("; ", attempts));
             return null;
 
-            FortressLayout Search(IEnumerable<CellRect> candidates, FortressDimensions size, bool fallback = false)
+            FortressLayout Search(IEnumerable<CellRect> candidates, FortressLayoutKind kind,
+                FortressSize size, bool fallback = false)
             {
                 var failures = new int[(int)FortressSitingResult.ExteriorRoute + 1];
                 int testedLayouts = 0;
                 foreach (CellRect outer in candidates)
                 {
-                    FortressSitingResult result = FortressSiting.Plan(map, outer, size, out FortressLayout layout);
+                    FortressSitingResult result = FortressSiting.Plan(map, outer, kind, size, out FortressLayout layout);
                     if (result == FortressSitingResult.Accepted)
                     {
                         if (fallback) Record();
@@ -160,9 +178,10 @@ namespace RimSiege.Fortress
 
                 void Record()
                 {
+                    int side = FortressGeometry.OuterSideFor(kind, size);
                     string summary = string.Join(", ", failures.Select((count, index) =>
                         count == 0 ? null : $"{(FortressSitingResult)index}={count}").Where(entry => entry != null));
-                    attempts.Add($"{size.OuterSide} {(fallback ? "fallback" : "coarse")} [{summary}]" +
+                    attempts.Add($"{kind} {side} {(fallback ? "fallback" : "coarse")} [{summary}]" +
                         (testedLayouts == FallbackLayoutBudget ? " layout budget exhausted" : ""));
                 }
             }
