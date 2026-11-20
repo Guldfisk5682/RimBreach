@@ -335,7 +335,7 @@ namespace RimSiege.Fortress
             // A hungry defender can take a portable ration directly from its dining room.
             Map map = pawn.Map;
             if (map.Parent is not FortressSite { Blueprint: { } blueprint }) return null;
-            CellRect dining = blueprint.Facilities.Living.Interior(map, 1);
+            CellRect dining = blueprint.Facilities.DiningInterior(map);
             ThingDef ration = blueprint.Facilities.Industrial ? ThingDefOf.MealSurvivalPack : ThingDefOf.Pemmican;
             Thing source = map.listerThings.ThingsOfDef(ration)
                 .Where(thing => dining.Contains(thing.Position) && thing.IngestibleNow &&

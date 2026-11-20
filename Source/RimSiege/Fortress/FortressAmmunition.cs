@@ -14,6 +14,7 @@ namespace RimSiege.Fortress
         private const float FallbackHorDistLimit = 28f;
 
         private readonly Map map;
+        private readonly FortressGeometry geometry;
         private readonly FortressModule keep;
         private readonly FortressModule[] towers;
         private readonly FortressFacilityPlan facilities;
@@ -30,6 +31,7 @@ namespace RimSiege.Fortress
         internal FortressAmmunition(Map map, FortressLayout layout, ThingDef shelfStuff, IntVec3 lootShelf)
         {
             this.map = map;
+            geometry = layout.Geometry;
             this.shelfStuff = shelfStuff;
             this.lootShelf = lootShelf;
             facilities = layout.Facilities;
@@ -74,6 +76,20 @@ namespace RimSiege.Fortress
 
         private IntVec3[] SlotsFor(FortressModule module)
         {
+            if (module.Kind == FortressModuleKind.Tower && geometry?.Zones != null)
+            {
+                foreach (FortressBastionZone zone in geometry.Zones)
+                {
+                    if (zone.Ground == module.Ground && zone.VaultCells != null)
+                    {
+                        return zone.VaultCells
+                            .Where(cell => cell != lootShelf)
+                            .Select(cell => cell.GetFirstBuilding(map)).OfType<Building_Storage>().Distinct()
+                            .SelectMany(shelf => shelf.GetSlotGroup().CellsList).ToArray();
+                    }
+                }
+            }
+
             CellRect inside = module.Ground.ContractedBy(1);
             return Enumerable.Range(0, module.Top + 1).Reverse()
                 .SelectMany(floor => CellRect.FromLimits(

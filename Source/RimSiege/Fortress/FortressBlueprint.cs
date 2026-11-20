@@ -58,26 +58,30 @@ namespace RimSiege.Fortress
             FortressLot living = LookLot(Facilities.Living, "living");
             FortressLot supply = LookLot(Facilities.Supply, "supply");
             FortressLot power = LookLot(Facilities.Power, "power");
+            FortressLot dining = LookLot(Facilities.Dining, "dining");
+            FortressLot infirmary = LookLot(Facilities.Infirmary, "infirmary");
+            FortressLot auxBarracks = LookLot(Facilities.AuxBarracks, "auxBarracks");
+            FortressLot auxSupply = LookLot(Facilities.AuxSupply, "auxSupply");
             CellRect mortar = Facilities.Mortar;
             CellRect secondMortar = Facilities.SecondMortar;
             ThingDef mortarDef = Facilities.MortarDef;
             ThingDef secondMortarDef = Facilities.SecondMortarDef;
             bool industrial = Facilities.Industrial;
-            Scribe_Values.Look(ref mortar, "mortar");
-            Scribe_Values.Look(ref secondMortar, "secondMortar");
+            Scribe_Values.Look(ref mortar, "mortar", CellRect.Empty);
+            Scribe_Values.Look(ref secondMortar, "secondMortar", CellRect.Empty);
             Scribe_Defs.Look(ref mortarDef, "mortarDef");
             Scribe_Defs.Look(ref secondMortarDef, "secondMortarDef");
             Scribe_Values.Look(ref industrial, "industrial");
             Facilities = new FortressFacilityPlan(living, supply, power, mortar, industrial,
-                mortarDef, secondMortar, secondMortarDef);
+                mortarDef, secondMortar, secondMortarDef, dining, infirmary, auxBarracks, auxSupply);
         }
 
         private static FortressLot LookLot(FortressLot lot, string label)
         {
             CellRect rect = lot.Rect;
             Rot4 facing = lot.Facing;
-            Scribe_Values.Look(ref rect, label);
-            Scribe_Values.Look(ref facing, label + "Facing");
+            Scribe_Values.Look(ref rect, label, CellRect.Empty);
+            Scribe_Values.Look(ref facing, label + "Facing", Rot4.Invalid);
             return new FortressLot(rect, facing);
         }
     }

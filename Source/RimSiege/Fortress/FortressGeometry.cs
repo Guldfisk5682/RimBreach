@@ -24,7 +24,8 @@ namespace RimSiege.Fortress
         FlankCurtain = 1,
         CurtainWall = 2,
         Core = 3,
-        Mortar = 4
+        Mortar = 4,
+        OutwardShoulder = 5
     }
 
     internal readonly record struct FortressGate(
@@ -40,7 +41,8 @@ namespace RimSiege.Fortress
         int SectorMask,
         IntVec3 DeckAnchor,
         Rot4 XSide,
-        Rot4 ZSide);
+        Rot4 ZSide,
+        HashSet<IntVec3> VaultCells = null);
 
     internal readonly record struct FortressEmplacementSlot(
         IntVec3 Ground,
@@ -283,6 +285,39 @@ namespace RimSiege.Fortress
                 }
             }
             return false;
+        }
+
+        // 1-based 4-way distance to exterior (!footprint); cells with distance >= 4 have >= 3 solid wall cells in all cardinal directions.
+        internal static Dictionary<IntVec3, int> CardinalExteriorDistance(HashSet<IntVec3> footprint)
+        {
+            var distance = new Dictionary<IntVec3, int>(footprint.Count);
+            var queue = new Queue<IntVec3>();
+            foreach (IntVec3 cell in footprint)
+            {
+                foreach (IntVec3 dir in GenAdj.CardinalDirections)
+                {
+                    if (!footprint.Contains(cell + dir))
+                    {
+                        distance[cell] = 1;
+                        queue.Enqueue(cell);
+                        break;
+                    }
+                }
+            }
+
+            while (queue.Count > 0)
+            {
+                IntVec3 current = queue.Dequeue();
+                int nextDist = distance[current] + 1;
+                foreach (IntVec3 dir in GenAdj.CardinalDirections)
+                {
+                    IntVec3 next = current + dir;
+                    if (!footprint.Contains(next) || distance.ContainsKey(next)) continue;
+                    distance[next] = nextDist;
+                    queue.Enqueue(next);
+                }
+            }
+            return distance;
         }
 
         internal List<IntVec3> WireRing(int setback, CellRect groundBounds)

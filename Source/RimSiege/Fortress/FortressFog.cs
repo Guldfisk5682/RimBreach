@@ -117,11 +117,15 @@ namespace RimSiege.Fortress
                 rooms.Add(blueprint.Facilities.Living.Rect);
                 rooms.Add(blueprint.Facilities.Supply.Rect);
                 if (!blueprint.Facilities.Power.IsEmpty) rooms.Add(blueprint.Facilities.Power.Rect);
+                rooms.AddRange(blueprint.Facilities.ExtraLots().Select(lot => lot.Rect));
             }
             CellRect[] interiors = rooms.Select(room => room.ContractedBy(1)).ToArray();
+            var vaultInteriors = new HashSet<IntVec3>();
+            foreach (FortressBastionZone zone in geometry.Zones)
+                if (zone.VaultCells != null) vaultInteriors.UnionWith(zone.VaultCells);
 
             foreach (IntVec3 cell in geometry.Interior)
-                if (!interiors.Any(room => room.Contains(cell))) Reveal(cell);
+                if (!vaultInteriors.Contains(cell) && !interiors.Any(room => room.Contains(cell))) Reveal(cell);
             foreach (CellRect roof in roofs)
                 foreach (IntVec3 cell in roof)
                     if (Api.HasFloorAt(cell, blueprint.Top, map))

@@ -15,8 +15,8 @@ namespace RimSiege.Fortress
         private int floor;
         private int count;
 
-        internal static List<FortressStock> Capture(Map map, FortressFacilityPlan facilities) =>
-            Supplies(map, facilities).Select(thing => new FortressStock
+        internal static List<FortressStock> Capture(Map map, FortressLayout layout) =>
+            Supplies(map, layout).Select(thing => new FortressStock
             {
                 def = thing.def,
                 stuff = thing.Stuff,
@@ -25,9 +25,9 @@ namespace RimSiege.Fortress
                 count = thing.stackCount
             }).ToList();
 
-        internal static void Restore(Map map, FortressFacilityPlan facilities, List<FortressStock> stock)
+        internal static void Restore(Map map, FortressLayout layout, List<FortressStock> stock)
         {
-            foreach (Thing thing in Supplies(map, facilities).ToList()) thing.Destroy(DestroyMode.Vanish);
+            foreach (Thing thing in Supplies(map, layout).ToList()) thing.Destroy(DestroyMode.Vanish);
             foreach (FortressStock stack in stock)
             {
                 if (stack.def == null) continue;
@@ -37,14 +37,19 @@ namespace RimSiege.Fortress
             }
         }
 
-        private static IEnumerable<Thing> Supplies(Map map, FortressFacilityPlan facilities)
+        private static IEnumerable<Thing> Supplies(Map map, FortressLayout layout)
         {
+            FortressFacilityPlan facilities = layout.Facilities;
             IEnumerable<IntVec3> cells = facilities.Supply.Interior(map, 0).Cells
-                .Concat(facilities.Living.Interior(map, 1).Cells);
+                .Concat(facilities.DiningInterior(map).Cells);
             if (!facilities.Power.IsEmpty) cells = cells.Concat(facilities.Power.Interior(map, 0).Cells);
+            if (!facilities.AuxSupply.IsEmpty) cells = cells.Concat(facilities.AuxSupply.Interior(map, 0).Cells);
             if (facilities.MortarDef != null) cells = cells.Concat(facilities.Mortar.Cells);
             if (facilities.SecondMortarDef != null) cells = cells.Concat(facilities.SecondMortar.Cells);
-            return cells.SelectMany(cell => cell.GetThingList(map)).Where(thing => thing.def.category == ThingCategory.Item);
+            foreach (FortressBastionZone zone in layout.Geometry.Zones)
+                if (zone.VaultCells != null) cells = cells.Concat(zone.VaultCells);
+            return cells.Distinct().SelectMany(cell => cell.GetThingList(map))
+                .Where(thing => thing.def.category == ThingCategory.Item);
         }
 
         public void ExposeData()
@@ -90,6 +95,47 @@ namespace RimSiege.Fortress
             bool Free(IntVec3 cell) => cell.Standable(map) && cell.GetFirstBuilding(map) == null;
         }
 
+        internal static List<Building_Storage> PlaceShelvesInCells(Map map, HashSet<IntVec3> roomCells,
+            IntVec3 center, ThingDef stuff, HashSet<IntVec3> access, int limit = int.MaxValue)
+        {
+            var shelves = new List<Building_Storage>();
+            var keepClear = new HashSet<IntVec3>(access);
+            var wallAdjacent = roomCells
+                .Where(cell => GenAdj.CardinalDirections.Any(dir => !roomCells.Contains(cell + dir)))
+                .OrderByDescending(cell => (cell - center).LengthHorizontalSquared)
+                .ToArray();
+
+            AddAlongWalls(ThingDefOf.Shelf);
+            AddAlongWalls(ThingDefOf.ShelfSmall);
+            return shelves;
+
+            void AddAlongWalls(ThingDef def)
+            {
+                foreach (IntVec3 root in wallAdjacent)
+                {
+                    if (shelves.Count == limit) return;
+                    bool horizWall = !roomCells.Contains(root + IntVec3.North) || !roomCells.Contains(root + IntVec3.South);
+                    Rot4[] rotations = horizWall ? new[] { Rot4.North, Rot4.East } : new[] { Rot4.East, Rot4.North };
+                    foreach (Rot4 rotation in rotations)
+                    {
+                        CellRect footprint = GenAdj.OccupiedRect(root, rotation, def.Size);
+                        if (!footprint.All(cell => roomCells.Contains(cell) && Free(cell) && !keepClear.Contains(cell)))
+                            continue;
+                        IntVec3 workingCell = footprint.AdjacentCellsCardinal
+                            .Where(cell => roomCells.Contains(cell) && Free(cell))
+                            .OrderBy(cell => (cell - center).LengthHorizontalSquared)
+                            .FirstOrDefault(IntVec3.Invalid);
+                        if (!workingCell.IsValid) continue;
+                        keepClear.Add(workingCell);
+                        shelves.Add((Building_Storage)FortressConstruction.Spawn(def, root, rotation, stuff, map));
+                        break;
+                    }
+                }
+            }
+
+            bool Free(IntVec3 cell) => cell.Standable(map) && cell.GetFirstBuilding(map) == null;
+        }
+
         internal static void Fill(Map map, IEnumerable<Building_Storage> shelves, Func<int, ThingDef> contents)
         {
             int index = 0;
@@ -106,7 +152,7 @@ namespace RimSiege.Fortress
         internal static int Stock(Map map, ThingDef def, IntVec3 cell, int count = int.MaxValue)
         {
             Thing stack = ThingMaker.MakeThing(def);
-            stack.stackCount = System.Math.Min(count, def.stackLimit);
+            stack.stackCount = Math.Min(count, def.stackLimit);
             int requested = stack.stackCount;
             return GenPlace.TryPlaceThing(stack, cell, map, ThingPlaceMode.Direct)
                 ? requested : requested - stack.stackCount;

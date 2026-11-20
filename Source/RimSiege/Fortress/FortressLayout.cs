@@ -21,7 +21,11 @@ namespace RimSiege.Fortress
     internal readonly record struct FortressLadder(IntVec3 Foot, IntVec3 Landing, Rot4 Rotation);
     internal enum FortressModuleKind { Keep, Tower, Facility }
     internal readonly record struct FortressModule(CellRect Ground, int Top, FortressModuleKind Kind);
-    internal readonly record struct FortressRoomFloor(CellRect Cells, bool Sterile, bool Roofed);
+    internal readonly record struct FortressRoomFloor(CellRect Cells, bool Sterile, bool Roofed,
+        IReadOnlyCollection<IntVec3> CustomCells = null)
+    {
+        internal IEnumerable<IntVec3> AllCells => CustomCells ?? Cells.Cells;
+    }
 
     internal sealed class FortressTier
     {
@@ -172,8 +176,20 @@ namespace RimSiege.Fortress
             FortressFacilityPlan facilities = savedFacilities.GetValueOrDefault();
             if (!savedFacilities.HasValue && !FortressFacilityPlan.TryPlace(map, this, out facilities)) return false;
             Facilities = facilities;
-            AddFacility(map, facilities.Living, upperRoom: true);
-            AddFacility(map, facilities.Supply, upperRoom: true, sterile: facilities.Industrial);
+            if (facilities.SingleStoryCourtyard)
+            {
+                AddSingleStoryFacility(map, facilities.Living);
+                AddSingleStoryFacility(map, facilities.Supply);
+                if (!facilities.Dining.IsEmpty) AddSingleStoryFacility(map, facilities.Dining);
+                if (!facilities.Infirmary.IsEmpty) AddSingleStoryFacility(map, facilities.Infirmary, sterile: facilities.Industrial);
+                if (!facilities.AuxBarracks.IsEmpty) AddSingleStoryFacility(map, facilities.AuxBarracks);
+                if (!facilities.AuxSupply.IsEmpty) AddSingleStoryFacility(map, facilities.AuxSupply);
+            }
+            else
+            {
+                AddFacility(map, facilities.Living, upperRoom: true);
+                AddFacility(map, facilities.Supply, upperRoom: true, sterile: facilities.Industrial);
+            }
             if (!facilities.Power.IsEmpty) AddFacility(map, facilities.Power, upperRoom: false);
             return VerticalLinksFit();
         }
@@ -201,10 +217,11 @@ namespace RimSiege.Fortress
             int cIn = dim.CourtyardHalf;
             CellRect courtyardBounds = CellRect.CenteredOn(center, cIn * 2 + 1, cIn * 2 + 1);
 
-            // Define the 4 corner bastion casemates (ground-floor magazines & internal access).
-            var casemates = new CellRect[4];
+            // Define the 4 expanded corner bastion underground vaults (>= 3 solid wall cells on all exterior sides).
+            Dictionary<IntVec3, int> exteriorDist = FortressGeometry.CardinalExteriorDistance(footprint);
             var casemateInteriors = new HashSet<IntVec3>();
             var casemateDoors = new Dictionary<IntVec3, Rot4>();
+            var gorgeCorners = new HashSet<IntVec3>();
             var zones = new List<FortressBastionZone>(4);
             (int Sx, int Sz, Rot4 XSide, Rot4 ZSide)[] corners =
             {
@@ -217,30 +234,38 @@ namespace RimSiege.Fortress
             for (int i = 0; i < corners.Length; i++)
             {
                 var (sx, sz, xSide, zSide) = corners[i];
-                int minX = sx > 0 ? center.x + dim.CasemateMin : center.x - dim.CasemateMax;
-                int maxX = sx > 0 ? center.x + dim.CasemateMax : center.x - dim.CasemateMin;
-                int minZ = sz > 0 ? center.z + dim.CasemateMin : center.z - dim.CasemateMax;
-                int maxZ = sz > 0 ? center.z + dim.CasemateMax : center.z - dim.CasemateMin;
-                var casemate = CellRect.FromLimits(new IntVec3(minX, 0, minZ), new IntVec3(maxX, 0, maxZ));
-                casemates[i] = casemate;
-                Modules.Add(new FortressModule(casemate, top, FortressModuleKind.Tower));
+                var vaultCells = new HashSet<IntVec3>();
+                foreach (IntVec3 cell in footprint)
+                {
+                    int dx = cell.x - center.x;
+                    int dz = cell.z - center.z;
+                    if (dx * sx < cIn || dz * sz < cIn) continue;
+                    if (exteriorDist.TryGetValue(cell, out int dist) && dist >= 4)
+                        vaultCells.Add(cell);
+                }
 
-                foreach (IntVec3 cell in casemate.ContractedBy(1))
-                    casemateInteriors.Add(cell);
-
-                // Two straight wall-flanked doors opening directly into the courtyard corner.
-                IntVec3 xDoor = new(center.x + sx * dim.CasemateMin, 0, center.z + sz * (dim.CasemateMin + 1));
-                IntVec3 zDoor = new(center.x + sx * (dim.CasemateMin + 1), 0, center.z + sz * dim.CasemateMin);
+                IntVec3 gorgeCorner = new(center.x + sx * (cIn - 1), 0, center.z + sz * (cIn - 1));
+                IntVec3 xDoor = new(center.x + sx * (cIn - 1), 0, center.z + sz * cIn);
+                IntVec3 zDoor = new(center.x + sx * cIn, 0, center.z + sz * (cIn - 1));
+                gorgeCorners.Add(gorgeCorner);
                 casemateDoors[xDoor] = xSide.Opposite;
                 casemateDoors[zDoor] = zSide.Opposite;
+                casemateInteriors.UnionWith(vaultCells);
+
+                int minX = Math.Min(gorgeCorner.x, vaultCells.Min(c => c.x));
+                int maxX = Math.Max(gorgeCorner.x, vaultCells.Max(c => c.x));
+                int minZ = Math.Min(gorgeCorner.z, vaultCells.Min(c => c.z));
+                int maxZ = Math.Max(gorgeCorner.z, vaultCells.Max(c => c.z));
+                var casemate = CellRect.FromLimits(new IntVec3(minX, 0, minZ), new IntVec3(maxX, 0, maxZ));
+                Modules.Add(new FortressModule(casemate, top, FortressModuleKind.Tower));
 
                 IntVec3 deckAnchor = new(center.x + sx * (dim.CurtainOuter + 1), 0, center.z + sz * (dim.CurtainOuter + 1));
                 int sectorMask = FortressGeometry.SectorBit(xSide) | FortressGeometry.SectorBit(zSide);
-                zones.Add(new FortressBastionZone(i, casemate, top, sectorMask, deckAnchor, xSide, zSide));
+                zones.Add(new FortressBastionZone(i, casemate, top, sectorMask, deckAnchor, xSide, zSide, vaultCells));
 
-                AddInterior(map, casemate, 0);
-                // Internal ladder up from the casemate into the Floor 1 bastion platform.
-                IntVec3 foot = new(center.x + sx * (dim.CasemateMin + 2), 0, center.z + sz * (dim.CasemateMin + 2));
+                Tiers[0].Interiors.Add(new FortressRoomFloor(casemate, false, false, vaultCells));
+                // Internal ladder up from the underground vault into the Floor 1 bastion platform.
+                IntVec3 foot = new(center.x + sx * (cIn + 1), 0, center.z + sz * (cIn + 1));
                 AddLadder(map, 0, foot, xSide);
             }
 
@@ -257,8 +282,8 @@ namespace RimSiege.Fortress
                 int az = Math.Abs(cell.z - center.z);
                 bool inCasemateInterior = casemateInteriors.Contains(cell);
                 bool isCasemateDoor = casemateDoors.TryGetValue(cell, out Rot4 casDoorRot);
-                bool inCasemateWall = !inCasemateInterior && casemates.Any(rect => rect.Contains(cell));
-                bool inOpenCourtyard = ax <= cIn && az <= cIn && !inCasemateInterior && !inCasemateWall;
+                bool isGorgeCorner = gorgeCorners.Contains(cell);
+                bool inOpenCourtyard = ax <= cIn && az <= cIn && !inCasemateInterior && !isCasemateDoor && !isGorgeCorner;
 
                 if (inOpenCourtyard)
                 {
@@ -304,10 +329,11 @@ namespace RimSiege.Fortress
                 solidGround.Add(cell);
             }
 
-            // Lay Floor 1 deck from ground-wall-supported cells inward over casemate interiors.
+            // Lay Floor 1 deck from ground-wall-supported cells inward over expanded vault interiors.
+            Dictionary<IntVec3, int> vaultWallDepth = ComputeVaultWallDepth(casemateInteriors);
             foreach (IntVec3 cell in supportedDeck)
                 Tiers[1].Deck.Add(Api.CellOnFloor(cell, 1, map));
-            foreach (IntVec3 cell in casemateRoofDeck.OrderBy(c => MinCasemateDepth(c, casemates)))
+            foreach (IntVec3 cell in casemateRoofDeck.OrderBy(c => vaultWallDepth.GetValueOrDefault(c)))
                 Tiers[1].Deck.Add(Api.CellOnFloor(cell, 1, map));
 
             // Floor 1 outer parapet: curtain merlons, straight flank embrasures, outward stepped barricades.
@@ -365,8 +391,20 @@ namespace RimSiege.Fortress
             if (!savedFacilities.HasValue && (!BastionFlanksFit(map) ||
                 !FortressFacilityPlan.TryPlace(map, this, out facilities))) return false;
             Facilities = facilities;
-            AddFacility(map, facilities.Living, upperRoom: true);
-            AddFacility(map, facilities.Supply, upperRoom: true, sterile: facilities.Industrial);
+            if (facilities.SingleStoryCourtyard)
+            {
+                AddSingleStoryFacility(map, facilities.Living);
+                AddSingleStoryFacility(map, facilities.Supply);
+                if (!facilities.Dining.IsEmpty) AddSingleStoryFacility(map, facilities.Dining);
+                if (!facilities.Infirmary.IsEmpty) AddSingleStoryFacility(map, facilities.Infirmary, sterile: facilities.Industrial);
+                if (!facilities.AuxBarracks.IsEmpty) AddSingleStoryFacility(map, facilities.AuxBarracks);
+                if (!facilities.AuxSupply.IsEmpty) AddSingleStoryFacility(map, facilities.AuxSupply);
+            }
+            else
+            {
+                AddFacility(map, facilities.Living, upperRoom: true);
+                AddFacility(map, facilities.Supply, upperRoom: true, sterile: facilities.Industrial);
+            }
             if (!facilities.Power.IsEmpty) AddFacility(map, facilities.Power, upperRoom: false);
             return VerticalLinksFit();
         }
@@ -465,10 +503,19 @@ namespace RimSiege.Fortress
                         FortressGeometry.SectorBit(xSide), i));
                 }
 
-                // Salient nose outward anchor for corner turret & heavy bastion battery.
-                IntVec3 nose = new(center.x + sx * (dim.CurtainOuter + 3), 0, center.z + sz * (dim.CurtainOuter + 3));
+                // Salient nose parapet-hugging anchor for 2x2 corner auto-turret.
+                int tipInset = dim.Half - 2;
+                IntVec3 nose = new(center.x + sx * tipInset, 0, center.z + sz * tipInset);
                 slots.Add(new FortressEmplacementSlot(
                     nose, 1, zSide, FortressEmplacementRole.OutwardFace, outwardMask, i));
+
+                // Two outward face step-corner pockets for spaced 1x1 auto-turrets (anti-chain-detonation).
+                IntVec3 shoulderZ = new(center.x + sx * dim.CurtainOuter, 0, center.z + sz * dim.Shoulder);
+                IntVec3 shoulderX = new(center.x + sx * dim.Shoulder, 0, center.z + sz * dim.CurtainOuter);
+                slots.Add(new FortressEmplacementSlot(
+                    shoulderZ, 1, zSide, FortressEmplacementRole.OutwardShoulder, outwardMask, i));
+                slots.Add(new FortressEmplacementSlot(
+                    shoulderX, 1, xSide, FortressEmplacementRole.OutwardShoulder, outwardMask, i));
             }
 
             // Recessed curtain wall gun slots aligned behind curtain embrasures ((offset + FlankInner) % 4 == 0).
@@ -489,11 +536,35 @@ namespace RimSiege.Fortress
             return slots;
         }
 
-        private static int MinCasemateDepth(IntVec3 cell, CellRect[] casemates)
+        private static Dictionary<IntVec3, int> ComputeVaultWallDepth(HashSet<IntVec3> vaultCells)
         {
-            foreach (CellRect rect in casemates)
-                if (rect.Contains(cell)) return Depth(rect, cell);
-            return 0;
+            var depth = new Dictionary<IntVec3, int>(vaultCells.Count);
+            var queue = new Queue<IntVec3>();
+            foreach (IntVec3 cell in vaultCells)
+            {
+                foreach (IntVec3 dir in GenAdj.CardinalDirections)
+                {
+                    if (!vaultCells.Contains(cell + dir))
+                    {
+                        depth[cell] = 1;
+                        queue.Enqueue(cell);
+                        break;
+                    }
+                }
+            }
+            while (queue.Count > 0)
+            {
+                IntVec3 current = queue.Dequeue();
+                int nextDepth = depth[current] + 1;
+                foreach (IntVec3 dir in GenAdj.CardinalDirections)
+                {
+                    IntVec3 next = current + dir;
+                    if (!vaultCells.Contains(next) || depth.ContainsKey(next)) continue;
+                    depth[next] = nextDepth;
+                    queue.Enqueue(next);
+                }
+            }
+            return depth;
         }
 
         private static IEnumerable<Rot4> OrderedGateSides(Rot4 primary, bool fourGates) =>
@@ -570,6 +641,13 @@ namespace RimSiege.Fortress
             }
         }
 
+        private void AddSingleStoryFacility(Map map, FortressLot lot, bool sterile = false)
+        {
+            Modules.Add(new FortressModule(lot.Rect, 0, FortressModuleKind.Facility));
+            AddPerimeter(map, lot.Rect, 0, lot.Facing);
+            AddInterior(map, lot.Rect, 0, sterile, roofed: true);
+        }
+
         private void AddFacility(Map map, FortressLot lot, bool upperRoom, bool sterile = false)
         {
             Modules.Add(new FortressModule(lot.Rect, 1, FortressModuleKind.Facility));
@@ -585,6 +663,7 @@ namespace RimSiege.Fortress
         private void AddInterior(Map map, CellRect module, int floor, bool sterile = false, bool roofed = false)
         {
             CellRect inside = module.ContractedBy(1);
+            if (inside.IsEmpty) return;
             CellRect band = CellRect.FromLimits(Api.CellOnFloor(inside.Min, floor, map), Api.CellOnFloor(inside.Max, floor, map));
             Tiers[floor].Interiors.Add(new FortressRoomFloor(band, sterile, roofed));
         }

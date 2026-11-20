@@ -31,11 +31,16 @@ namespace RimSiege.Fortress
 
             if (layout.Kind == FortressLayoutKind.HumanBastion)
             {
-                // Run Floor 1 spurs along each bastion's center diagonal out to its salient nose.
+                BastionDimensions dim = BastionDimensions.For(layout.Size);
+                IntVec3 center = layout.Outer.CenterCell;
+                int tipInset = dim.Half - 2;
+                // Run Floor 1 spurs to each bastion tip, Floor 1 parapet rings, and Floor 0 underground vault grids.
                 foreach (FortressBastionZone zone in geo.Zones)
                 {
+                    int sx = zone.XSide == Rot4.East ? 1 : -1;
+                    int sz = zone.ZSide == Rot4.North ? 1 : -1;
                     IntVec3 from = zone.Ground.CenterCell;
-                    IntVec3 to = zone.DeckAnchor + zone.XSide.FacingCell * 3 + zone.ZSide.FacingCell * 3;
+                    IntVec3 to = new(center.x + sx * tipInset, 0, center.z + sz * tipInset);
                     int xStep = to.x >= from.x ? 1 : -1;
                     int zStep = to.z >= from.z ? 1 : -1;
                     int x = from.x;
@@ -52,6 +57,31 @@ namespace RimSiege.Fortress
                         {
                             z += zStep;
                             Add(new IntVec3(x, 0, z), 1);
+                        }
+                    }
+
+                    if (zone.VaultCells != null)
+                    {
+                        foreach (IntVec3 cell in zone.VaultCells)
+                        {
+                            if (cell.x == from.x || cell.z == from.z ||
+                                GenAdj.CardinalDirections.Any(dir => !zone.VaultCells.Contains(cell + dir)))
+                                cables.Add(cell);
+                        }
+                    }
+                }
+
+                foreach (IntVec3 cell in geo.RampartDeckGround)
+                {
+                    if (!geo.IsRampartGunCell(cell)) continue;
+                    if (System.Math.Abs(cell.x - center.x) <= dim.FlankInner ||
+                        System.Math.Abs(cell.z - center.z) <= dim.FlankInner) continue;
+                    foreach (IntVec3 dir in GenAdj.AdjacentCells)
+                    {
+                        if (geo.PerimeterOuterEdge.Contains(cell + dir))
+                        {
+                            Add(cell, 1);
+                            break;
                         }
                     }
                 }

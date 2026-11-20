@@ -32,7 +32,7 @@ namespace RimSiege.Fortress
 
         internal IReadOnlyList<FortressGate> Gates => geometry.Gates;
         internal IntVec3 RestPost => Anchor(blueprint.Facilities.Living.Rect, 0);
-        internal IntVec3 MedicalPost => Anchor(blueprint.Facilities.Supply.Rect, 1);
+        internal IntVec3 MedicalPost => Anchor(blueprint.Facilities.MedicalRect, blueprint.Facilities.MedicalFloor);
         internal bool Inside(IntVec3 cell) => geometry.Interior.Contains(Api.GroundCellOf(cell, map));
         internal bool InDefenseArea(IntVec3 cell) => Inside(cell) || OnCurtain(cell);
         internal bool InKeep(IntVec3 cell) => geometry.Core.Contains(Api.GroundCellOf(cell, map));

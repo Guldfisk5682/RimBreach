@@ -27,6 +27,8 @@ namespace RimSiege.Fortress
             this.layout = layout;
             ground = Api.GroundRect(map);
             powerRemaining = FortressPower.FirmCapacity(map, layout);
+            if (layout.Kind == FortressLayoutKind.HumanBastion && powerRemaining > 0f)
+                powerRemaining = Math.Max(0f, powerRemaining - 150f);
             foreach (FortressTier tier in layout.Tiers)
             {
                 reserved.UnionWith(tier.Openings);
@@ -60,10 +62,11 @@ namespace RimSiege.Fortress
             if (layout.Kind == FortressLayoutKind.HumanBastion)
             {
                 plan.PlaceBastionFlanks(machineGun, wallSupport);
-                if (corner != null) plan.PlaceBastionCorners(corner);
+                plan.PlaceBastionTipUpgrade(profile, corner, points);
+                if (corner != null) plan.PlaceBastionShoulders(corner);
                 plan.PlaceBastionOutward(profile, large, points);
                 plan.PlaceBastionCurtains(machineGun);
-                plan.PlaceKeep(profile, machineGun, large, points);
+                plan.PlaceBastionCoreMortars(profile, large, points);
             }
             else
             {
@@ -160,24 +163,100 @@ namespace RimSiege.Fortress
             }
         }
 
-        private void PlaceBastionCorners(ThingDef def)
+        private void PlaceBastionTipUpgrade(FortressDefenseProfileDef profile, ThingDef corner, float points)
         {
-            FortressGeometry geo = layout.Geometry;
-            foreach (FortressEmplacementSlot slot in geo.Slots
-                .Where(slot => slot.Role == FortressEmplacementRole.OutwardFace))
+            IReadOnlyList<FortressBastionZone> zones = layout.Geometry.Zones;
+            FortressGunOption upgraded = profile.keepCornerUpgrades
+                .Where(option => option.turret != null && points >= option.minPoints)
+                .OrderByDescending(option => option.minPoints)
+                .FirstOrDefault(option => PowerDraw(option.turret) * zones.Count <= powerRemaining);
+
+            FortressGunOption chosen = upgraded;
+            if (chosen == null)
             {
-                FortressBastionZone zone = geo.Zones[slot.ZoneIndex];
-                IntVec3 anchor = Api.CellOnFloor(slot.Ground, slot.Floor, map);
-                CellRect area = CellRect.CenteredOn(anchor, 5, 5).ClipInsideMap(map);
-                FortressDefensePiece piece = area
-                    .OrderBy(cell => (cell - anchor).LengthHorizontalSquared)
+                FortressGunOption baseline =
+                    ModsConfig.RoyaltyActive && map.ParentFaction.def == FactionDefOf.Empire && profile.imperialCorner != null
+                        ? new FortressGunOption { turret = profile.imperialCorner }
+                        : profile.keepCorner;
+                if (baseline?.turret != null && PowerDraw(baseline.turret) * zones.Count <= powerRemaining)
+                    chosen = baseline;
+                else if (profile.keepCorner?.turret != null &&
+                    PowerDraw(profile.keepCorner.turret) * zones.Count <= powerRemaining)
+                    chosen = profile.keepCorner;
+                else if (corner != null && PowerDraw(corner) * zones.Count <= powerRemaining)
+                    chosen = new FortressGunOption { turret = corner };
+            }
+            if (chosen?.turret == null) return;
+
+            bool twoByTwo = chosen.turret.Size == new IntVec2(2, 2);
+            foreach (FortressBastionZone zone in zones)
+            {
+                IntVec3 tip = BastionTipCell(zone);
+                CellRect area = BastionDeckArea(zone);
+                FortressDefensePiece piece = null;
+                if (twoByTwo)
+                {
+                    CellRect tipBox = BastionTipBox(zone);
+                    piece = tipBox
+                        .SelectMany(cell => new[]
+                        {
+                            At(chosen.turret, cell, zone.XSide, chosen.ammo, zone.SectorMask),
+                            At(chosen.turret, cell, zone.ZSide, chosen.ammo, zone.SectorMask)
+                        })
+                        .FirstOrDefault(candidate => Footprint(candidate) == tipBox && FitsOnRampart(candidate));
+                }
+
+                piece ??= area
                     .SelectMany(cell => new[]
                     {
-                        At(def, cell, zone.XSide, null, slot.CoveredSectors),
-                        At(def, cell, zone.ZSide, null, slot.CoveredSectors)
+                        At(chosen.turret, cell, zone.XSide, chosen.ammo, zone.SectorMask),
+                        At(chosen.turret, cell, zone.ZSide, chosen.ammo, zone.SectorMask)
                     })
-                    .FirstOrDefault(FitsOnRampart);
+                    .Where(FitsOnRampart)
+                    .OrderByDescending(candidate => Footprint(candidate).Any(cell => IsOutwardParapetAdjacent(cell, zone)))
+                    .ThenBy(candidate => (candidate.CellOn(map) - tip).LengthHorizontalSquared)
+                    .FirstOrDefault();
+
                 if (piece != null) Add(piece);
+            }
+        }
+
+        private void PlaceBastionShoulders(ThingDef def)
+        {
+            FortressGeometry geo = layout.Geometry;
+            var byZone = geo.Slots
+                .Where(slot => slot.Role == FortressEmplacementRole.OutwardShoulder)
+                .GroupBy(slot => slot.ZoneIndex)
+                .OrderBy(group => group.Key)
+                .Select(group => group.ToArray())
+                .ToArray();
+            if (byZone.Length == 0) return;
+
+            // Place symmetrically: first shoulder on all 4 bastions, then the second shoulder if power permits.
+            float passCost = PowerDraw(def) * byZone.Length;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                if (pass > 0 && passCost > powerRemaining) break;
+                foreach (FortressEmplacementSlot[] shoulders in byZone)
+                {
+                    if (pass >= shoulders.Length) continue;
+                    FortressEmplacementSlot slot = shoulders[pass];
+                    IntVec3 target = Api.CellOnFloor(slot.Ground, slot.Floor, map);
+                    FortressDefensePiece direct = At(def, target, slot.Facing, null, slot.CoveredSectors);
+                    if (FitsOnRampart(direct))
+                    {
+                        Add(direct);
+                        continue;
+                    }
+
+                    FortressBastionZone zone = geo.Zones[slot.ZoneIndex];
+                    FortressDefensePiece fallback = CellRect.CenteredOn(target, 3, 3).ClipInsideMap(map)
+                        .OrderByDescending(cell => IsOutwardParapetAdjacent(cell, zone))
+                        .ThenBy(cell => (cell - target).LengthHorizontalSquared)
+                        .Select(cell => At(def, cell, slot.Facing, null, slot.CoveredSectors))
+                        .FirstOrDefault(FitsOnRampart);
+                    if (fallback != null) Add(fallback);
+                }
             }
         }
 
@@ -192,30 +271,28 @@ namespace RimSiege.Fortress
             if (roof == null) return;
 
             foreach (FortressBastionZone zone in zones)
-            {
-                IntVec3 anchor = Api.CellOnFloor(zone.DeckAnchor, zone.Top, map);
-                CellRect deck = CellRect.CenteredOn(anchor, large ? 9 : 7, large ? 9 : 7).ClipInsideMap(map);
-                PlaceBastionRoof(roof, deck, zone.XSide, zone.ZSide, zone.SectorMask);
-            }
+                PlaceBastionRoof(roof, BastionDeckArea(zone), zone);
         }
 
-        private void PlaceBastionRoof(FortressGunOption roof, CellRect area, Rot4 x, Rot4 z, int coveredSectors)
+        private void PlaceBastionRoof(FortressGunOption roof, CellRect area, FortressBastionZone zone)
         {
+            IntVec3 center = Api.CellOnFloor(zone.DeckAnchor, zone.Top, map);
             foreach (int count in Enumerable.Range(1, roof.count).Reverse())
             {
-                foreach (Rot4 face in new[] { x, z })
+                foreach (Rot4 face in new[] { zone.XSide, zone.ZSide })
                 {
                     IntVec3 along = face.Rotated(RotationDirection.Clockwise).FacingCell;
                     int stride = (face.IsHorizontal ? roof.turret.Size.x : roof.turret.Size.z) + 1;
                     IEnumerable<IntVec3> roots = roof.centered
-                        ? area.OrderBy(cell => (cell - area.CenterCell).LengthHorizontalSquared)
-                        : area.OrderByDescending(cell => Projection(cell - area.CenterCell, face.FacingCell))
+                        ? area.OrderBy(cell => (cell - center).LengthHorizontalSquared)
+                        : area.OrderByDescending(cell => IsOutwardParapetAdjacent(cell, zone))
+                            .ThenByDescending(cell => Projection(cell - area.CenterCell, face.FacingCell))
                             .ThenBy(cell => Math.Abs(2 * Projection(cell - area.CenterCell, along) + stride * (count - 1)));
 
                     foreach (IntVec3 root in roots)
                     {
                         FortressDefensePiece[] row = Enumerable.Range(0, count)
-                            .Select(i => At(roof.turret, root + along * (i * stride), face, roof.ammo, coveredSectors))
+                            .Select(i => At(roof.turret, root + along * (i * stride), face, roof.ammo, zone.SectorMask))
                             .ToArray();
                         if (!row.All(FitsOnRampart)) continue;
                         foreach (FortressDefensePiece gun in row) Add(gun);
@@ -223,6 +300,98 @@ namespace RimSiege.Fortress
                     }
                 }
             }
+        }
+
+        private void PlaceBastionCoreMortars(FortressDefenseProfileDef profile, bool large, float points)
+        {
+            if (!large) return;
+            FortressModule keep = layout.Modules.First(module => module.Kind == FortressModuleKind.Keep);
+            CellRect top = OnFloor(keep.Ground.ContractedBy(1), keep.Top);
+            FortressGunOption[] mortarPool = profile.keepMortars
+                .Where(option => option.turret != null && option.minPoints <= points).ToArray();
+            if (mortarPool.Length == 0) return;
+
+            CellRect centerArea = top.ContractedBy(1);
+            foreach (FortressGunOption option in mortarPool.InRandomOrder())
+            {
+                bool preferPair = Rand.Bool;
+                if (preferPair && PlaceMortarPair(option)) return;
+                FortressDefensePiece centered = centerArea
+                    .Select(cell => At(option.turret, cell, layout.GateSide, option.ammo))
+                    .FirstOrDefault(piece => Footprint(piece).CenterCell == top.CenterCell &&
+                        Footprint(piece).Width % 2 == 1 && Footprint(piece).Height % 2 == 1 && Fits(piece, centerArea));
+                if (centered != null)
+                {
+                    Add(centered);
+                    return;
+                }
+                if (!preferPair && PlaceMortarPair(option)) return;
+            }
+
+            bool PlaceMortarPair(FortressGunOption option) =>
+                centerArea.OrderBy(cell => (cell - top.CenterCell).LengthHorizontalSquared)
+                    .Any(cell => TryPlaceRotated(At(option.turret, cell, layout.GateSide, option.ammo), centerArea, 2,
+                        keepGap: true));
+        }
+
+        private CellRect BastionDeckArea(FortressBastionZone zone)
+        {
+            BastionDimensions dim = BastionDimensions.For(layout.Size);
+            IntVec3 center = layout.Outer.CenterCell;
+            int sx = zone.XSide == Rot4.East ? 1 : -1;
+            int sz = zone.ZSide == Rot4.North ? 1 : -1;
+            int xA = center.x + sx * (dim.FlankInner + 1);
+            int xB = center.x + sx * (dim.Half - 1);
+            int zA = center.z + sz * (dim.FlankInner + 1);
+            int zB = center.z + sz * (dim.Half - 1);
+            var groundRect = CellRect.FromLimits(
+                new IntVec3(Math.Min(xA, xB), 0, Math.Min(zA, zB)),
+                new IntVec3(Math.Max(xA, xB), 0, Math.Max(zA, zB)));
+            return OnFloor(groundRect, zone.Top).ClipInsideMap(map);
+        }
+
+        private IntVec3 BastionTipCell(FortressBastionZone zone)
+        {
+            BastionDimensions dim = BastionDimensions.For(layout.Size);
+            IntVec3 center = layout.Outer.CenterCell;
+            int sx = zone.XSide == Rot4.East ? 1 : -1;
+            int sz = zone.ZSide == Rot4.North ? 1 : -1;
+            int tipInset = dim.Half - 2;
+            return Api.CellOnFloor(new IntVec3(center.x + sx * tipInset, 0, center.z + sz * tipInset), zone.Top, map);
+        }
+
+        private CellRect BastionTipBox(FortressBastionZone zone)
+        {
+            BastionDimensions dim = BastionDimensions.For(layout.Size);
+            IntVec3 center = layout.Outer.CenterCell;
+            int sx = zone.XSide == Rot4.East ? 1 : -1;
+            int sz = zone.ZSide == Rot4.North ? 1 : -1;
+            int a = dim.Half - 3;
+            int b = dim.Half - 2;
+            var groundRect = CellRect.FromLimits(
+                new IntVec3(center.x + Math.Min(sx * a, sx * b), 0, center.z + Math.Min(sz * a, sz * b)),
+                new IntVec3(center.x + Math.Max(sx * a, sx * b), 0, center.z + Math.Max(sz * a, sz * b)));
+            return OnFloor(groundRect, zone.Top);
+        }
+
+        private bool IsOutwardParapetAdjacent(IntVec3 cell, FortressBastionZone zone)
+        {
+            FortressGeometry geo = layout.Geometry;
+            IntVec3 g = Api.GroundCellOf(cell, map);
+            if (!geo.IsRampartGunCell(g)) return false;
+            BastionDimensions dim = BastionDimensions.For(layout.Size);
+            IntVec3 center = layout.Outer.CenterCell;
+            if (Math.Abs(g.x - center.x) <= dim.FlankInner || Math.Abs(g.z - center.z) <= dim.FlankInner)
+                return false;
+            foreach (IntVec3 dir in GenAdj.CardinalDirections)
+            {
+                IntVec3 neighbor = g + dir;
+                if (geo.PerimeterOuterEdge.Contains(neighbor) &&
+                    Math.Abs(neighbor.x - center.x) > dim.FlankInner &&
+                    Math.Abs(neighbor.z - center.z) > dim.FlankInner)
+                    return true;
+            }
+            return false;
         }
 
         private void PlaceBastionCurtains(ThingDef machineGun)

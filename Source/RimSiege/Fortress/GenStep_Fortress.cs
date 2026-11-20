@@ -101,8 +101,8 @@ namespace RimSiege.Fortress
                 {
                     blueprint.LootShelfGround = lootShelf.IsValid ? Api.GroundCellOf(lootShelf, map) : IntVec3.Invalid;
                     blueprint.LootShelfFloor = lootShelf.IsValid ? Api.FloorOf(lootShelf, map) : 0;
-                    if (blueprint.Stock == null) blueprint.Stock = FortressStock.Capture(map, layout.Facilities);
-                    else FortressStock.Restore(map, layout.Facilities, blueprint.Stock);
+                    if (blueprint.Stock == null) blueprint.Stock = FortressStock.Capture(map, layout);
+                    else FortressStock.Restore(map, layout, blueprint.Stock);
                 }
 
                 blueprint.Defenses ??= FortressDefensePlanner.Plan(map, layout, site?.OriginalPoints ?? 5000f);

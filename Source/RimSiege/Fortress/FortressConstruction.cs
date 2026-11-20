@@ -37,7 +37,13 @@ namespace RimSiege.Fortress
             PrepareGround(map, layout);
             BaseGen.globalSettings.map = map;
             foreach (FortressRoomFloor room in layout.Tiers[0].Interiors)
-                BaseGen.symbolStack.Push("clear", room.Cells);
+            {
+                if (room.CustomCells == null)
+                    BaseGen.symbolStack.Push("clear", room.Cells);
+                else
+                    foreach (IntVec3 cell in room.CustomCells)
+                        BaseGen.symbolStack.Push("clear", CellRect.SingleCell(cell));
+            }
             // Facility ladders start outside the rooms. ProjectZ requires a
             // standable foot, so a tree there blocks the link like a building.
             foreach (FortressLadder ladder in layout.Ladders)
@@ -75,7 +81,7 @@ namespace RimSiege.Fortress
 
                     foreach (FortressRoomFloor room in tier.Interiors)
                     {
-                        foreach (IntVec3 cell in room.Cells)
+                        foreach (IntVec3 cell in room.AllCells)
                         {
                             if (tier.Openings.Contains(cell)) continue;
                             map.terrainGrid.SetTerrain(cell, room.Sterile ? sterile : finish);

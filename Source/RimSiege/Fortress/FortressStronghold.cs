@@ -42,20 +42,107 @@ namespace RimSiege.Fortress
                 if (reserveLootShelf && !lootShelf.IsValid) lootShelf = PlaceLootShelf(map, room, stuff, access);
             }
 
-            foreach (FortressModule module in layout.Modules.Where(module => module.Kind == FortressModuleKind.Tower))
+            if (layout.Kind == FortressLayoutKind.HumanBastion)
             {
-                CellRect tower = module.Ground.ContractedBy(1);
-                HashSet<IntVec3> towerAccess = Approaches(tower, map);
-                foreach (FortressLadder ladder in layout.Ladders)
+                FurnishBastionVaults(map, layout, stuff, powered);
+            }
+            else
+            {
+                foreach (FortressModule module in layout.Modules.Where(module => module.Kind == FortressModuleKind.Tower))
                 {
-                    if (!tower.Contains(ladder.Foot)) continue;
-                    towerAccess.Add(ladder.Foot);
-                    towerAccess.UnionWith(GenAdj.CardinalDirections.Select(direction => ladder.Foot + direction).Where(tower.Contains));
+                    CellRect tower = module.Ground.ContractedBy(1);
+                    HashSet<IntVec3> towerAccess = Approaches(tower, map);
+                    foreach (FortressLadder ladder in layout.Ladders)
+                    {
+                        if (!tower.Contains(ladder.Foot)) continue;
+                        towerAccess.Add(ladder.Foot);
+                        towerAccess.UnionWith(GenAdj.CardinalDirections.Select(direction => ladder.Foot + direction).Where(tower.Contains));
+                    }
+                    // Large 7x7 towers (5x5 interior) have room for up to 4 edge shelves without blocking doors or ladders.
+                    FortressStorage.PlaceShelves(map, tower, stuff, towerAccess, limit: tower.Width >= 5 ? 4 : 2);
                 }
-                // Large 7x7 towers (5x5 interior) have room for up to 4 edge shelves without blocking doors or ladders.
-                FortressStorage.PlaceShelves(map, tower, stuff, towerAccess, limit: tower.Width >= 5 ? 4 : 2);
             }
             return lootShelf;
+        }
+
+        private static void FurnishBastionVaults(Map map, FortressLayout layout, ThingDef stuff, bool powered)
+        {
+            Faction faction = map.ParentFaction;
+            bool industrial = layout.Facilities.Industrial;
+            ThingDef medicine = ModsConfig.RoyaltyActive && faction.def == FactionDefOf.Empire
+                ? ThingDefOf.MedicineUltratech : industrial ? ThingDefOf.MedicineIndustrial : ThingDefOf.MedicineHerbal;
+            ThingDef ration = industrial ? ThingDefOf.MealSurvivalPack : ThingDefOf.Pemmican;
+            ThingDef lampDef = powered ? ThingDefOf.StandingLamp : ThingDefOf.TorchLamp;
+            int shelfLimit = layout.Size == FortressSize.Large ? 10 : 6;
+            int componentQuota = layout.Size == FortressSize.Large ? 2 : 1;
+
+            foreach (FortressBastionZone zone in layout.Geometry.Zones)
+            {
+                if (zone.VaultCells == null || zone.VaultCells.Count == 0) continue;
+                HashSet<IntVec3> vault = zone.VaultCells;
+                IntVec3 center = zone.Ground.CenterCell;
+                var access = new HashSet<IntVec3>(vault.Where(cell =>
+                    cell.x == center.x || cell.z == center.z ||
+                    BaseGenUtility.AnyDoorAdjacentCardinalTo(cell, map)));
+                foreach (FortressLadder ladder in layout.Ladders)
+                {
+                    if (!vault.Contains(ladder.Foot)) continue;
+                    access.Add(ladder.Foot);
+                    foreach (IntVec3 dir in GenAdj.CardinalDirections)
+                        if (vault.Contains(ladder.Foot + dir)) access.Add(ladder.Foot + dir);
+                }
+
+                // Place a standing lamp (or torch) near the vault center without blocking doors or the ladder.
+                IntVec3 lampCell = vault
+                    .Where(cell => !BaseGenUtility.AnyDoorAdjacentCardinalTo(cell, map) &&
+                        !layout.Ladders.Any(ladder => ladder.Foot == cell || ladder.Foot.AdjacentToCardinal(cell)) &&
+                        cell.Standable(map) && cell.GetFirstBuilding(map) == null)
+                    .OrderBy(cell => (cell - center).LengthHorizontalSquared)
+                    .FirstOrDefault(IntVec3.Invalid);
+                if (lampCell.IsValid && lampDef != null)
+                {
+                    ThingDef lampStuff = lampDef.MadeFromStuff ? stuff : null;
+                    Thing lamp = FortressConstruction.Spawn(lampDef, lampCell, Rot4.North, lampStuff, map);
+                    if (lamp.TryGetComp<CompRefuelable>() is { } refuelable)
+                        refuelable.Refuel(refuelable.Props.fuelCapacity);
+                    access.Add(lampCell);
+                }
+
+                List<Building_Storage> shelves = FortressStorage.PlaceShelvesInCells(
+                    map, vault, center, stuff, access, limit: shelfLimit);
+                // Reserve half the vault shelves for ammunition; fill the rest with strategic reserves.
+                int reserveCount = shelves.Count / 2;
+                if (reserveCount <= 0) continue;
+
+                FortressStorage.Fill(map, shelves.Take(reserveCount), index => VaultReserveItem(index));
+            }
+
+            ThingDef VaultReserveItem(int index)
+            {
+                if (!industrial)
+                {
+                    return (index % 6) switch
+                    {
+                        0 => ThingDefOf.Steel,
+                        1 => stuff,
+                        2 => ThingDefOf.WoodLog,
+                        3 => medicine,
+                        4 => ration,
+                        _ => stuff
+                    };
+                }
+
+                if (index < componentQuota) return ThingDefOf.ComponentIndustrial;
+                return ((index - componentQuota) % 6) switch
+                {
+                    0 => ThingDefOf.Steel,
+                    1 => ThingDefOf.Plasteel,
+                    2 => stuff,
+                    3 => medicine,
+                    4 => ration,
+                    _ => ThingDefOf.Steel
+                };
+            }
         }
 
         private static IEnumerable<IntVec3> KeepLootPositions(CellRect room)
