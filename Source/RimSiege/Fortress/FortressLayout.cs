@@ -7,7 +7,8 @@ using Verse;
 
 namespace RimSiege.Fortress
 {
-    internal readonly record struct FortressBuilding(ThingDef Def, IntVec3 Cell, Rot4 Rotation);
+    internal readonly record struct FortressBuilding(ThingDef Def, IntVec3 Cell, Rot4 Rotation,
+        ThingDef StuffOverride = null);
 
     internal readonly record struct FortressDimensions(int OuterSide, int TowerSide, int KeepSide)
     {
@@ -22,7 +23,7 @@ namespace RimSiege.Fortress
     internal enum FortressModuleKind { Keep, Tower, Facility }
     internal readonly record struct FortressModule(CellRect Ground, int Top, FortressModuleKind Kind);
     internal readonly record struct FortressRoomFloor(CellRect Cells, bool Sterile, bool Roofed,
-        IReadOnlyCollection<IntVec3> CustomCells = null)
+        IReadOnlyCollection<IntVec3> CustomCells = null, bool KeepFloor = false)
     {
         internal IEnumerable<IntVec3> AllCells => CustomCells ?? Cells.Cells;
     }
@@ -36,7 +37,7 @@ namespace RimSiege.Fortress
         internal readonly List<FortressRoomFloor> Interiors = new();
     }
 
-    internal sealed class FortressLayout
+    internal sealed partial class FortressLayout
     {
         internal const int CurtainThickness = 4;
         private const int TowerClearance = 3;
@@ -74,15 +75,20 @@ namespace RimSiege.Fortress
             FortressLayoutKind kind = FortressLayoutKind.SquareKeep, int? savedTop = null,
             FortressFacilityPlan? savedFacilities = null, bool fourGates = true)
         {
-            int defaultTop = kind == FortressLayoutKind.HumanBastion
+            int defaultTop = kind is FortressLayoutKind.HumanBastion or FortressLayoutKind.MechCircularBunker
                 ? 1
                 : (Api.CellOnFloor(outer.CenterCell, 2, map).IsValid ? 2 : 1);
             int top = savedTop ?? defaultTop;
             if (top < 1 || !Api.CellOnFloor(outer.CenterCell, top, map).IsValid) return null;
             var plan = new FortressLayout(kind, size, outer, gateSide, naturalBarrier, top, fourGates);
-            bool ok = kind == FortressLayoutKind.HumanBastion
-                ? plan.ComposeHumanBastion(map, gateSide, top, BastionDimensions.For(size), savedFacilities)
-                : plan.ComposeSquareKeep(map, gateSide, top, FortressDimensions.For(size), savedFacilities);
+            bool ok = kind switch
+            {
+                FortressLayoutKind.HumanBastion => plan.ComposeHumanBastion(map, gateSide, top,
+                    BastionDimensions.For(size), savedFacilities),
+                FortressLayoutKind.MechCircularBunker => plan.ComposeMechCircularBunker(map, gateSide,
+                    MechBunkerDimensions.For(size)),
+                _ => plan.ComposeSquareKeep(map, gateSide, top, FortressDimensions.For(size), savedFacilities)
+            };
             return ok ? plan : null;
         }
 

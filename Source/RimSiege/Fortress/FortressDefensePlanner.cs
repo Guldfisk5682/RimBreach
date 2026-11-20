@@ -41,13 +41,22 @@ namespace RimSiege.Fortress
             foreach (FortressLadder ladder in layout.Ladders)
             {
                 reserved.Add(ladder.Foot);
-                ReserveLanding(ladder.Landing);
+                if (layout.Kind == FortressLayoutKind.MechCircularBunker)
+                    reserved.Add(ladder.Landing);
+                else
+                    ReserveLanding(ladder.Landing);
             }
         }
 
         internal static List<FortressDefensePiece> Plan(Map map, FortressLayout layout, float points)
         {
             var plan = new FortressDefensePlanner(map, layout);
+            if (layout.Kind == FortressLayoutKind.MechCircularBunker)
+            {
+                plan.PlanMechBunker(layout.Size == FortressSize.Large, points);
+                return plan.pieces;
+            }
+
             FortressDefenseProfileDef profile = FortressDefenseProfileDef.For(map.ParentFaction);
             ThingDef machineGun = profile.machineGuns.RandomElement();
             ThingDef corner = ModsConfig.RoyaltyActive && map.ParentFaction.def == FactionDefOf.Empire
@@ -99,6 +108,138 @@ namespace RimSiege.Fortress
                 .Select(cell => At(def, cell, layout.GateSide, ammo))
                 .FirstOrDefault(candidate => Fits(candidate, yard));
             if (piece != null) Add(piece);
+        }
+
+        private void PlanMechBunker(bool large, float points)
+        {
+            FortressGeometry geo = layout.Geometry;
+            ThingDef mortarDef = DefDatabase<ThingDef>.GetNamedSilentFail("Turret_AutoMortar");
+            ThingDef chargeBlaster = DefDatabase<ThingDef>.GetNamedSilentFail("Turret_AutoChargeBlaster");
+            ThingDef inferno = DefDatabase<ThingDef>.GetNamedSilentFail("Turret_AutoInferno");
+            ThingDef miniTurret = DefDatabase<ThingDef>.GetNamedSilentFail("Turret_AutoMiniTurret");
+
+            // 1. Auto-mortars centered inside each 4x4 open skylight shaft (Compact: 1, Large: 2).
+            if (mortarDef != null)
+            {
+                foreach (CellRect silo in geo.MortarSilos)
+                {
+                    CellRect inner = silo.ContractedBy(1);
+                    FortressDefensePiece mortar = inner
+                        .Select(cell => At(mortarDef, cell, layout.GateSide))
+                        .FirstOrDefault(candidate => Footprint(candidate) == inner && Fits(candidate, silo));
+                    mortar ??= silo.OrderBy(cell => (cell - silo.CenterCell).LengthHorizontalSquared)
+                        .Select(cell => At(mortarDef, cell, layout.GateSide))
+                        .FirstOrDefault(candidate => Fits(candidate, silo));
+                    if (mortar != null) Add(mortar);
+                }
+            }
+
+            // 2. Axis-aligned frontal firing pillboxes: ALWAYS 1 AutoInferno + 1 AutoChargeBlaster paired on every side (8 total).
+            if (chargeBlaster != null || inferno != null)
+            {
+                var byFace = geo.Slots
+                    .Where(slot => slot.Role == FortressEmplacementRole.Pillbox)
+                    .GroupBy(slot => slot.Facing)
+                    .OrderBy(group => group.Key.AsInt);
+                foreach (var group in byFace)
+                {
+                    FortressEmplacementSlot[] faceSlots = group.ToArray();
+                    for (int i = 0; i < faceSlots.Length; i++)
+                    {
+                        FortressEmplacementSlot slot = faceSlots[i];
+                        bool useInferno = i % 2 == 1;
+                        ThingDef def = useInferno ? (inferno ?? chargeBlaster) : (chargeBlaster ?? inferno);
+                        IntVec3 anchor = Api.CellOnFloor(slot.Ground, 0, map);
+                        CellRect search = CellRect.CenteredOn(anchor, 3, 3).ClipInsideRect(layout.Outer);
+                        FortressDefensePiece gun = search
+                            .OrderBy(cell => (cell - anchor).LengthHorizontalSquared)
+                            .Select(cell => At(def, cell, slot.Facing, null, slot.CoveredSectors))
+                            .FirstOrDefault(candidate =>
+                                Footprint(candidate).All(c => geo.Footprint.Contains(Api.GroundCellOf(c, map))) &&
+                                Fits(candidate, layout.Outer));
+                        if (gun != null) Add(gun);
+                    }
+                }
+            }
+
+            // 3. Elevated Floor-1 oblique cupolas: 1 AutoChargeBlaster in the outer-diagonal 2x2 corner of each cupola.
+            if (chargeBlaster != null)
+            {
+                CellRect upperOuter = CellRect.FromLimits(
+                    Api.CellOnFloor(layout.Outer.Min, 1, map),
+                    Api.CellOnFloor(layout.Outer.Max, 1, map));
+                IntVec3 center = layout.Outer.CenterCell;
+                foreach (FortressEmplacementSlot slot in geo.Slots
+                    .Where(slot => slot.Role == FortressEmplacementRole.Cupola))
+                {
+                    if (slot.ZoneIndex < 0 || slot.ZoneIndex >= geo.CupolaGrounds.Count) continue;
+                    HashSet<IntVec3> standing = geo.CupolaGrounds[slot.ZoneIndex];
+                    IntVec3 preferred = Api.CellOnFloor(slot.Ground, 1, map);
+                    CellRect search = CellRect.CenteredOn(preferred, 3, 3);
+                    FortressDefensePiece gun = search
+                        .Select(cell => At(chargeBlaster, cell, slot.Facing, null, slot.CoveredSectors))
+                        .Where(candidate =>
+                            Footprint(candidate).All(c => standing.Contains(Api.GroundCellOf(c, map))) &&
+                            Fits(candidate, upperOuter))
+                        .OrderByDescending(candidate => Footprint(candidate)
+                            .Sum(c => (Api.GroundCellOf(c, map) - center).LengthHorizontalSquared))
+                        .FirstOrDefault();
+                    if (gun != null) Add(gun);
+                }
+            }
+
+            // 4. Ground-floor interior avenue ambush turrets behind embrasures facing each cardinal avenue.
+            if (miniTurret != null)
+            {
+                foreach (FortressEmplacementSlot slot in geo.Slots
+                    .Where(slot => slot.Role == FortressEmplacementRole.InteriorAmbush))
+                {
+                    IntVec3 cell = Api.CellOnFloor(slot.Ground, 0, map);
+                    FortressDefensePiece ambush = At(miniTurret, cell, slot.Facing, null, slot.CoveredSectors);
+                    if (Fits(ambush, layout.Outer)) Add(ambush);
+                }
+            }
+
+            // 4. Exterior picket ring: 4 diagonals (Compact) or 8 around perimeter (Large, with 2 CIWS ChargeBlasters).
+            if (miniTurret != null)
+            {
+                int cardinalPlaced = 0;
+                foreach (FortressEmplacementSlot slot in geo.Slots
+                    .Where(slot => slot.Role == FortressEmplacementRole.ExteriorPicket))
+                {
+                    bool isCardinal = slot.ZoneIndex < 0;
+                    bool upgradeCiws = large && isCardinal && chargeBlaster != null && cardinalPlaced % 2 == 0;
+                    if (isCardinal) cardinalPlaced++;
+                    ThingDef def = upgradeCiws ? chargeBlaster : miniTurret;
+                    PlaceExteriorPicket(def, slot, geo);
+                }
+            }
+        }
+
+        private void PlaceExteriorPicket(ThingDef turretDef, FortressEmplacementSlot slot, FortressGeometry geo)
+        {
+            CellRect usable = ground.ContractedBy(3);
+            IntVec3 anchor = slot.Ground;
+            CellRect search = CellRect.CenteredOn(anchor, 9, 9).ClipInsideRect(usable);
+            FortressDefensePiece turret = search
+                .Where(cell => !geo.Footprint.Contains(cell) && !cell.GetTerrain(map).IsWater &&
+                    !geo.Gates.Any(gate => cell.InHorDistOf(gate.Approach, 4f)))
+                .OrderBy(cell => (cell - anchor).LengthHorizontalSquared)
+                .Select(cell => At(turretDef, cell, slot.Facing, null, slot.CoveredSectors))
+                .FirstOrDefault(candidate =>
+                    Footprint(candidate).ExpandedBy(1).All(c => usable.Contains(c) && !geo.Footprint.Contains(c) &&
+                        !c.GetTerrain(map).IsWater) &&
+                    Fits(candidate, usable));
+            if (turret == null) return;
+            Add(turret);
+
+            // Ring the exterior turret completely (360 degrees) with Plasteel barricades (passable by Lifters/Constructoids).
+            CellRect footprint = Footprint(turret);
+            foreach (IntVec3 ringCell in footprint.ExpandedBy(1).EdgeCells)
+            {
+                FortressDefensePiece barricade = At(ThingDefOf.Barricade, ringCell, Rot4.North);
+                if (Fits(barricade, usable)) Add(barricade);
+            }
         }
 
         private void PlaceBastionFlanks(ThingDef machineGun, FortressGunOption wallSupport)

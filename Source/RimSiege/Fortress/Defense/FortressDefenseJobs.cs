@@ -22,6 +22,9 @@ namespace RimSiege.Fortress
         public static DutyDef RS_FortressReserve = null;
         public static DutyDef RS_FortressRecover = null;
         public static DutyDef RS_FortressSortie = null;
+        public static DutyDef RS_MechFortressGuard = null;
+        public static DutyDef RS_MechFortressIntercept = null;
+        public static DutyDef RS_MechFortressLogistics = null;
 
         static FortressDutyDefOf() => DefOfHelper.EnsureInitializedInCtor(typeof(FortressDutyDefOf));
     }
@@ -52,7 +55,8 @@ namespace RimSiege.Fortress
                 return null;
             if (!cell.IsValid || !pawn.CanReach(cell, PathEndMode.OnCell, Danger.Deadly)) return null;
             Job job = JobMaker.MakeJob(JobDefOf.Goto, cell);
-            job.locomotionUrgency = duty.def == FortressDutyDefOf.RS_FortressGuard
+            job.locomotionUrgency = duty.def == FortressDutyDefOf.RS_FortressGuard ||
+                duty.def == FortressDutyDefOf.RS_MechFortressGuard
                 ? LocomotionUrgency.Sprint : LocomotionUrgency.Jog;
             return job;
         }
@@ -121,8 +125,9 @@ namespace RimSiege.Fortress
         internal static bool AllowIndirect(Pawn pawn, LordJob lordJob)
         {
             if (lordJob is LordJob_FortressSortie sortie) return sortie.Ground.Outside(pawn.Position);
-            if (lordJob is not LordJob_FortressDefense defense) return false;
-            if (defense.IntrusionActive || FortressDefensePosts.Intercepting(pawn)) return true;
+            if (lordJob is not IFortressDefenseLord defense) return false;
+            if (defense.IntrusionActive || FortressDefensePosts.Intercepting(pawn) ||
+                pawn.mindState?.duty?.def == FortressDutyDefOf.RS_MechFortressIntercept) return true;
             return FortressDefensePosts.TryGetDutySector(pawn, out int sector)
                 ? defense.SectorUnderWatch(sector)
                 : defense.AnySectorUnderWatch();
@@ -247,7 +252,7 @@ namespace RimSiege.Fortress
 
         protected override Job TryGiveJob(Pawn pawn)
         {
-            var defense = (LordJob_FortressDefense)pawn.GetLord().LordJob;
+            if (pawn.GetLord()?.LordJob is not IFortressDefenseLord defense) return null;
             Map map = pawn.Map;
             Pawn intruder = defense.Intruders.Where(target => target.Spawned && !target.Downed &&
                     defense.ValidateAttackTarget(pawn, target))
@@ -376,11 +381,11 @@ namespace RimSiege.Fortress
         private static WorkGiver_Scanner FeedPatient =>
             (WorkGiver_Scanner)DefDatabase<WorkGiverDef>.GetNamed("DoctorFeedHumanlikes").Worker;
 
-        internal static bool CanReload(Pawn pawn, Building_TurretGunCE gun) =>
-            gun.ShouldReload() && JobGiverUtils_Reload.CanReload(pawn, gun);
+        internal static bool CanReload(Pawn pawn, Building_TurretGunCE gun, float threshold = 0.5f) =>
+            gun.ShouldReload(threshold) && JobGiverUtils_Reload.CanReload(pawn, gun);
 
-        internal static Job Reload(Pawn pawn, Building_TurretGunCE gun) =>
-            CanReload(pawn, gun) ? JobGiverUtils_Reload.MakeReloadJob(pawn, gun) : null;
+        internal static Job Reload(Pawn pawn, Building_TurretGunCE gun, float threshold = 0.5f) =>
+            CanReload(pawn, gun, threshold) ? JobGiverUtils_Reload.MakeReloadJob(pawn, gun) : null;
 
         internal static bool NeedsFeeding(Pawn patient) =>
             patient.Spawned && !patient.Dead && !patient.IsPrisoner && patient.RaceProps.Humanlike &&

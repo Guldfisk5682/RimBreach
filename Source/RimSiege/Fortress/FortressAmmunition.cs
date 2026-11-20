@@ -76,6 +76,15 @@ namespace RimSiege.Fortress
 
         private IntVec3[] SlotsFor(FortressModule module)
         {
+            if (geometry?.Kind == FortressLayoutKind.MechCircularBunker && module.Kind == FortressModuleKind.Keep)
+            {
+                return geometry.AmmoRooms
+                    .SelectMany(room => room)
+                    .Where(cell => cell != lootShelf)
+                    .Select(cell => cell.GetFirstBuilding(map)).OfType<Building_Storage>().Distinct()
+                    .SelectMany(shelf => shelf.GetSlotGroup().CellsList).ToArray();
+            }
+
             if (module.Kind == FortressModuleKind.Tower && geometry?.Zones != null)
             {
                 foreach (FortressBastionZone zone in geometry.Zones)
@@ -167,7 +176,8 @@ namespace RimSiege.Fortress
                     reserve[nearest].Add(ammo);
                 }
 
-                StockReady(ammo, readyCount, turret);
+                if (geometry.Kind != FortressLayoutKind.MechCircularBunker || geometry.Footprint.Contains(ground))
+                    StockReady(ammo, readyCount, turret);
             }
 
             var ordnance = new List<(AmmoDef Ammo, int Ready, int Reserve, IntVec3[][] Storage)>();

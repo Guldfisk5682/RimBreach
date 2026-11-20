@@ -3,15 +3,18 @@
   <RimSiege.Fortress.FortressLootDef>
     <defName>RS_FortressLoot_Healer</defName>
     <thing>MechSerumHealer</thing>
+    <mechanoidEligible>true</mechanoidEligible>
   </RimSiege.Fortress.FortressLootDef>
   <RimSiege.Fortress.FortressLootDef>
     <defName>RS_FortressLoot_ShockLance</defName>
     <thing>Apparel_PsychicShockLance</thing>
+    <mechanoidEligible>true</mechanoidEligible>
   </RimSiege.Fortress.FortressLootDef>
   <RimSiege.Fortress.FortressLootDef MayRequire="Ludeon.RimWorld.Anomaly">
     <defName>RS_FortressLoot_Shards</defName>
     <thing>Shard</thing>
     <count>5</count>
+    <mechanoidEligible>true</mechanoidEligible>
   </RimSiege.Fortress.FortressLootDef>
 
   <RimSiege.Fortress.FortressLootDef>

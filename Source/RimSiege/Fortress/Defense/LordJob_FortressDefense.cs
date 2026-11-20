@@ -10,7 +10,7 @@ using Verse.AI.Group;
 
 namespace RimSiege.Fortress
 {
-    public sealed class LordJob_FortressDefense : LordJob
+    public sealed class LordJob_FortressDefense : LordJob, IFortressDefenseLord
     {
         internal const int ReviewInterval = 1800;
         private const int CounterSortieCooldown = GenDate.TicksPerDay / 2;
@@ -59,12 +59,23 @@ namespace RimSiege.Fortress
         private readonly HashSet<Pawn> relief = new();
         private readonly List<Pawn> intruders = new();
         private FortressSite Site => (FortressSite)Map.Parent;
+        bool IFortressDefenseLord.IsDefenseActive => lord.CurLordToil is LordToil_FortressDefense;
+        bool IFortressDefenseLord.CanContinueSortie => !IntrusionActive && line == FortressLine.Curtain;
+        bool IFortressDefenseLord.CanRout => true;
+        bool IFortressDefenseLord.HasPendingCounterSortie => HasPendingCounterSortie;
+        void IFortressDefenseLord.CancelCounterSortie() => CancelCounterSortie();
+        void IFortressDefenseLord.MergeSortie(List<Pawn> returning, int now) => MergeSortie(returning, now);
+        void IFortressDefenseLord.RequestRoutCheck(int now) => RequestRoutCheck(now);
         internal FortressDefenseGround Ground => ground ??= new FortressDefenseGround(Map, Site.Blueprint);
+        FortressDefenseGround IFortressDefenseLord.Ground => Ground;
         internal FortressTargeting Targeting => targeting ??= new FortressTargeting(Map, lord.faction);
+        FortressTargeting IFortressDefenseLord.Targeting => Targeting;
         private FortressDefensePosts Posts => posts ??= new FortressDefensePosts(Map, Site.Blueprint, Ground);
         internal FortressLine Line => line;
         internal bool IntrusionActive => openSectors != 0;
+        bool IFortressDefenseLord.IntrusionActive => IntrusionActive;
         internal IReadOnlyList<Pawn> Intruders => intruders;
+        IReadOnlyList<Pawn> IFortressDefenseLord.Intruders => Intruders;
         public override bool AddFleeToil => false;
         public override bool CanAutoAddPawns => false;
         public override bool ShouldRemovePawn(Pawn pawn, PawnLostCondition reason) => reason != PawnLostCondition.Incapped;
@@ -192,6 +203,7 @@ namespace RimSiege.Fortress
         }
 
         internal void RequestResupply() => resupplyRequested = true;
+        void IFortressDefenseLord.RequestResupply() => RequestResupply();
 
         internal bool HasPendingCounterSortie => counterSortieAt != 0 || bombardmentSource != null || bombardmentUntil != 0;
 
@@ -207,6 +219,7 @@ namespace RimSiege.Fortress
         internal void RequestRoutCheck(int now) => RequestResponseReview(now);
 
         internal bool SectorUnderWatch(int sector) => watches[sector].Until > GenTicks.TicksGame;
+        bool IFortressDefenseLord.SectorUnderWatch(int sector) => SectorUnderWatch(sector);
 
         internal bool SectorHasContact(int sector) =>
             SectorUnderWatch(sector) && AimAt(watches[sector]) != null;
@@ -216,6 +229,7 @@ namespace RimSiege.Fortress
             int now = GenTicks.TicksGame;
             return watches.Any(watch => watch.Until > now);
         }
+        bool IFortressDefenseLord.AnySectorUnderWatch() => AnySectorUnderWatch();
 
         internal void MergeSortie(List<Pawn> returning, int now)
         {
@@ -234,6 +248,7 @@ namespace RimSiege.Fortress
             bool exposed = !Ground.Inside(cell) || Api.FloorOf(cell, Map) == Site.Blueprint.Top;
             return !exposed || !SectorUnderWatch(sector) && watches[sector].DamageUntil <= GenTicks.TicksGame;
         }
+        bool IFortressDefenseLord.CanMaintain(IntVec3 cell) => CanMaintain(cell);
 
         internal void RememberPost(Pawn pawn)
         {
@@ -255,6 +270,8 @@ namespace RimSiege.Fortress
             }
             RequestSupport(next);
         }
+
+        void IFortressDefenseLord.Attacked(Thing victim, DamageInfo damage) => Attacked(victim, damage);
 
         internal void Attacked(Thing victim, DamageInfo damage)
         {

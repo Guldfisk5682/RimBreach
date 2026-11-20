@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <DutyDef>
+    <defName>RS_MechFortressGuard</defName>
+    <alwaysShowWeapon>true</alwaysShowWeapon>
+    <thinkNode Class="ThinkNode_Priority">
+      <subNodes>
+        <li Class="RimSiege.Fortress.JobGiver_FortressFight">
+          <targetAcquireRadius>65</targetAcquireRadius>
+          <targetKeepRadius>75</targetKeepRadius>
+          <needLOSToAcquireNonPawnTargets>true</needLOSToAcquireNonPawnTargets>
+        </li>
+        <li Class="RimSiege.Fortress.JobGiver_FortressPost" />
+        <li Class="JobGiver_WanderNearDutyLocation"><wanderRadius>4</wanderRadius></li>
+      </subNodes>
+    </thinkNode>
+  </DutyDef>
+
+  <DutyDef>
+    <defName>RS_MechFortressIntercept</defName>
+    <alwaysShowWeapon>true</alwaysShowWeapon>
+    <thinkNode Class="ThinkNode_Priority">
+      <subNodes>
+        <li Class="RimSiege.Fortress.JobGiver_FortressMobileFight">
+          <targetAcquireRadius>65</targetAcquireRadius>
+          <targetKeepRadius>75</targetKeepRadius>
+          <needLOSToAcquireNonPawnTargets>true</needLOSToAcquireNonPawnTargets>
+        </li>
+        <li Class="RimSiege.Fortress.JobGiver_FortressSeekIntruder" />
+      </subNodes>
+    </thinkNode>
+  </DutyDef>
+
+  <DutyDef>
+    <defName>RS_MechFortressLogistics</defName>
+    <thinkNode Class="ThinkNode_Priority">
+      <subNodes>
+        <li Class="RimSiege.Fortress.JobGiver_MechFortressReload" />
+        <li Class="RimSiege.Fortress.JobGiver_MechFortressResurrect" />
+        <li Class="RimSiege.Fortress.JobGiver_MechFortressMaintenance" />
+        <li Class="RimSiege.Fortress.JobGiver_FortressPost" />
+        <li Class="JobGiver_WanderNearDutyLocation"><wanderRadius>5</wanderRadius></li>
+      </subNodes>
+    </thinkNode>
+  </DutyDef>
+</Defs>

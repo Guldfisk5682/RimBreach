@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Linq;
+using ProjectZ;
 using Verse;
 
 namespace RimSiege.Fortress
@@ -23,12 +25,24 @@ namespace RimSiege.Fortress
         internal IntVec3 LootShelfGround = IntVec3.Invalid;
         internal int LootShelfFloor;
         internal bool HarassmentLootPlaced;
+        internal bool MechEnergyLootRolled;
 
         internal bool IsLarge => Size == FortressSize.Large;
 
         internal bool ContainsGround(IntVec3 cell) => LayoutKind == FortressLayoutKind.SquareKeep
             ? Outer.Contains(cell)
             : FortressGeometry.ShapeFor(LayoutKind, Size).Footprint.Contains(cell - Outer.CenterCell);
+
+        internal bool ContainsStructure(IntVec3 cell, Map map)
+        {
+            IntVec3 ground = Api.GroundCellOf(cell, map);
+            if (ContainsGround(ground)) return true;
+            if (LayoutKind != FortressLayoutKind.MechCircularBunker || Defenses == null) return false;
+            int floor = Api.FloorOf(cell, map);
+            return Defenses.Any(piece => piece.Floor == floor &&
+                (piece.Ground == ground || piece.Def != null &&
+                    GenAdj.OccupiedRect(piece.Ground, piece.Rotation, piece.Def.Size).Contains(ground)));
+        }
 
         internal FortressLayout Rebuild(Map map) => FortressLayout.Plan(map, Outer, GateSide,
             new HashSet<IntVec3>(NaturalBarrier ?? new List<IntVec3>()),
@@ -54,6 +68,7 @@ namespace RimSiege.Fortress
             Scribe_Values.Look(ref LootShelfGround, "lootShelfGround", IntVec3.Invalid);
             Scribe_Values.Look(ref LootShelfFloor, "lootShelfFloor");
             Scribe_Values.Look(ref HarassmentLootPlaced, "harassmentLootPlaced");
+            Scribe_Values.Look(ref MechEnergyLootRolled, "mechEnergyLootRolled");
 
             FortressLot living = LookLot(Facilities.Living, "living");
             FortressLot supply = LookLot(Facilities.Supply, "supply");

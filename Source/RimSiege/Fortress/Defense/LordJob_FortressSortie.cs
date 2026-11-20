@@ -69,15 +69,15 @@ namespace RimSiege.Fortress
             nextCheck = now + CheckInterval;
 
             Lord defenseLord = FindDefenseLord(Map, lord.faction);
-            if (defenseLord?.LordJob is not LordJob_FortressDefense defense ||
-                defenseLord.CurLordToil is not LordToil_FortressDefense)
+            if (defenseLord?.LordJob is not IFortressDefenseLord defense || !defense.IsDefenseActive)
             {
-                TriggerRout();
+                if (lord.faction != Faction.OfMechanoids && lord.faction?.def != FactionDefOf.Mechanoid)
+                    TriggerRout();
                 return;
             }
 
             if (returnAt == 0) returnAt = now + IdleLimit;
-            if (defense.IntrusionActive || defense.Line != FortressLine.Curtain ||
+            if (!defense.CanContinueSortie ||
                 !Targeting.HasPlayerCombatThreats() || !lord.ownedPawns.Any(FortressDefensePosts.CanFight))
             {
                 ReturnTo(defense, now);
@@ -121,7 +121,7 @@ namespace RimSiege.Fortress
             bestApproach = distance;
         }
 
-        private void ReturnTo(LordJob_FortressDefense defense, int now)
+        private void ReturnTo(IFortressDefenseLord defense, int now)
         {
             List<Pawn> returning = lord.ownedPawns.ToList();
             lord.RemovePawns(returning);
@@ -158,12 +158,12 @@ namespace RimSiege.Fortress
         internal bool ValidTarget(Thing target) => target is { Spawned: true } && target.Map == Map &&
             lord.faction.HostileTo(target.Faction) && (target is not IAttackTarget attack || !attack.ThreatDisabled(null));
 
-        private LordJob_FortressDefense FindDefense() =>
-            FindDefenseLord(Map, lord.faction)?.LordJob as LordJob_FortressDefense;
+        private IFortressDefenseLord FindDefense() =>
+            FindDefenseLord(Map, lord.faction)?.LordJob as IFortressDefenseLord;
 
         private static Lord FindDefenseLord(Map map, Faction faction) =>
             map?.lordManager.lords.FirstOrDefault(other =>
-                other.faction == faction && other.LordJob is LordJob_FortressDefense);
+                other.faction == faction && other.LordJob is IFortressDefenseLord);
 
         public override void ExposeData()
         {

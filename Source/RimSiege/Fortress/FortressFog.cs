@@ -43,13 +43,14 @@ namespace RimSiege.Fortress
             {
                 foreach (IntVec3 cell in geo.Interior)
                 {
-                    if (floor == 1 && geo.RampartDeckGround.Contains(cell)) continue;
+                    if (floor == 1 && (geo.RampartDeckGround.Contains(cell) || geo.ArmoredCapGround.Contains(cell)))
+                        continue;
                     if (Api.HasFloorAt(cell, floor, map))
                         map.fogGrid.Refog(CellRect.SingleCell(Api.CellOnFloor(cell, floor, map)));
                 }
             }
 
-            // The outer wall walk and bastion platforms need not be reachable from the arrival point.
+            // The outer wall walk, bastion platforms, and sealed bunker cap need not be reachable from arrival.
             foreach (IntVec3 cell in layout.Tiers[1].Deck)
                 if (!Conceals(cell) && !layout.Tiers[1].Openings.Contains(cell) && cell.Fogged(map))
                     map.fogGrid.Unfog(cell);
@@ -74,7 +75,8 @@ namespace RimSiege.Fortress
                 concealedCells.Add(cell);
                 for (int floor = 1; floor <= top; floor++)
                 {
-                    if (floor == 1 && geo.RampartDeckGround.Contains(cell)) continue;
+                    if (floor == 1 && (geo.RampartDeckGround.Contains(cell) || geo.ArmoredCapGround.Contains(cell)))
+                        continue;
                     IntVec3 upper = Api.CellOnFloor(cell, floor, map);
                     if (upper.IsValid) concealedCells.Add(upper);
                 }
@@ -94,15 +96,27 @@ namespace RimSiege.Fortress
         private void CheckBreach(IntVec3 position, FortressBlueprint blueprint)
         {
             if (geometry == null) return;
+            bool mechBunker = geometry.Kind == FortressLayoutKind.MechCircularBunker;
+            int floor = Api.FloorOf(position, map);
+            if (mechBunker && floor != 0) return;
             IntVec3 ground = Api.GroundCellOf(position, map);
             if (!geometry.Footprint.Contains(ground)) return;
             // The last cell of a ground passage is visible and can be ordered to.
             if (!innerLip.Contains(ground) &&
-                (Api.FloorOf(position, map) != 1 || !geometry.RampartDeckGround.Contains(ground) ||
+                (floor != 1 || !geometry.RampartDeckGround.Contains(ground) ||
                     !Api.HasFloorAt(ground, 1, map))) return;
 
             ConcealedMaps.Remove(map.fogGrid);
             awaitingBreach = false;
+
+            if (mechBunker)
+            {
+                // Let native room-by-room flood unfog reveal only the breached corridor/bay until doors open.
+                map.fogGrid.FloodUnfogAdjacent(position, sendLetters: false);
+                map.events.Notify_MapFogged();
+                Api.RequestFogRefresh(map);
+                return;
+            }
 
             FortressLayout rebuilt = blueprint.Rebuild(map);
             var roofs = new List<CellRect> { geometry.Core };

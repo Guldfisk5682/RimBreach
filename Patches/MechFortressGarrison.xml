@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+  <Operation Class="PatchOperationAdd">
+    <xpath>Defs/FactionDef[defName="Mechanoid"]/pawnGroupMakers</xpath>
+    <value>
+      <li>
+        <!-- Fortress combined arms: 2x ranged mechanoid weights, no pure melee or militor rolls -->
+        <kindDef>RS_MechFortressDefense</kindDef>
+        <commonality>100</commonality>
+        <options>
+          <Mech_CentipedeBlaster>20</Mech_CentipedeBlaster>
+          <Mech_CentipedeGunner>10</Mech_CentipedeGunner>
+          <Mech_CentipedeBurner>10</Mech_CentipedeBurner>
+          <Mech_Pikeman>20</Mech_Pikeman>
+          <Mech_Lancer>20</Mech_Lancer>
+          <Mech_Scyther>10</Mech_Scyther>
+          <Mech_Scorcher MayRequire="Ludeon.RimWorld.Biotech">5</Mech_Scorcher>
+          <Mech_Militor MayRequire="Ludeon.RimWorld.Biotech">15</Mech_Militor>
+          <Mech_Tesseron MayRequire="Ludeon.RimWorld.Biotech">5</Mech_Tesseron>
+          <Mech_Legionary MayRequire="Ludeon.RimWorld.Biotech">2</Mech_Legionary>
+          <Mech_Centurion MayRequire="Ludeon.RimWorld.Biotech">2</Mech_Centurion>
+          <Mech_Warqueen MayRequire="Ludeon.RimWorld.Biotech">1</Mech_Warqueen>
+          <Mech_Apocriton MayRequire="Ludeon.RimWorld.Biotech">1</Mech_Apocriton>
+          <Mech_Diabolus MayRequire="Ludeon.RimWorld.Biotech">1</Mech_Diabolus>
+        </options>
+      </li>
+      <li>
+        <!-- Fortress heavy ranged garrison -->
+        <kindDef>RS_MechFortressDefense</kindDef>
+        <commonality>60</commonality>
+        <options>
+          <Mech_CentipedeBlaster>20</Mech_CentipedeBlaster>
+          <Mech_CentipedeGunner>10</Mech_CentipedeGunner>
+          <Mech_CentipedeBurner>10</Mech_CentipedeBurner>
+          <Mech_Pikeman>20</Mech_Pikeman>
+          <Mech_Lancer>20</Mech_Lancer>
+          <Mech_Tesseron MayRequire="Ludeon.RimWorld.Biotech">5</Mech_Tesseron>
+          <Mech_Cyclops MayRequire="Ludeon.RimWorld.Odyssey">5</Mech_Cyclops>
+          <Mech_Legionary MayRequire="Ludeon.RimWorld.Biotech">2</Mech_Legionary>
+          <Mech_Diabolus MayRequire="Ludeon.RimWorld.Biotech">1</Mech_Diabolus>
+        </options>
+      </li>
+    </value>
+  </Operation>
+</Patch>

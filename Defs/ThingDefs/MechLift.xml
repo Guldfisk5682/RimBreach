@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <ThingDef ParentName="BuildingBase">
+    <defName>RS_MechLift</defName>
+    <label>mechanoid lift</label>
+    <description>A compact folding mechanoid lift linking a bunker floor to an upper firing cupola.</description>
+    <thingClass>ProjectZ.Building_SiegeLadder</thingClass>
+    <graphicData>
+      <texPath>ProjectZ/SiegeLift</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(1,1)</drawSize>
+    </graphicData>
+    <uiIconPath>ProjectZ/SiegeLift</uiIconPath>
+    <passability>Standable</passability>
+    <pathCost>4</pathCost>
+    <fillPercent>0.1</fillPercent>
+    <castEdgeShadows>false</castEdgeShadows>
+    <blockWind>false</blockWind>
+    <rotatable>true</rotatable>
+    <size>(1,1)</size>
+    <building>
+      <isInert>true</isInert>
+      <ai_chillDestination>false</ai_chillDestination>
+      <claimable>true</claimable>
+      <deconstructible>true</deconstructible>
+    </building>
+    <statBases>
+      <MaxHitPoints>120</MaxHitPoints>
+      <WorkToBuild>300</WorkToBuild>
+      <Flammability>0</Flammability>
+      <Beauty>-2</Beauty>
+    </statBases>
+    <costList>
+      <Plasteel>20</Plasteel>
+      <ComponentIndustrial>1</ComponentIndustrial>
+    </costList>
+    <resourcesFractionWhenDeconstructed>0.5</resourcesFractionWhenDeconstructed>
+    <placeWorkers>
+      <li>ProjectZ.PlaceWorker_LadderFromFoot</li>
+    </placeWorkers>
+  </ThingDef>
+</Defs>

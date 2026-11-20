@@ -40,14 +40,18 @@ namespace RimSiege.Fortress
         private static IEnumerable<Thing> Supplies(Map map, FortressLayout layout)
         {
             FortressFacilityPlan facilities = layout.Facilities;
-            IEnumerable<IntVec3> cells = facilities.Supply.Interior(map, 0).Cells
-                .Concat(facilities.DiningInterior(map).Cells);
+            IEnumerable<IntVec3> cells = Enumerable.Empty<IntVec3>();
+            if (!facilities.Supply.IsEmpty) cells = cells.Concat(facilities.Supply.Interior(map, 0).Cells);
+            if (!facilities.Dining.IsEmpty || !facilities.Living.IsEmpty)
+                cells = cells.Concat(facilities.DiningInterior(map).Cells);
             if (!facilities.Power.IsEmpty) cells = cells.Concat(facilities.Power.Interior(map, 0).Cells);
             if (!facilities.AuxSupply.IsEmpty) cells = cells.Concat(facilities.AuxSupply.Interior(map, 0).Cells);
             if (facilities.MortarDef != null) cells = cells.Concat(facilities.Mortar.Cells);
             if (facilities.SecondMortarDef != null) cells = cells.Concat(facilities.SecondMortar.Cells);
             foreach (FortressBastionZone zone in layout.Geometry.Zones)
                 if (zone.VaultCells != null) cells = cells.Concat(zone.VaultCells);
+            foreach (HashSet<IntVec3> room in layout.Geometry.LogisticsRooms)
+                cells = cells.Concat(room);
             return cells.Distinct().SelectMany(cell => cell.GetThingList(map))
                 .Where(thing => thing.def.category == ThingCategory.Item);
         }

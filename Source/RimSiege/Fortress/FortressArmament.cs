@@ -20,7 +20,10 @@ namespace RimSiege.Fortress
                 set.ammoTypes.FirstOrDefault())?.ammo;
         }
 
-        internal static ThingDef StuffFor(ThingDef def) => def.MadeFromStuff ? GenStuff.DefaultStuffFor(def) : null;
+        internal static ThingDef StuffFor(ThingDef def, FortressLayoutKind kind = FortressLayoutKind.SquareKeep) =>
+            !def.MadeFromStuff ? null :
+            kind == FortressLayoutKind.MechCircularBunker && def == ThingDefOf.Barricade ? ThingDefOf.Plasteel :
+            GenStuff.DefaultStuffFor(def);
 
         internal static List<ArmedEmplacement> Spawn(Map map, FortressLayout layout, List<FortressDefensePiece> pieces)
         {
@@ -38,7 +41,8 @@ namespace RimSiege.Fortress
                     foreach (IntVec3 covered in GenAdj.OccupiedRect(cell, piece.Rotation, piece.Def.Size))
                         if (covered.Roofed(map)) map.roofGrid.SetRoof(covered, null);
                 }
-                var building = (Building)FortressConstruction.Spawn(piece.Def, cell, piece.Rotation, StuffFor(piece.Def), map);
+                var building = (Building)FortressConstruction.Spawn(piece.Def, cell, piece.Rotation,
+                    StuffFor(piece.Def, layout.Kind), map);
                 if (building is not Building_TurretGunCE turret) continue;
 
                 AmmoDef ammo = null;

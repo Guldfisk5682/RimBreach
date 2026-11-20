@@ -15,8 +15,15 @@ namespace RimSiege.Fortress
 
         public override int SeedPart => 1496780451;
 
-        private FortressSize TargetSize(FortressSite site) => compact || site is { OriginalPoints: < 5000f }
-            ? FortressSize.Compact : FortressSize.Large;
+        private FortressSize TargetSize(FortressSite site, bool mechanoid)
+        {
+            if (compact) return FortressSize.Compact;
+            if (mechanoid)
+                return site is { OriginalPoints: < FortressGarrison.MechLargeMinPoints }
+                    ? FortressSize.Compact : FortressSize.Large;
+            return site is { OriginalPoints: < 5000f }
+                ? FortressSize.Compact : FortressSize.Large;
+        }
 
         public override void Generate(Map map, GenStepParams parms)
         {
@@ -53,11 +60,13 @@ namespace RimSiege.Fortress
                     return;
                 }
 
+                bool mechanoid = FortressGarrison.IsMechanoidFaction(map.ParentFaction);
                 FortressLayoutKind? forcedKind = site?.ForcedLayoutKind;
-                FortressLayoutKind preferredKind = forcedKind ?? (Rand.Bool
-                    ? FortressLayoutKind.HumanBastion : FortressLayoutKind.SquareKeep);
-                FortressLayout layout = FindLayout(map, TargetSize(site), preferredKind, seed,
-                    allowFallbackToSquare: !forcedKind.HasValue);
+                FortressLayoutKind preferredKind = mechanoid
+                    ? FortressLayoutKind.MechCircularBunker
+                    : forcedKind ?? (Rand.Bool ? FortressLayoutKind.HumanBastion : FortressLayoutKind.SquareKeep);
+                FortressLayout layout = FindLayout(map, TargetSize(site, mechanoid), preferredKind, seed,
+                    allowFallbackToSquare: !mechanoid && !forcedKind.HasValue);
                 if (layout == null)
                 {
                     site?.GenerationFailed();
@@ -85,7 +94,10 @@ namespace RimSiege.Fortress
         private static void Build(Map map, GenStepParams parms, FortressSite site, FortressLayout layout,
             FortressBlueprint blueprint)
         {
-            bool reinforced = site != null && site.OriginalPoints >= (blueprint.IsLarge ? 7000f : 5000f);
+            bool mechanoid = layout != null && layout.Kind == FortressLayoutKind.MechCircularBunker;
+            bool reinforced = site != null && (mechanoid
+                ? blueprint.IsLarge
+                : site.OriginalPoints >= (blueprint.IsLarge ? 7000f : 5000f));
             Rand.PushState(blueprint.FurnishingSeed);
             try
             {
@@ -109,12 +121,13 @@ namespace RimSiege.Fortress
                 List<ArmedEmplacement> emplacements = FortressArmament.Spawn(map, layout, blueprint.Defenses);
                 var ammunition = new FortressAmmunition(map, layout, blueprint.Stuff, lootShelf);
                 ammunition.StockEmplacements(emplacements);
-                if (!layout.Facilities.Power.IsEmpty) FortressPower.Connect(map, layout);
+                if (!mechanoid && !layout.Facilities.Power.IsEmpty) FortressPower.Connect(map, layout);
 
                 if (site == null) return;
                 site.Blueprint = blueprint;
                 ammunition.StockInfantry(FortressGarrison.Spawn(map, layout, parms.sitePart), emplacements);
                 FortressLoot.PlaceHarassmentLoot(map, site, lootShelf);
+                if (mechanoid) FortressLoot.PlaceMechEnergyLoot(map, site);
                 MapGenUtility.ForbidAllItems(map);
                 if (RimSiegeMod.Settings.FortressFog)
                     map.GetComponent<FortressFog>().Conceal(layout);

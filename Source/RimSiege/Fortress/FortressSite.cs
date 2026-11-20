@@ -1,7 +1,11 @@
+using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
 using RimWorld.Planet;
+using RimWorld.QuestGen;
+using UnityEngine;
 using Verse;
+using Verse.Grammar;
 
 namespace RimSiege.Fortress
 {
@@ -102,8 +106,61 @@ namespace RimSiege.Fortress
 
     public sealed class SitePartWorker_Fortress : SitePartWorker_Outpost
     {
-        public override bool FactionCanOwn(Faction faction) => base.FactionCanOwn(faction) &&
-            faction?.def.humanlikeFaction == true &&
-            faction.def.pawnGroupMakers?.Any(maker => maker.kindDef == PawnGroupKindDefOf.Settlement) == true;
+        public override bool FactionCanOwn(Faction faction)
+        {
+            if (!base.FactionCanOwn(faction) || faction == null) return false;
+            if (FortressGarrison.IsMechanoidFaction(faction))
+            {
+                PawnGroupKindDef kind = FortressGarrison.MechGroupKind(faction);
+                return !faction.deactivated && !faction.def.raidsForbidden &&
+                    faction.def.pawnGroupMakers?.Any(maker => maker.kindDef == kind) == true;
+            }
+            return faction.def.humanlikeFaction &&
+                faction.def.pawnGroupMakers?.Any(maker => maker.kindDef == PawnGroupKindDefOf.Settlement) == true;
+        }
+
+        public override SitePartParams GenerateDefaultParams(float myThreatPoints, PlanetTile tile, Faction faction)
+        {
+            if (!FortressGarrison.IsMechanoidFaction(faction))
+                return base.GenerateDefaultParams(myThreatPoints, tile, faction);
+            var parms = new SitePartParams
+            {
+                randomValue = Rand.Int,
+                threatPoints = def.wantsThreatPoints ? myThreatPoints : 0f
+            };
+            parms.threatPoints = Mathf.Max(parms.threatPoints,
+                faction.def.MinPointsToGeneratePawnGroup(FortressGarrison.MechGroupKind(faction)));
+            parms.lootMarketValue = ThreatPointsLootMarketValue.Evaluate(parms.threatPoints);
+            return parms;
+        }
+
+        public override void Notify_GeneratedByQuestGen(SitePart part, Slate slate, List<Rule> outExtraDescriptionRules,
+            Dictionary<string, string> outExtraDescriptionConstants)
+        {
+            if (!FortressGarrison.IsMechanoidFaction(part.site.Faction))
+            {
+                base.Notify_GeneratedByQuestGen(part, slate, outExtraDescriptionRules, outExtraDescriptionConstants);
+                return;
+            }
+            outExtraDescriptionRules.AddRange(GrammarUtility.RulesForDef("", part.def));
+            outExtraDescriptionConstants.Add("sitePart", part.def.defName);
+            bool isLarge = slate.Get("pointsOriginal", part.parms.threatPoints) >= FortressGarrison.MechLargeMinPoints;
+            int enemiesCount = FortressGarrison.EstimateEnemiesCount(part.site, part.parms, isLarge);
+            outExtraDescriptionRules.Add(new Rule_String("enemiesCount", enemiesCount.ToString()));
+            outExtraDescriptionRules.Add(new Rule_String("enemiesLabel", GetEnemiesLabel(part.site, enemiesCount)));
+        }
+
+        public override string GetPostProcessedThreatLabel(Site site, SitePart sitePart)
+        {
+            if (!FortressGarrison.IsMechanoidFaction(site.Faction))
+                return base.GetPostProcessedThreatLabel(site, sitePart);
+            if (site.Faction.IsPlayer) return null;
+            var fortress = site as FortressSite;
+            bool isLarge = fortress?.Blueprint?.IsLarge ??
+                ((fortress is { OriginalPoints: > 0f } ? fortress.OriginalPoints : sitePart.parms.threatPoints)
+                    >= FortressGarrison.MechLargeMinPoints);
+            int enemiesCount = FortressGarrison.EstimateEnemiesCount(site, sitePart.parms, isLarge);
+            return def.label + ": " + "KnownSiteThreatEnemyCountAppend".Translate(enemiesCount, "Enemies".Translate());
+        }
     }
 }

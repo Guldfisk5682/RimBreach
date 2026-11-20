@@ -17,9 +17,30 @@ namespace RimSiege.Fortress
         private static void Postfix(Thing thing, DestroyMode mode, Map map, BuildableDef buildingDef, ref Blueprint_Build __result)
         {
             if (__result != null || mode != DestroyMode.KillFinalize || thing is not Building ||
-                buildingDef.blueprintDef == null || map.Parent is not FortressSite { Blueprint: { } fortress } ||
-                thing.Faction == null || thing.Faction == Faction.OfPlayer || thing.Faction != map.ParentFaction ||
-                !fortress.ContainsGround(Api.GroundCellOf(thing.Position, map))) return;
+                buildingDef.blueprintDef == null ||
+                map.Parent is not FortressSite { Blueprint: { } fortress, Resolved: false } ||
+                thing.Faction == null || thing.Faction == Faction.OfPlayer || thing.Faction != map.ParentFaction) return;
+            IntVec3 ground = Api.GroundCellOf(thing.Position, map);
+            int floor = Api.FloorOf(thing.Position, map);
+            if (fortress.LayoutKind == FortressLayoutKind.MechCircularBunker)
+            {
+                bool inFortress = (floor == 0 || floor == 1) && fortress.ContainsStructure(thing.Position, map);
+                if (!inFortress) return;
+                CellRect footprint = GenAdj.OccupiedRect(thing.Position, thing.Rotation, buildingDef.Size);
+                if (!FortressMechMaintenance.OccupiedByHostile(footprint, map, thing.Faction) &&
+                    NativeConstruction.CanPlaceFortressRebuild(buildingDef, thing.Position, thing.Rotation, map, thing.Stuff))
+                {
+                    __result = GenConstruct.PlaceBlueprintForBuild(buildingDef, thing.Position, map, thing.Rotation,
+                        thing.Faction, thing.Stuff, thing.StyleSourcePrecept, thing.StyleDef);
+                }
+                else
+                {
+                    map.GetComponent<FortressRebuildQueue>().Add(thing);
+                }
+                return;
+            }
+
+            if (!fortress.ContainsGround(ground)) return;
             if (GenConstruct.CanPlaceBlueprintAt(buildingDef, thing.Position, thing.Rotation, map, stuffDef: thing.Stuff).Accepted)
                 __result = GenConstruct.PlaceBlueprintForBuild(buildingDef, thing.Position, map, thing.Rotation,
                     thing.Faction, thing.Stuff, thing.StyleSourcePrecept, thing.StyleDef);

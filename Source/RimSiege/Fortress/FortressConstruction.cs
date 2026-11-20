@@ -9,6 +9,17 @@ namespace RimSiege.Fortress
 {
     internal readonly record struct FactionMaterial(ThingDef Stuff, TerrainDef Slab)
     {
+        internal static ThingDef HardestLocalStone(Map map) =>
+            Find.World.NaturalRockTypesIn(map.Tile)
+                .Select(rock => rock.building.mineableThing)
+                .Where(chunk => chunk?.butcherProducts != null)
+                .SelectMany(chunk => chunk.butcherProducts)
+                .Select(product => product.thingDef)
+                .Where(stuff => stuff.stuffProps?.CanMake(ThingDefOf.Wall) == true)
+                .OrderByDescending(stuff => ThingDefOf.Wall.GetStatValueAbstract(StatDefOf.MaxHitPoints, stuff))
+                .ThenBy(stuff => stuff.defName)
+                .FirstOrDefault() ?? ThingDefOf.BlocksGranite;
+
         internal static FactionMaterial For(Map map)
         {
             IEnumerable<ThingDef> stone = Find.World.NaturalRockTypesIn(map.Tile)
@@ -19,8 +30,10 @@ namespace RimSiege.Fortress
                 .Where(stuff => stuff.stuffProps?.CanMake(ThingDefOf.Wall) == true)
                 .OrderByDescending(stuff => ThingDefOf.Wall.GetStatValueAbstract(StatDefOf.MaxHitPoints, stuff))
                 .ThenBy(stuff => stuff.defName);
-            IEnumerable<ThingDef> preferred = map.ParentFaction?.def.techLevel >= TechLevel.Spacer
-                ? new[] { ThingDefOf.Uranium, ThingDefOf.Plasteel }.Concat(stone) : stone;
+            IEnumerable<ThingDef> preferred = map.ParentFaction == Faction.OfMechanoids
+                ? new[] { ThingDefOf.Plasteel, ThingDefOf.Uranium }.Concat(stone)
+                : map.ParentFaction?.def.techLevel >= TechLevel.Spacer
+                    ? new[] { ThingDefOf.Uranium, ThingDefOf.Plasteel }.Concat(stone) : stone;
 
             foreach (ThingDef stuff in preferred.Append(ThingDefOf.BlocksGranite))
             {
@@ -51,7 +64,9 @@ namespace RimSiege.Fortress
                     BaseGen.symbolStack.Push("clear", CellRect.SingleCell(ladder.Foot));
             BaseGen.Generate();
             ThingDef stairs = DefDatabase<ThingDef>.GetNamed("PZ_Stairs");
-            TerrainDef finish = BaseGenUtility.CorrespondingTerrainDef(material.Stuff, beautiful: false, map.ParentFaction);
+            ThingDef floorMaterial = layout.Kind == FortressLayoutKind.MechCircularBunker
+                ? FactionMaterial.HardestLocalStone(map) : material.Stuff;
+            TerrainDef finish = BaseGenUtility.CorrespondingTerrainDef(floorMaterial, beautiful: false, map.ParentFaction);
             if (!finish.layerable) finish = TerrainDefOf.Concrete;
             TerrainDef sterile = DefDatabase<TerrainDef>.GetNamed("SterileTile");
             var refog = new HashSet<IntVec3>();
@@ -75,7 +90,7 @@ namespace RimSiege.Fortress
                     {
                         ThingDef def = part.Def == ThingDefOf.Wall ? wall : part.Def == ThingDefOf.Door ? door :
                             embrasure != null && part.Def.defName == "CE_Embrasure" ? embrasure : part.Def;
-                        ThingDef stuff = def.MadeFromStuff ? material.Stuff : null;
+                        ThingDef stuff = def.MadeFromStuff ? (part.StuffOverride ?? material.Stuff) : null;
                         Spawn(def, part.Cell, part.Rotation, stuff, map);
                     }
 
@@ -84,7 +99,7 @@ namespace RimSiege.Fortress
                         foreach (IntVec3 cell in room.AllCells)
                         {
                             if (tier.Openings.Contains(cell)) continue;
-                            map.terrainGrid.SetTerrain(cell, room.Sterile ? sterile : finish);
+                            if (!room.KeepFloor) map.terrainGrid.SetTerrain(cell, room.Sterile ? sterile : finish);
                             if (room.Roofed) map.roofGrid.SetRoof(cell, RoofDefOf.RoofConstructed);
                         }
                     }
@@ -97,7 +112,9 @@ namespace RimSiege.Fortress
                     }
                 }
 
-                ThingDef ladderDef = Raids.SiegeDefOf.RS_AssaultLadder;
+                ThingDef ladderDef = layout.Kind == FortressLayoutKind.MechCircularBunker
+                    ? DefDatabase<ThingDef>.GetNamed("RS_MechLift")
+                    : Raids.SiegeDefOf.RS_AssaultLadder;
                 foreach (FortressLadder ladder in layout.Ladders)
                 {
                     map.roofGrid.SetRoof(ladder.Foot, null);
@@ -113,7 +130,8 @@ namespace RimSiege.Fortress
                 Api.RequestFogRefresh(map);
             }
 
-            FortressFacilities.Furnish(map, layout, material);
+            if (layout.Kind != FortressLayoutKind.MechCircularBunker)
+                FortressFacilities.Furnish(map, layout, material);
 
             CellRect ground = Api.GroundRect(map);
             Log.Message($"[RimSiege] Fortress generated on tile {map.Tile}: {layout.Kind} {layout.Size} {layout.Outer}, gate {layout.Gate}, " +

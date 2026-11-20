@@ -92,12 +92,10 @@
         <li Class="RimSiege.Fortress.QuestNode_FortressSiteTile">
           <storeAs>siteTile</storeAs>
         </li>
-        <li Class="QuestNode_GetSitePartDefsByTagsAndFaction">
+        <li Class="RimSiege.Fortress.QuestNode_GetFortressSitePartsAndFaction">
           <storeAs>sitePartDefs</storeAs>
           <storeFactionAs>siteFaction</storeFactionAs>
-          <sitePartsTags>
-            <li><tag>RS_FortifiedOutpost</tag></li>
-          </sitePartsTags>
+          <sitePartDef>RS_FortifiedOutpost</sitePartDef>
           <mustBeHostileToFactionOf>$asker</mustBeHostileToFactionOf>
         </li>
         <li Class="QuestNode_GetDefaultSitePartsParams">

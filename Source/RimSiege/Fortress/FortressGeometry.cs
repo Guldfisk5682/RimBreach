@@ -9,7 +9,8 @@ namespace RimSiege.Fortress
     internal enum FortressLayoutKind
     {
         SquareKeep = 0,
-        HumanBastion = 1
+        HumanBastion = 1,
+        MechCircularBunker = 2
     }
 
     internal enum FortressSize
@@ -25,7 +26,11 @@ namespace RimSiege.Fortress
         CurtainWall = 2,
         Core = 3,
         Mortar = 4,
-        OutwardShoulder = 5
+        OutwardShoulder = 5,
+        Pillbox = 6,
+        ExteriorPicket = 7,
+        InteriorAmbush = 8,
+        Cupola = 9
     }
 
     internal readonly record struct FortressGate(
@@ -90,6 +95,40 @@ namespace RimSiege.Fortress
             size == FortressSize.Large ? Large : Compact;
     }
 
+    internal readonly record struct MechBunkerDimensions(
+        int Radius,
+        int FlatCap,
+        int WallThickness,
+        int CoreRadius,
+        int SiloCount,
+        int CupolaMin,
+        int CupolaMax)
+    {
+        internal static readonly MechBunkerDimensions Large = new(
+            Radius: 25,
+            FlatCap: 24,
+            WallThickness: 3,
+            CoreRadius: 6,
+            SiloCount: 4,
+            CupolaMin: 12,
+            CupolaMax: 16);
+
+        internal static readonly MechBunkerDimensions Compact = new(
+            Radius: 21,
+            FlatCap: 20,
+            WallThickness: 3,
+            CoreRadius: 5,
+            SiloCount: 2,
+            CupolaMin: 10,
+            CupolaMax: 14);
+
+        internal int OuterSide => FlatCap * 2 + 1;
+        internal int InnerRadius => FlatCap - WallThickness;
+
+        internal static MechBunkerDimensions For(FortressSize size) =>
+            size == FortressSize.Large ? Large : Compact;
+    }
+
     internal readonly record struct FortressShapeMask(
         int CurtainOffset,
         HashSet<IntVec3> Footprint,
@@ -110,6 +149,14 @@ namespace RimSiege.Fortress
         internal HashSet<IntVec3> Perimeter { get; }
         internal HashSet<IntVec3> PerimeterOuterEdge { get; }
         internal HashSet<IntVec3> RampartDeckGround { get; }
+        internal HashSet<IntVec3> ArmoredCapGround { get; }
+        internal HashSet<IntVec3> CoreInterior { get; }
+        internal IReadOnlyList<CellRect> MortarSilos { get; }
+        internal IReadOnlyList<HashSet<IntVec3>> LogisticsRooms { get; }
+        internal IReadOnlyList<HashSet<IntVec3>> AmmoRooms { get; }
+        internal IReadOnlyList<HashSet<IntVec3>> PowerCellRooms { get; }
+        internal IReadOnlyList<HashSet<IntVec3>> FacilityRooms { get; }
+        internal IReadOnlyList<HashSet<IntVec3>> CupolaGrounds { get; }
         internal CellRect CourtyardBounds { get; }
         internal CellRect Core { get; }
         internal IReadOnlyList<FortressGate> Gates { get; }
@@ -133,7 +180,15 @@ namespace RimSiege.Fortress
             List<FortressBastionZone> zones,
             List<FortressEmplacementSlot> slots,
             IntVec3[] curtainPosts,
-            IntVec3[] interiorPosts)
+            IntVec3[] interiorPosts,
+            HashSet<IntVec3> armoredCapGround = null,
+            HashSet<IntVec3> coreInterior = null,
+            List<CellRect> mortarSilos = null,
+            List<HashSet<IntVec3>> logisticsRooms = null,
+            List<HashSet<IntVec3>> ammoRooms = null,
+            List<HashSet<IntVec3>> powerCellRooms = null,
+            List<HashSet<IntVec3>> facilityRooms = null,
+            List<HashSet<IntVec3>> cupolaGrounds = null)
         {
             Kind = kind;
             Size = size;
@@ -143,6 +198,14 @@ namespace RimSiege.Fortress
             Perimeter = perimeter;
             PerimeterOuterEdge = perimeterOuterEdge;
             RampartDeckGround = rampartDeckGround;
+            ArmoredCapGround = armoredCapGround ?? new HashSet<IntVec3>();
+            CoreInterior = coreInterior ?? new HashSet<IntVec3>(core.ContractedBy(1).Cells);
+            MortarSilos = mortarSilos ?? new List<CellRect>();
+            LogisticsRooms = logisticsRooms ?? new List<HashSet<IntVec3>>();
+            AmmoRooms = ammoRooms ?? new List<HashSet<IntVec3>>();
+            PowerCellRooms = powerCellRooms ?? new List<HashSet<IntVec3>>();
+            FacilityRooms = facilityRooms ?? new List<HashSet<IntVec3>>();
+            CupolaGrounds = cupolaGrounds ?? new List<HashSet<IntVec3>>();
             CourtyardBounds = courtyardBounds;
             Core = core;
             Gates = gates;
@@ -152,10 +215,12 @@ namespace RimSiege.Fortress
             InteriorPosts = interiorPosts;
         }
 
-        internal static int OuterSideFor(FortressLayoutKind kind, FortressSize size) =>
-            kind == FortressLayoutKind.HumanBastion
-                ? BastionDimensions.For(size).OuterSide
-                : (size == FortressSize.Large ? FortressDimensions.Large.OuterSide : FortressDimensions.Compact.OuterSide);
+        internal static int OuterSideFor(FortressLayoutKind kind, FortressSize size) => kind switch
+        {
+            FortressLayoutKind.HumanBastion => BastionDimensions.For(size).OuterSide,
+            FortressLayoutKind.MechCircularBunker => MechBunkerDimensions.For(size).OuterSide,
+            _ => size == FortressSize.Large ? FortressDimensions.Large.OuterSide : FortressDimensions.Compact.OuterSide
+        };
 
         internal static int SectorBit(Rot4 side) => 1 << side.AsInt;
         internal static int SectorBit(int sector) => 1 << sector;
@@ -169,11 +234,14 @@ namespace RimSiege.Fortress
             internal static readonly FortressShapeMask LargeSquare = BuildShapeMask(FortressLayoutKind.SquareKeep, FortressSize.Large);
             internal static readonly FortressShapeMask CompactBastion = BuildShapeMask(FortressLayoutKind.HumanBastion, FortressSize.Compact);
             internal static readonly FortressShapeMask LargeBastion = BuildShapeMask(FortressLayoutKind.HumanBastion, FortressSize.Large);
+            internal static readonly FortressShapeMask CompactMechBunker = BuildShapeMask(FortressLayoutKind.MechCircularBunker, FortressSize.Compact);
+            internal static readonly FortressShapeMask LargeMechBunker = BuildShapeMask(FortressLayoutKind.MechCircularBunker, FortressSize.Large);
         }
 
         internal static FortressShapeMask ShapeFor(FortressLayoutKind kind, FortressSize size) => kind switch
         {
             FortressLayoutKind.HumanBastion => size == FortressSize.Large ? Shapes.LargeBastion : Shapes.CompactBastion,
+            FortressLayoutKind.MechCircularBunker => size == FortressSize.Large ? Shapes.LargeMechBunker : Shapes.CompactMechBunker,
             _ => size == FortressSize.Large ? Shapes.LargeSquare : Shapes.CompactSquare
         };
 
@@ -192,22 +260,41 @@ namespace RimSiege.Fortress
             }
 
             var footprint = new HashSet<IntVec3>();
-            BastionDimensions dim = BastionDimensions.For(size);
-            int half = dim.Half;
-            int shoulder = dim.Shoulder;
-            int rise = half - shoulder;
-            int run = half - dim.FlankInner;
-
-            foreach (IntVec3 cell in outer)
+            int curtainOffset;
+            int innerHalf;
+            if (kind == FortressLayoutKind.MechCircularBunker)
             {
-                int ax = Math.Abs(cell.x);
-                int az = Math.Abs(cell.z);
-                bool inBody = ax <= dim.CurtainOuter && az <= dim.CurtainOuter;
-                bool inBastion = ax >= dim.FlankInner && az >= dim.FlankInner &&
-                    (az - shoulder) * run <= rise * (ax - dim.FlankInner) &&
-                    (ax - shoulder) * run <= rise * (az - dim.FlankInner) &&
-                    ax + az <= 2 * half - 1;
-                if (inBody || inBastion) footprint.Add(cell);
+                MechBunkerDimensions mdim = MechBunkerDimensions.For(size);
+                double r2 = (mdim.Radius + 0.35) * (mdim.Radius + 0.35);
+                foreach (IntVec3 cell in outer)
+                {
+                    if (cell.x * cell.x + cell.z * cell.z <= r2)
+                        footprint.Add(cell);
+                }
+                curtainOffset = mdim.FlatCap;
+                innerHalf = (int)Math.Floor((mdim.Radius - FortressSiting.PreservedSkin) * 0.70);
+            }
+            else
+            {
+                BastionDimensions dim = BastionDimensions.For(size);
+                int half = dim.Half;
+                int shoulder = dim.Shoulder;
+                int rise = half - shoulder;
+                int run = half - dim.FlankInner;
+
+                foreach (IntVec3 cell in outer)
+                {
+                    int ax = Math.Abs(cell.x);
+                    int az = Math.Abs(cell.z);
+                    bool inBody = ax <= dim.CurtainOuter && az <= dim.CurtainOuter;
+                    bool inBastion = ax >= dim.FlankInner && az >= dim.FlankInner &&
+                        (az - shoulder) * run <= rise * (ax - dim.FlankInner) &&
+                        (ax - shoulder) * run <= rise * (az - dim.FlankInner) &&
+                        ax + az <= 2 * half - 1;
+                    if (inBody || inBastion) footprint.Add(cell);
+                }
+                curtainOffset = dim.CurtainOuter;
+                innerHalf = dim.CurtainOuter - FortressSiting.PreservedSkin;
             }
 
             var outerEdge = new HashSet<IntVec3>();
@@ -230,8 +317,7 @@ namespace RimSiege.Fortress
                 }
             }
 
-            int innerHalf = dim.CurtainOuter - FortressSiting.PreservedSkin;
-            return new FortressShapeMask(dim.CurtainOuter, footprint, outerEdge, preservedSkin, innerHalf * 2 + 1);
+            return new FortressShapeMask(curtainOffset, footprint, outerEdge, preservedSkin, innerHalf * 2 + 1);
         }
 
         // In RimWorld, a diagonal step requires both adjacent cardinal cells to be passable,

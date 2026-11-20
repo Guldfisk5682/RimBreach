@@ -8,7 +8,7 @@ namespace RimSiege.Fortress
 {
     public static class FortressDebugActions
     {
-        private static readonly (float Points, string Tier)[] Presets =
+        private static readonly (float Points, string Tier)[] HumanPresets =
         {
             (2500f, "Compact"),
             (4000f, "Compact"),
@@ -17,35 +17,36 @@ namespace RimSiege.Fortress
             (10000f, "Large, Reinforced")
         };
 
+        private static readonly (float Points, string Tier)[] MechPresets =
+        {
+            (5000f, "Compact"),
+            (6500f, "Compact"),
+            (8000f, "Large, Reinforced"),
+            (10000f, "Large, Reinforced")
+        };
+
         [DebugAction("RimBreach", "Spawn human bastion fortress", actionType = DebugActionType.Action,
             allowedGameStates = AllowedGameStates.Playing)]
-        private static List<DebugActionNode> SpawnHumanBastion() => BuildQuestNodes(
-            (scriptDefName, points) => SpawnBastionQuest(scriptDefName, points, FortressLayoutKind.HumanBastion));
+        private static List<DebugActionNode> SpawnHumanBastion() => BuildQuestNodes(HumanPresets,
+            (scriptDefName, points) => SpawnFortressQuest(scriptDefName, points, FortressLayoutKind.HumanBastion, forceMechanoids: false));
 
         [DebugAction("RimBreach", "Spawn mechanoid bastion fortress", actionType = DebugActionType.Action,
             allowedGameStates = AllowedGameStates.Playing)]
-        private static List<DebugActionNode> SpawnMechanoidBastion() => BuildQuestNodes(
-            (_, _) =>
-            {
-                const string message = "DEV: Mechanoid bastion fortress is not implemented yet (Stage 2).";
-                Log.Warning($"[RimSiege] {message}");
-                Messages.Message(message, MessageTypeDefOf.RejectInput, historical: false);
-            });
+        private static List<DebugActionNode> SpawnMechanoidBastion() => BuildQuestNodes(MechPresets,
+            (scriptDefName, points) => SpawnFortressQuest(scriptDefName, points, FortressLayoutKind.MechCircularBunker, forceMechanoids: true));
 
-        private static List<DebugActionNode> BuildQuestNodes(System.Action<string, float> invoke)
+        private static List<DebugActionNode> BuildQuestNodes((float Points, string Tier)[] presets,
+            System.Action<string, float> invoke) => new()
         {
-            var nodes = new List<DebugActionNode>
-            {
-                ModeNode("Contract (RS_FortressAssault)", "RS_FortressAssault", invoke),
-                ModeNode("Harassment (RS_FortressHarassment)", "RS_FortressHarassment", invoke)
-            };
-            return nodes;
-        }
+            ModeNode("Contract (RS_FortressAssault)", "RS_FortressAssault", presets, invoke),
+            ModeNode("Harassment (RS_FortressHarassment)", "RS_FortressHarassment", presets, invoke)
+        };
 
-        private static DebugActionNode ModeNode(string label, string scriptDefName, System.Action<string, float> invoke)
+        private static DebugActionNode ModeNode(string label, string scriptDefName,
+            (float Points, string Tier)[] presets, System.Action<string, float> invoke)
         {
             var group = new DebugActionNode(label);
-            foreach (var (points, tier) in Presets)
+            foreach (var (points, tier) in presets)
             {
                 float localPoints = points;
                 group.AddChild(new DebugActionNode($"{localPoints:F0} points ({tier})",
@@ -54,12 +55,22 @@ namespace RimSiege.Fortress
             return group;
         }
 
-        private static void SpawnBastionQuest(string scriptDefName, float points, FortressLayoutKind kind)
+        private static void SpawnFortressQuest(string scriptDefName, float points, FortressLayoutKind kind,
+            bool forceMechanoids)
         {
             QuestScriptDef script = DefDatabase<QuestScriptDef>.GetNamedSilentFail(scriptDefName);
             if (script == null)
             {
                 Messages.Message($"DEV: Missing quest script {scriptDefName}.", MessageTypeDefOf.RejectInput, historical: false);
+                return;
+            }
+
+            Faction mechFaction = forceMechanoids ? Faction.OfMechanoids : null;
+            if (forceMechanoids && (mechFaction == null || mechFaction.deactivated || mechFaction.def.raidsForbidden))
+            {
+                const string message = "DEV: Mechanoid faction is unavailable or deactivated in this save.";
+                Log.Warning($"[RimSiege] {message}");
+                Messages.Message(message, MessageTypeDefOf.RejectInput, historical: false);
                 return;
             }
 
@@ -69,6 +80,7 @@ namespace RimSiege.Fortress
             slate.Set("discoveryMethod", "QuestDiscoveredFromDebug".Translate());
             slate.Set("fortressIgnoreEligibility", true);
             slate.Set("fortressForcedLayout", kind);
+            if (forceMechanoids) slate.Set("fortressForcedFaction", mechFaction);
             if (home != null) slate.Set("map", home);
 
             IIncidentTarget target = home ?? (IIncidentTarget)Find.World;

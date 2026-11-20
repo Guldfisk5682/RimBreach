@@ -98,8 +98,7 @@ namespace RimSiege.Fortress
     {
         private static void Postfix(Lord __instance, Building building, DamageInfo dinfo)
         {
-            if (__instance.CurLordToil is LordToil_FortressDefense &&
-                __instance.LordJob is LordJob_FortressDefense defense)
+            if (__instance.LordJob is IFortressDefenseLord defense && defense.IsDefenseActive)
                 defense.Attacked(building, dinfo);
         }
     }
@@ -238,8 +237,8 @@ namespace RimSiege.Fortress
             if (map?.Parent is not FortressSite) return;
             foreach (Lord lord in map.lordManager.lords)
             {
-                if (lord.faction != instigator.Faction || lord.CurLordToil is not LordToil_FortressDefense ||
-                    lord.LordJob is not LordJob_FortressDefense defense) continue;
+                if (lord.faction != instigator.Faction ||
+                    lord.LordJob is not IFortressDefenseLord defense || !defense.IsDefenseActive) continue;
                 if (defense.HasPendingCounterSortie && lord.faction.HostileTo(__instance.Faction) &&
                     !IsMortarOrOverhead(dinfo, instigator))
                     defense.CancelCounterSortie();
@@ -273,8 +272,9 @@ namespace RimSiege.Fortress
                 !__instance.EmptyMagazine || gun.Map.Parent is not FortressSite) return;
             foreach (Lord lord in gun.Map.lordManager.lords)
             {
-                if (lord.faction != gun.Faction || lord.CurLordToil is not LordToil_FortressDefense) continue;
-                ((LordJob_FortressDefense)lord.LordJob).RequestResupply();
+                if (lord.faction != gun.Faction || lord.LordJob is not IFortressDefenseLord defense ||
+                    !defense.IsDefenseActive) continue;
+                defense.RequestResupply();
                 break;
             }
         }

@@ -15,6 +15,7 @@ namespace RimSiege.Fortress
         public TechLevel maxTech = TechLevel.Archotech;
         public float minPoints;
         public bool largeOnly;
+        public bool mechanoidEligible;
 
         internal bool AppliesTo(TechLevel tech, bool large, float points) =>
             tech >= minTech && tech <= maxTech && points >= minPoints && (!largeOnly || large);
@@ -29,14 +30,52 @@ namespace RimSiege.Fortress
 
     internal static class FortressLoot
     {
+        private const float MechEnergyRewardChance = 0.25f;
+
+        internal static void PlaceMechEnergyLoot(Map map, FortressSite site)
+        {
+            FortressBlueprint blueprint = site.Blueprint;
+            if (blueprint == null || blueprint.LayoutKind != FortressLayoutKind.MechCircularBunker ||
+                !blueprint.IsLarge || site.Resolved || blueprint.MechEnergyLootRolled) return;
+
+            // Mark rolled unconditionally so an empty draw is preserved across map re-entries.
+            blueprint.MechEnergyLootRolled = true;
+            if (!Rand.Chance(MechEnergyRewardChance)) return;
+
+            ThingDef[] pool = new[]
+            {
+                DefDatabase<ThingDef>.GetNamedSilentFail("VanometricPowerCell"),
+                DefDatabase<ThingDef>.GetNamedSilentFail("InfiniteChemreactor")
+            }.Where(def => def != null).ToArray();
+            if (pool.Length == 0) return;
+
+            ThingDef chosen = pool.RandomElement();
+            Thing reward = ThingMaker.MakeThing(chosen).MakeMinified();
+            FortressLayout rebuilt = blueprint.Rebuild(map);
+            IntVec3 center = blueprint.Outer.CenterCell;
+            IntVec3 preferred = center + new IntVec3(2, 0, 0);
+            IEnumerable<IntVec3> candidates = rebuilt?.Geometry.CoreInterior
+                .Where(cell => cell != center && cell.Standable(map) && cell.GetFirstBuilding(map) == null)
+                .OrderBy(cell => (cell - preferred).LengthHorizontalSquared)
+                ?? Enumerable.Empty<IntVec3>();
+
+            bool placed = candidates.Any(cell => CanPlaceAt(map, reward, cell) &&
+                    GenPlace.TryPlaceThing(reward, cell, map, ThingPlaceMode.Direct, Forbid)) ||
+                GenPlace.TryPlaceThing(reward, preferred, map, ThingPlaceMode.Near, Forbid,
+                    cell => Api.SameFloor(cell, center, map) && cell.GetFirstBuilding(map) == null &&
+                        CanPlaceAt(map, reward, cell));
+            if (!placed) WarnUnplaced(map, reward);
+        }
+
         internal static void PlaceHarassmentLoot(Map map, FortressSite site, IntVec3 lootShelf)
         {
             FortressBlueprint blueprint = site.Blueprint;
             if (!site.Harassment || site.Resolved || blueprint.HarassmentLootPlaced) return;
 
             TechLevel tech = map.ParentFaction.def.techLevel;
+            bool mechanoid = blueprint.LayoutKind == FortressLayoutKind.MechCircularBunker;
             if (!DefDatabase<FortressLootDef>.AllDefsListForReading
-                .Where(def => def.AppliesTo(tech, blueprint.IsLarge, site.OriginalPoints))
+                .Where(def => (!mechanoid || def.mechanoidEligible) && def.AppliesTo(tech, blueprint.IsLarge, site.OriginalPoints))
                 .TryRandomElementByWeight(def => def.weight, out FortressLootDef reward)) return;
 
             Thing item = reward.Create();
@@ -59,7 +98,9 @@ namespace RimSiege.Fortress
             CellRect core = rebuilt?.Geometry.Core ?? FortressLayout.KeepFootprint(blueprint.Outer,
                 blueprint.LayoutKind == FortressLayoutKind.HumanBastion
                     ? BastionDimensions.For(blueprint.Size).CoreSide
-                    : FortressDimensions.For(blueprint.Size).KeepSide);
+                    : blueprint.LayoutKind == FortressLayoutKind.MechCircularBunker
+                        ? MechBunkerDimensions.For(blueprint.Size).CoreRadius * 2 + 3
+                        : FortressDimensions.For(blueprint.Size).KeepSide);
             CellRect keep = core.ContractedBy(1);
             IntVec3 lootShelf = blueprint.LootShelfGround.IsValid
                 ? Api.CellOnFloor(blueprint.LootShelfGround, blueprint.LootShelfFloor, map)
@@ -74,7 +115,8 @@ namespace RimSiege.Fortress
                 techLevel = tech,
                 totalMarketValueRange = new FloatRange(value, value)
             });
-            IntVec3[] cells = keep.Where(cell => cell != lootShelf)
+            IEnumerable<IntVec3> rawCells = rebuilt?.Geometry.CoreInterior ?? (IEnumerable<IntVec3>)keep.Cells;
+            IntVec3[] cells = rawCells.Where(cell => cell != lootShelf)
                 .OrderByDescending(cell => cell.GetFirstBuilding(map) is Building_Storage)
                 .ThenByDescending(cell => cell.Roofed(map))
                 .ThenBy(cell => (cell - keep.CenterCell).LengthHorizontalSquared).ToArray();
