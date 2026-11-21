@@ -162,8 +162,12 @@ namespace RimSiege.Fortress
                 }
             }
 
-            // 3. Elevated Floor-1 oblique cupolas: 1 AutoChargeBlaster in the outer-diagonal 2x2 corner of each cupola.
-            if (chargeBlaster != null)
+            // 3. Elevated Floor-1 oblique cupolas: pick either AutoChargeBlaster or AutoInferno per fortress
+            //    as its oblique cupola turret, placed in the outer-diagonal 2x2 corner of each cupola.
+            ThingDef cupolaGun = chargeBlaster != null && inferno != null
+                ? (Rand.Bool ? chargeBlaster : inferno)
+                : (chargeBlaster ?? inferno);
+            if (cupolaGun != null)
             {
                 CellRect upperOuter = CellRect.FromLimits(
                     Api.CellOnFloor(layout.Outer.Min, 1, map),
@@ -177,7 +181,7 @@ namespace RimSiege.Fortress
                     IntVec3 preferred = Api.CellOnFloor(slot.Ground, 1, map);
                     CellRect search = CellRect.CenteredOn(preferred, 3, 3);
                     FortressDefensePiece gun = search
-                        .Select(cell => At(chargeBlaster, cell, slot.Facing, null, slot.CoveredSectors))
+                        .Select(cell => At(cupolaGun, cell, slot.Facing, null, slot.CoveredSectors))
                         .Where(candidate =>
                             Footprint(candidate).All(c => standing.Contains(Api.GroundCellOf(c, map))) &&
                             Fits(candidate, upperOuter))
