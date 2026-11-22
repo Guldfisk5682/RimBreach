@@ -187,9 +187,10 @@ namespace RimSiege.Raids.Artillery
         }
         internal ThingDef SmokeWeapon;
         internal bool TurretsOnly;
+        internal Faction ThreatFaction;
         private SmokeThreatCache threatCache;
         private SmokeThreatCache ThreatCache =>
-            threatCache ??= new SmokeThreatCache(includeColonists: !TurretsOnly);
+            threatCache ??= new SmokeThreatCache(includeColonists: !TurretsOnly, ThreatFaction);
 
         internal ThingWithComps FindSmokeWeapon(Pawn pawn) =>
             SmokeCombat.FindSmokeWeapon(pawn, SmokeWeapon ?? ArtillerySmokeDefOf.CE_Weapon_GrenadeSmoke);
@@ -201,6 +202,7 @@ namespace RimSiege.Raids.Artillery
         internal ArtillerySmoke LocalScreen(IntVec3 focus) => new()
         {
             Rally = focus, ThrowRange = ThrowRange, StartedScreen = true, IsLocal = true,
+            ThreatFaction = ThreatFaction, TurretsOnly = TurretsOnly,
             threatCache = ThreatCache
         };
 
@@ -244,7 +246,7 @@ namespace RimSiege.Raids.Artillery
             Pawn lead = eligible[0];
             IntVec3 entry = lead.Position;
             TraverseParms traverse = TraverseParms.For(lead);
-            Verb[] threats = CollectThreats(map);
+            Verb[] threats = SmokeThreatCache.CollectThreats(map, includeColonists: true, raid.TargetFaction);
             bool Exposed(IntVec3 cell) => IsExposed(cell, map, threats);
 
             outcome = "no sheltered rally within 20 cells";
@@ -297,6 +299,7 @@ namespace RimSiege.Raids.Artillery
                 Rally = rally,
                 Deadline = now + budget,
                 InitialPawns = lord.ownedPawns.Count(Ready),
+                ThreatFaction = raid.TargetFaction,
                 ThrowRange = throwRange,
                 StartedScreen = true,
                 Targets = targets,
@@ -316,8 +319,6 @@ namespace RimSiege.Raids.Artillery
             }
             return screen;
         }
-
-        private static Verb[] CollectThreats(Map map) => SmokeThreatCache.CollectThreats(map, includeColonists: true);
 
         private static bool IsExposed(IntVec3 cell, Map map, Verb[] threats) =>
             SmokeThreatCache.IsExposedToThreats(cell, map, threats);
@@ -829,6 +830,7 @@ namespace RimSiege.Raids.Artillery
             Scribe_Values.Look(ref IsLocal, "localScreen");
             Scribe_Defs.Look(ref SmokeWeapon, "smokeWeapon");
             Scribe_Values.Look(ref TurretsOnly, "turretsOnly");
+            Scribe_References.Look(ref ThreatFaction, "threatFaction");
             Scribe_Collections.Look(ref Assignments, "assignments", LookMode.Deep);
             Scribe_Collections.Look(ref Targets, "targets", LookMode.Deep);
             Scribe_Collections.Look(ref ApproachRoute, "approachRoute", LookMode.Value);

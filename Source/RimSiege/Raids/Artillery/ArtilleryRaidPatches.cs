@@ -19,15 +19,17 @@ namespace RimSiege.Raids.Artillery
         [ThreadStatic] private static ArtilleryRaid creatingAssault;
         [ThreadStatic] private static Map assaultMap;
 
-        internal static Lord MakeOriginalLord(ArtilleryRaid raid, Map map, List<Pawn> pawns)
+        internal static Lord MakeAssaultLord(ArtilleryRaid raid, Lord camp, List<Pawn> pawns)
         {
+            Map map = camp.Map;
             ArtilleryRaid previous = creatingAssault;
             Map previousMap = assaultMap;
             creatingAssault = raid;
             assaultMap = map;
             try
             {
-                Lord lord = LordMaker.MakeNewLord(raid.Faction, MakeOriginalJob(raid, map, pawns), map, pawns);
+                LordJob job = ((LordJob_Artillery)camp.LordJob).CreateAssaultJob(raid, map, pawns);
+                Lord lord = LordMaker.MakeNewLord(raid.Faction, job, map, pawns);
                 lord.inSignalLeave = raid.OriginalParms.inSignalEnd;
                 QuestUtility.AddQuestTag(lord, raid.OriginalParms.questTag);
                 if ((!raid.IndependentCrew || raid.AssaultCreated) && lord.LordJob is LordJob_StageThenAttack)

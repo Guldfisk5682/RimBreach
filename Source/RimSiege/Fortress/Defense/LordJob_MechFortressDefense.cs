@@ -720,7 +720,7 @@ namespace RimSiege.Fortress
 
             Thing target = Targeting.CombatTargets()
                 .Where(candidate => ValidTarget(candidate) && Ground.Outside(candidate.Position) &&
-                    FortressTargeting.IsActivePlayerCombatThreat(candidate, lord.faction, Map))
+                    FortressTargeting.IsActiveAttacker(candidate, lord.faction, Map))
                 .OrderBy(candidate => Api.Distance3D(Site.Blueprint.Outer.CenterCell, candidate.Position, Map))
                 .FirstOrDefault();
             if (target == null) return;

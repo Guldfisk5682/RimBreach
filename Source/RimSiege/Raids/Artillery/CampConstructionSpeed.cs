@@ -19,6 +19,7 @@ namespace RimSiege.Raids.Artillery
         {
             internal Lord Camp;
             internal Frame Frame;
+            internal Faction TargetFaction;
             internal float Multiplier = 1f;
             internal float WorkFactor = 1f;
         }
@@ -38,11 +39,12 @@ namespace RimSiege.Raids.Artillery
             var frame = driver.job.targetA.Thing as Frame;
             if (CampConstructionMaterials.PlacementFor(pawn, frame) is not { } placement) return new WorkRate();
             Lord camp = pawn.GetLord();
-            float multiplier = ((LordJob_Artillery)camp.LordJob).Raid.ConstructionSpeedMultiplier;
+            ArtilleryRaid raid = ((LordJob_Artillery)camp.LordJob).Raid;
             return new WorkRate
             {
                 Camp = camp, Frame = frame,
-                Multiplier = multiplier, WorkFactor = placement.ConstructionWorkFactor
+                Multiplier = raid.ConstructionSpeedMultiplier, WorkFactor = placement.ConstructionWorkFactor,
+                TargetFaction = raid.EffectiveTargetFaction
             };
         }
 
@@ -53,7 +55,7 @@ namespace RimSiege.Raids.Artillery
                 pawn.GetLord()?.LordJob is not LordJob_Artillery) return native;
             WorkRate rate = Rates.GetValue(driver, Resolve);
             return rate.Camp != null && pawn.GetLord() == rate.Camp && rate.Camp.CurLordToil is LordToil_Siege &&
-                pawn.Faction == rate.Frame.Faction && pawn.HostileTo(Faction.OfPlayer)
+                pawn.Faction == rate.Frame.Faction && pawn.HostileTo(rate.TargetFaction)
                 ? native * (RimSiegeMod.Settings.ScaleArtilleryConstruction ? rate.Multiplier : 1f) / rate.WorkFactor
                 : native;
         }

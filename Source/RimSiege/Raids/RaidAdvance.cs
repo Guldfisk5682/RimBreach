@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
+using RimSiege.Fortress;
 using ProjectZ;
 using RimSiege.Integration;
 using RimSiege.Raids.Artillery;
@@ -28,7 +29,8 @@ namespace RimSiege.Raids
             Map map = lord.Map;
             IntVec3 entry = lead.Position;
             IntVec3 goal = map.GetComponent<ArtilleryMap>().ForPawn(lead)?.Camp?.Goal ?? IntVec3.Invalid;
-            if (!goal.IsValid) goal = GenAI.RandomRaidDest(entry, map);
+            if (!goal.IsValid)
+                goal = FortressSite.SupportSite(lord)?.AssaultGoal ?? GenAI.RandomRaidDest(entry, map);
             if (!goal.IsValid) return;
 
             var paths = new List<(IntVec3 Cell, HashSet<IntVec3> Cells)>();

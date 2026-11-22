@@ -11,10 +11,12 @@ namespace RimSiege.Raids.Artillery
     {
         private const int CampCenterAttempts = 200;
 
-        internal static ArtilleryRaid Prepare(IncidentParms parms, float raidPoints, float pawnPoints)
+        internal static ArtilleryRaid Prepare(IncidentParms parms, float raidPoints, float pawnPoints,
+            Faction targetFaction = null, CellRect? objectiveArea = null, bool forceSupport = false)
         {
-            if (!SiegeRaidMap.Enabled || RimSiegeMod.Settings.ArtilleryChance == 0 ||
-                !(parms.target is Map map) || parms.faction == null || !parms.faction.HostileTo(Faction.OfPlayer))
+            if (!SiegeRaidMap.Enabled || (!forceSupport && RimSiegeMod.Settings.ArtilleryChance == 0) ||
+                parms.target is not Map map || parms.faction == null ||
+                !parms.faction.HostileTo(targetFaction ?? Faction.OfPlayer))
                 return null;
 
             bool grouped = IsGrouped(parms.raidArrivalMode);
@@ -42,16 +44,16 @@ namespace RimSiege.Raids.Artillery
                 kind = worker is RaidStrategyWorker_ImmediateAttackBreaching ? "Breaching"
                     : worker is RaidStrategyWorker_Siege ? "Siege" : "Ordinary";
             }
-            return BuildRaid(parms, raidPoints, pawnPoints, map, kind);
+            return BuildRaid(parms, raidPoints, pawnPoints, map, kind, targetFaction, objectiveArea, forceSupport);
         }
 
         private static ArtilleryRaid BuildRaid(IncidentParms parms, float raidPoints, float pawnPoints, Map map,
-            string kind)
+            string kind, Faction targetFaction, CellRect? objectiveArea, bool forceSupport)
         {
             ArtilleryProfileDef profile = DefDatabase<ArtilleryProfileDef>.AllDefsListForReading
                 .FirstOrDefault(p => p.kind == kind);
-            if (profile == null || profile.BelowGate(raidPoints) ||
-                !Rand.Chance(RimSiegeMod.Settings.ArtilleryChance / 10f)) return null;
+            if (profile == null || (!forceSupport && (profile.BelowGate(raidPoints) ||
+                !Rand.Chance(RimSiegeMod.Settings.ArtilleryChance / 10f)))) return null;
 
             float personnel = profile.PersonnelPoints(raidPoints, pawnPoints);
             bool breaching = parms.raidStrategy.Worker is RaidStrategyWorker_ImmediateAttackBreaching;
@@ -78,24 +80,25 @@ namespace RimSiege.Raids.Artillery
             {
                 Kind = (ArtilleryRaidKind)System.Enum.Parse(typeof(ArtilleryRaidKind), kind),
                 Phase = ArtilleryPhase.Planned, RaidPoints = raidPoints, PawnPoints = personnel,
-                Faction = parms.faction, Strategy = parms.raidStrategy, OriginalParms = parms,
+                Faction = parms.faction, TargetFaction = targetFaction, Strategy = parms.raidStrategy, OriginalParms = parms,
                 Camp = new CampPlan { Guns = guns }, Rolled = true, Selected = true,
                 IndependentCrew = kind != "Siege", ConstructoidCount = constructoids,
                 EscortMechKinds = escortKinds,
                 ConstructionSpeedMultiplier = profile.ConstructionSpeed(raidPoints)
             };
             if (IsGrouped(parms.raidArrivalMode)) return raid;
-            return Plan(raid, map, parms.spawnCenter, guns) ? raid : null;
+            return Plan(raid, map, parms.spawnCenter, guns, objectiveArea: objectiveArea) ? raid : null;
         }
 
         internal static bool IsGrouped(PawnsArrivalModeDef arrival) =>
             arrival == PawnsArrivalModeDefOf.EdgeWalkInGroups || arrival?.defName == "EdgeDropGroups";
 
         internal static bool Plan(ArtilleryRaid raid, Map map, IntVec3 entry, List<ArtilleryPlacement> guns,
-            int divisions = 1, IReadOnlyList<CampPlan> otherCamps = null, ArtilleryTargets.Catalog catalog = null)
+            int divisions = 1, IReadOnlyList<CampPlan> otherCamps = null, ArtilleryTargets.Catalog catalog = null,
+            CellRect? objectiveArea = null)
         {
-            IntVec3 goal = GenAI.RandomRaidDest(entry, map);
-            SupportRoute route = SupportRoute.Build(map, entry, goal);
+            IntVec3 goal = objectiveArea?.CenterCell ?? GenAI.RandomRaidDest(entry, map);
+            SupportRoute route = SupportRoute.Build(map, entry, goal, targetFaction: raid.TargetFaction);
             if (route == null) return false;
             var siting = route.PlanningTargets(catalog: catalog);
             if (siting.Targets.Count == 0) return false;
@@ -104,7 +107,12 @@ namespace RimSiege.Raids.Artillery
                 ranges = guns.ToDictionary(g => g, g => !g.IsSupport ? 0f : CeArtillerySight.EffectiveRange(map, raid.Faction,
                     new EmplacementSpec(g.Def, g.Stuff, g.Ammo, entry, Rot4.North, null)));
             IEnumerable<IntVec3> centers = Centers(map, entry, siting, guns, ranges,
-                System.Math.Max(1, CampCenterAttempts / divisions));
+                System.Math.Max(1, CampCenterAttempts / divisions), objectiveArea);
+            if (objectiveArea is { } bounds)
+            {
+                CellRect clearance = bounds.ExpandedBy(CampPlanner.SiteSurveyRadius);
+                centers = centers.Where(cell => !clearance.Contains(cell));
+            }
             if (otherCamps != null)
                 centers = centers.Where(center => otherCamps.All(other => IsoFloor.Distance3D(center, other.Center, map) >
                     CampSupplies.Radius * 2));
@@ -116,13 +124,26 @@ namespace RimSiege.Raids.Artillery
         }
 
         private static IEnumerable<IntVec3> Centers(Map map, IntVec3 entry, CampSiting siting,
-            List<ArtilleryPlacement> guns, IReadOnlyDictionary<ArtilleryPlacement, float> ranges, int attempts)
+            List<ArtilleryPlacement> guns, IReadOnlyDictionary<ArtilleryPlacement, float> ranges, int attempts,
+            CellRect? objectiveArea)
         {
-            IntVec3 native = CampEntrySearch.Find(entry, map);
             var direct = guns.Where(g => g.IsDirectSupport).ToList();
+            IntVec3 native = objectiveArea == null ? CampEntrySearch.Find(entry, map) : IntVec3.Invalid;
             if (direct.Count == 0)
             {
-                yield return native;
+                if (objectiveArea == null) yield return native;
+                else
+                {
+                    var ground = IsoFloor.GroundRect(map).ContractedBy(14);
+                    CellRect searchArea = CellRect.CenteredOn(entry, 60).ClipInsideRect(ground);
+                    if (searchArea.IsEmpty) yield break;
+                    var sampled = new HashSet<IntVec3>();
+                    for (int i = 0; i < attempts; i++)
+                    {
+                        IntVec3 cell = searchArea.RandomCell;
+                        if (sampled.Add(cell) && !cell.Roofed(map)) yield return cell;
+                    }
+                }
                 yield break;
             }
             IntVec3 searchTarget = siting.BreachAnchor;

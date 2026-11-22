@@ -58,7 +58,8 @@ namespace RimSiege.Raids.Artillery
                 // force or every reserved operator to be spawned to deploy it.
                 var toil = (LordToil_Siege)lord.CurLordToil;
                 Pawn traveller = lord.ownedPawns.First(p => ArtilleryCrew.CanBuild(toil, p));
-                route = SupportRoute.For(raid) ?? SupportRoute.Build(map, traveller.Position, raid.Camp.Goal, traveller);
+                route = SupportRoute.For(raid) ?? SupportRoute.Build(map, traveller.Position, raid.Camp.Goal,
+                    traveller, raid.TargetFaction);
             }
             else route = SupportRoute.Restore(map, raid);
             if (route == null) return false;
@@ -167,7 +168,7 @@ namespace RimSiege.Raids.Artillery
 
         internal static void TransferToAssault(ArtilleryRaid raid, Lord camp, List<Pawn> pawns)
         {
-            if (pawns.Count == 0 || (raid.AssaultEnded && !raid.KeepsSeparateCrew)) return;
+            if (pawns.Count == 0 || (raid.AssaultEnded && (raid.IsFortressSupport || !raid.KeepsSeparateCrew))) return;
             if (raid.AssaultLord != null && !camp.Map.lordManager.lords.Contains(raid.AssaultLord)) raid.AssaultLord = null;
             if (raid.AssaultLord == null && raid.KeepsSeparateCrew) raid.AssaultEnded = false;
             camp.RemovePawns(pawns);
@@ -177,7 +178,7 @@ namespace RimSiege.Raids.Artillery
                 if (pawn.jobs?.curJob != null) pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
             if (raid.AssaultLord == null)
             {
-                raid.AssaultLord = ArtilleryRaidPatches.MakeOriginalLord(raid, camp.Map, pawns);
+                raid.AssaultLord = ArtilleryRaidPatches.MakeAssaultLord(raid, camp, pawns);
                 // Fresh lords start with lastPawnHarmTick = -99999; seed from the camp/now so
                 // Trigger_HighValueThingsAround does not evaluate immediately on leaving camp.
                 if (raid.AssaultLord != null && raid.AssaultLord.lastPawnHarmTick < 0)
@@ -266,7 +267,8 @@ namespace RimSiege.Raids.Artillery
         internal static void ReassignOperators(ArtilleryRaid raid, Lord camp)
         {
             if (!((LordJob_Artillery)camp.LordJob).RequiresOperators) return;
-            if ((raid.AssaultEnded && !raid.KeepsSeparateCrew) || camp.CurLordToil is not LordToil_Siege toil) return;
+            if ((raid.AssaultEnded && !raid.IsFortressSupport && !raid.KeepsSeparateCrew) ||
+                camp.CurLordToil is not LordToil_Siege toil) return;
             Lord assault = raid.AssaultLord;
             if (assault != null && !camp.Map.lordManager.lords.Contains(assault)) assault = null;
             Pawn[] nearby = ArtilleryCrew.NearbyReplacements(raid, camp).ToArray();
@@ -321,7 +323,7 @@ namespace RimSiege.Raids.Artillery
 
         // Camp lord emptied after TransferToAssault must NOT salvage guns yet: mechanoid
         // batteries stay hostile and fire while the assault lord is still alive.
-        internal static void Abandon(ArtilleryRaid raid, Map map)
+        internal static void Abandon(ArtilleryRaid raid, Map map, bool retainWithAssault = true)
         {
             raid.InfantryHold?.Stop();
             raid.InfantryHold = null;
@@ -331,9 +333,9 @@ namespace RimSiege.Raids.Artillery
             if (raid.Camp == null || raid.Phase == ArtilleryPhase.Abandoned) return;
             // GotoToil cleans the siege before initializing the transfer toil.
             // Keep the autonomous battery registered across that handoff gap.
-            bool retainBattery = AssaultStillLive(raid, map) ||
+            bool retainBattery = retainWithAssault && (AssaultStillLive(raid, map) ||
                 (raid.Kind == ArtilleryRaidKind.Mechanoid && !raid.AssaultEnded && raid.CampLord != null &&
-                 map.lordManager.lords.Contains(raid.CampLord));
+                 map.lordManager.lords.Contains(raid.CampLord)));
             foreach (ArtilleryPlacement item in Placements(raid.Camp))
             {
                 item.Operator = null;

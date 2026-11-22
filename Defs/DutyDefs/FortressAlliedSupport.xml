@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <DutyDef>
+    <defName>RS_FortressRecoverCamp</defName>
+    <thinkNode Class="ThinkNode_Priority">
+      <subNodes>
+        <li Class="RimSiege.Fortress.JobGiver_FortressRecoverCamp" />
+        <li Class="JobGiver_ExitMapBest">
+          <defaultLocomotion>Jog</defaultLocomotion>
+          <jobMaxDuration>200</jobMaxDuration>
+        </li>
+        <li Class="ProjectZ.JobGiver_AIClimb">
+          <exit>true</exit>
+        </li>
+      </subNodes>
+    </thinkNode>
+  </DutyDef>
+</Defs>

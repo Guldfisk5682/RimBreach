@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using ProjectZ;
+using RimSiege.Raids.Artillery;
 using RimWorld;
 using Verse;
 using Verse.AI;
@@ -20,21 +21,25 @@ namespace RimSiege.Fortress
 
         internal static bool IsCombatTarget(Thing thing) => thing is Pawn or Building_Turret;
 
-        internal static bool IsActivePlayerCombatThreat(Thing target, Faction faction, Map map)
+        internal static bool IsActiveAttacker(Thing target, Faction faction, Map map)
         {
             if (!IsCombatTarget(target) || target is not IAttackTarget attack ||
                 !target.Spawned || target.Map != map ||
-                target.Faction != Faction.OfPlayer || !faction.HostileTo(Faction.OfPlayer) ||
+                !faction.HostileTo(target.Faction) ||
                 attack.ThreatDisabled(null))
                 return false;
+            if (target.Faction != Faction.OfPlayer)
+                return map.Parent is FortressSite site && target.Faction == site.AlliedFaction &&
+                    (target is Pawn ally && site.IsSupportPawn(ally) && !ally.Downed && !ally.Dead ||
+                     target is Building gun && ArtilleryRegistry.Find(gun)?.TargetFaction == faction);
             if (target is Pawn pawn)
                 return !pawn.Downed && !pawn.Dead &&
                     (!pawn.IsAnimal || pawn.training?.HasLearned(TrainableDefOf.Release) == true);
             return true;
         }
 
-        internal bool HasPlayerCombatThreats() =>
-            CombatTargets().Any(target => IsActivePlayerCombatThreat(target, faction, map));
+        internal bool HasActiveAttackers() =>
+            CombatTargets().Any(target => IsActiveAttacker(target, faction, map));
 
         internal static Thing PreferCombat(Pawn pawn, Func<Thing> find)
         {

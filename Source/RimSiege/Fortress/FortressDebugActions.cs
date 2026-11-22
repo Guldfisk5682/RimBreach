@@ -86,7 +86,7 @@ namespace RimSiege.Fortress
             IIncidentTarget target = home ?? (IIncidentTarget)Find.World;
             if (!script.CanRun(slate.DeepCopy(), target))
             {
-                string error = $"DEV: Cannot generate {scriptDefName} ({kind}, {points:F0} pts). Check eligible hostile faction and nearby site tiles.";
+                string error = $"DEV: Cannot generate {scriptDefName} ({kind}, {points:F0} pts). Check site tiles, hostile factions, and eligible non-hostile contract issuers.";
                 Log.Warning($"[RimSiege] {error}");
                 Messages.Message(error, MessageTypeDefOf.RejectInput, historical: false);
                 return;

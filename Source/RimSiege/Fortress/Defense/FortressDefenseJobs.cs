@@ -216,7 +216,7 @@ namespace RimSiege.Fortress
             if (pawn.GetLord()?.LordJob is not LordJob_FortressSortie sortie) return null;
             Map map = pawn.Map;
             var targets = sortie.Targeting.CombatTargets()
-                .Where(candidate => FortressTargeting.IsActivePlayerCombatThreat(candidate, pawn.Faction, map) &&
+                .Where(candidate => FortressTargeting.IsActiveAttacker(candidate, pawn.Faction, map) &&
                     sortie.Ground.Outside(candidate.Position) && sortie.ValidateAttackTarget(pawn, candidate))
                 .OrderBy(candidate => Api.Distance3D(pawn.Position, candidate.Position, map))
                 .Take(4);
@@ -298,6 +298,7 @@ namespace RimSiege.Fortress
             if (pawn.WorkTagIsDisabled(WorkTags.Violent) ||
                 pawn.mindState.duty.focusSecond.Thing is not Building_TurretGunCE gun ||
                 gun.MannableComp == null || !gun.Spawned || gun.Faction != pawn.Faction ||
+                (pawn.GetLord()?.LordJob is LordJob_FortressDefense defense && !defense.CanManGun(gun)) ||
                 !pawn.CanReserveAndReach(gun, PathEndMode.InteractionCell, Danger.Deadly)) return null;
             if (gun.GetAmmo() is { UseAmmo: true, EmptyMagazine: true }) return FortressSupportJobs.Reload(pawn, gun);
             Job job = JobMaker.MakeJob(JobDefOf.ManTurret, gun);

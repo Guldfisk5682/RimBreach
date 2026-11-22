@@ -131,11 +131,10 @@ namespace RimSiege.Raids.Artillery
         {
             if (raid.AssaultEnded) return;
             raid.AssaultEnded = true;
-            // A completed first wave does not cancel independent construction or
-            // manning. Crew retain their own native retreat/non-hostility paths.
-            if (raid.KeepsSeparateCrew) return;
+            // Independent crews and Offer camps can finish their support after the assault ends.
+            if (raid.KeepsSeparateCrew || raid.IsFortressSupport) return;
             Lord camp = raid.CampLord;
-            if (camp != null && map.lordManager.lords.Contains(camp)) camp.ReceiveMemo("ArtilleryRaidEnded");
+            if (camp != null && map.lordManager.lords.Contains(camp)) camp.ReceiveMemo(LordJob_Artillery.RaidEndedMemo);
             else ArtilleryCamp.Abandon(raid, map);
         }
 

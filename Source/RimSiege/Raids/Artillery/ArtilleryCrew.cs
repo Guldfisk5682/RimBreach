@@ -118,6 +118,14 @@ namespace RimSiege.Raids.Artillery
                 ArtilleryCamp.RefreshConstruction(raid, camp.Map);
                 ArtilleryCamp.RefreshOperators(raid, camp);
             }
+            if (raid.IsFortressSupport && raid.AssaultEnded && !raid.Camp.Guns.Any(gun => gun.IsSupport &&
+                (Pending(gun) || gun.Building is { Spawned: true } building &&
+                    building.TryGetComp<CompBreakdownable>()?.BrokenDown != true &&
+                    (!gun.NeedsOperator || gun.Operator != null))))
+            {
+                camp.ReceiveMemo(LordJob_Artillery.RaidEndedMemo);
+                return;
+            }
             HashSet<Pawn> crew = Retained(raid, camp);
             if (!HasConstruction(raid))
                 raid.Phase = crew.Count != 0 ? ArtilleryPhase.Supporting : ArtilleryPhase.Assaulting;

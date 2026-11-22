@@ -2,7 +2,7 @@
 <LanguageData>
   <RS_EnhancedAssault>Enhanced siege assaults</RS_EnhancedAssault>
   <RS_EnhancedAssaultDescription>Raiders carry a limited number of ladder kits and can take over from fallen carriers. Eligible raids that arrive together may deploy an artillery camp, and sapper raids field more demolition troops. Raiders prioritize existing entrances and shared routes.</RS_EnhancedAssaultDescription>
-  <RS_ArtilleryChance>Chance of a special enhanced raid: {0}</RS_ArtilleryChance>
+  <RS_ArtilleryChance>Chance of a special enhanced raid outside fortress offers: {0}</RS_ArtilleryChance>
   <RS_StubbornEnemies>Stubborn enemies</RS_StubbornEnemies>
   <RS_StubbornEnemiesDescription>Human raiders are harder to drive off once they gain ground in an assault.</RS_StubbornEnemiesDescription>
   <RS_LadderCarrier>[Ladder carrier]</RS_LadderCarrier>

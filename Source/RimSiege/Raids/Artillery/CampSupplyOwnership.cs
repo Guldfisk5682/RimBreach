@@ -52,6 +52,13 @@ namespace RimSiege.Raids.Artillery
                     yield return holder.Position;
         }
 
+        internal IEnumerable<Thing> ItemsFor(ArtilleryRaid raid)
+        {
+            int key = Key(raid);
+            foreach (var supply in supplies)
+                if (supply.Value == key) yield return supply.Key;
+        }
+
         internal void Release(int key)
         {
             foreach (Thing thing in supplies.Where(pair => pair.Value == key).Select(pair => pair.Key).ToArray())

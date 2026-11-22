@@ -15,7 +15,7 @@
     </questNameRules>
     <questDescriptionRules>
       <rulesStrings>
-        <li>questDescription-&gt;[asker_nameFull] of [asker_faction_name] asks you to capture a fortress held by [siteFaction_name]. The fortress is garrisoned by about [enemiesCount] [enemiesLabel]. [asker_nameFull] promises a generous reward once the outpost falls, and you may take whatever loot you find inside.</li>
+        <li>questDescription-&gt;[asker_nameFull] of [asker_faction_name] asks you to help capture a fortress held by [siteFaction_name]. The fortress is garrisoned by about [enemiesCount] [enemiesLabel]. [asker_faction_name] will send troops to join the assault one hour after you arrive, approaching from the same side as your forces. [asker_nameFull] promises a generous reward once the outpost falls, and you may take whatever loot you find inside.</li>
       </rulesStrings>
     </questDescriptionRules>
     <root Class="QuestNode_SubScript">
@@ -64,31 +64,7 @@
         <li Class="QuestNode_SubScript">
           <def>Util_RandomizePointsChallengeRating</def>
         </li>
-        <li Class="QuestNode_EvaluateSimpleCurve">
-          <value>$challengeRating</value>
-          <storeAs>fortressStarFactor</storeAs>
-          <curve>
-            <points>
-              <li>(1,0.8)</li>
-              <li>(2,1)</li>
-              <li>(3,1.2)</li>
-            </points>
-          </curve>
-        </li>
-        <li Class="QuestNode_Multiply">
-          <value1>$pointsOriginal</value1>
-          <value2>$fortressStarFactor</value2>
-          <storeAs>points</storeAs>
-        </li>
-        <li Class="QuestNode_IsSet">
-          <name>fortressHarassment</name>
-          <elseNode Class="QuestNode_GetPawn">
-            <storeAs>asker</storeAs>
-            <mustBeFactionLeader>true</mustBeFactionLeader>
-            <allowPermanentEnemyFaction>false</allowPermanentEnemyFaction>
-            <hostileWeight>0.15</hostileWeight>
-          </elseNode>
-        </li>
+        <li Class="RimSiege.Fortress.QuestNode_FortressPoints" />
         <li Class="RimSiege.Fortress.QuestNode_FortressSiteTile">
           <storeAs>siteTile</storeAs>
         </li>
@@ -96,7 +72,6 @@
           <storeAs>sitePartDefs</storeAs>
           <storeFactionAs>siteFaction</storeFactionAs>
           <sitePartDef>RS_FortifiedOutpost</sitePartDef>
-          <mustBeHostileToFactionOf>$asker</mustBeHostileToFactionOf>
         </li>
         <li Class="QuestNode_GetDefaultSitePartsParams">
           <tile>$siteTile</tile>

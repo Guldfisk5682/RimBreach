@@ -19,11 +19,11 @@ namespace RimSiege.Raids.Artillery
         internal static void BuildingChanged(Building building, Map map)
         {
             if (map == null) return;
-            bool connection = building is Building_SiegeLadder || building.def.IsDoor ||
-                building.Faction == Faction.OfPlayer && building.def.passability == Traversability.Impassable;
+            bool connection = building is Building_SiegeLadder || building.def.IsDoor;
             foreach (ArtilleryRaid raid in map.GetComponent<ArtilleryMap>().ActiveRaids)
             {
-                if (connection) SupportRoute.Invalidate(raid);
+                if (connection || building.Faction == raid.EffectiveTargetFaction &&
+                    building.def.passability == Traversability.Impassable) SupportRoute.Invalidate(raid);
                 else
                     foreach (IntVec3 cell in building.OccupiedRect())
                         if (SupportRoute.Affects(raid, cell))

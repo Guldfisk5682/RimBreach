@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
 using Verse;
@@ -7,6 +8,8 @@ namespace RimSiege.Raids.Artillery
 {
     public class LordJob_Artillery : LordJob_Siege
     {
+        internal const string RaidEndedMemo = "ArtilleryRaidEnded";
+
         private int raidKey;
         private ArtilleryRaidKind kind;
         private bool pendingInfantryAssault;
@@ -23,8 +26,11 @@ namespace RimSiege.Raids.Artillery
 
         internal int RaidKey => raidKey;
         internal ArtilleryRaid Raid => Map.GetComponent<ArtilleryMap>().ForKey(raidKey);
-        internal bool IsNativeAssault => kind == ArtilleryRaidKind.Siege && lord?.CurLordToil is LordToil_AssaultColony;
+        internal bool IsNativeAssault => UsesNativeAssault && lord?.CurLordToil is LordToil_AssaultColony;
 
+        internal virtual bool UsesNativeAssault => kind == ArtilleryRaidKind.Siege;
+        internal virtual LordJob CreateAssaultJob(ArtilleryRaid raid, Map map, List<Pawn> pawns) =>
+            ArtilleryRaidPatches.MakeOriginalJob(raid, map, pawns);
         internal virtual bool RequiresOperators => true;
         internal virtual Pawn ConstructionWorker => null;
         internal virtual bool PrepareCrew() => ArtilleryCamp.AssignOperators(Raid, lord);
@@ -53,7 +59,7 @@ namespace RimSiege.Raids.Artillery
             for (int i = 0; i < siegeAssault.triggers.Count; i++)
                 if (siegeAssault.triggers[i] is Trigger_PawnHarmed or Trigger_FractionPawnsLost or Trigger_TicksPassed)
                     siegeAssault.triggers[i] = new Trigger_ArtilleryInfantryAssault(siegeAssault.triggers[i]);
-            if (kind != ArtilleryRaidKind.Siege)
+            if (!UsesNativeAssault)
             {
                 LordToil failed = new LordToil_ArtilleryTransfer();
                 graph.AddToil(failed);
@@ -69,7 +75,7 @@ namespace RimSiege.Raids.Artillery
                     transition.AddSource(smoke);
 
             var raidEnded = new Transition(siege, exit);
-            raidEnded.AddTrigger(new Trigger_Memo("ArtilleryRaidEnded"));
+            raidEnded.AddTrigger(new Trigger_Memo(RaidEndedMemo));
             graph.AddTransition(raidEnded);
             return graph;
         }
@@ -151,7 +157,7 @@ namespace RimSiege.Raids.Artillery
                 ArtilleryCamp.ReleaseInfantry(raid, lord, force: true);
             }
             if (lord.CurLordToil is LordToil_Siege && raid.Phase == ArtilleryPhase.Assaulting && !raid.SuppliesDelivered)
-                lord.ReceiveMemo("NoBuilders");
+                lord.ReceiveMemo(raid.IsFortressSupport && raid.AssaultEnded ? RaidEndedMemo : "NoBuilders");
             else if (IsNativeAssault && !raid.InfantryReleased)
                 ArtilleryCamp.ActivateNativeAssault(raid, lord);
         }

@@ -74,8 +74,8 @@ namespace RimSiege.Fortress
         }
         private static bool OnSector(Pawn pawn, int sector) =>
             pawn.mindState.duty.tag == (Patrol(pawn) ? PatrolTag + sector : sector.ToString());
-        private static bool Indirect(Building_TurretGunCE gun) =>
-            gun.AttackVerb is Verb_ShootMortarCE || gun.def.building.IsMortar;
+        internal static bool Indirect(Building_TurretGunCE gun) =>
+            gun.def.building.IsMortar || FortressNonMortarHitScope.IsOverheadVerb(gun.AttackVerb);
 
         internal void RememberPost(Pawn pawn)
         {
@@ -238,7 +238,8 @@ namespace RimSiege.Fortress
             var assigned = new HashSet<Pawn>();
             int aimOffset = interiorAimCursor;
             interiorAimCursor = (interiorAimCursor + 2) & int.MaxValue;
-            foreach (Building_TurretGunCE gun in Guns.Where(gun => Usable(gun) && gun.Active && gun.MannableComp != null)
+            foreach (Building_TurretGunCE gun in Guns.Where(gun => Usable(gun) && gun.Active && gun.MannableComp != null &&
+                    defense.CanManGun(gun))
                 .OrderBy(gun => ground.OnCurtain(gun.Position))
                 .ThenByDescending(gun => incumbents.Contains(gun)))
             {
@@ -580,6 +581,7 @@ namespace RimSiege.Fortress
         private bool EligibleGun(LordJob_FortressDefense defense, int sector, Building_TurretGunCE gun)
         {
             if (!Usable(gun) || !gun.Active || gun.MannableComp == null ||
+                !defense.CanManGun(gun) ||
                 defense.Line == FortressLine.Keep && (!ground.InKeep(gun.Position) || Api.FloorOf(gun.Position, map) <= 0) ||
                 ground.OnCurtain(gun.Position) && defense.Line != FortressLine.Curtain ||
                 ground.TowerMiddle(gun.Position) && !defense.MiddleOpen(gun.Position, sector))

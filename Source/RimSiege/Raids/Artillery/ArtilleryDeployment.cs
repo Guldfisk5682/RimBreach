@@ -94,7 +94,7 @@ namespace RimSiege.Raids.Artillery
             {
                 IntVec3 follow = screen?.LastFollowCell is { IsValid: true } last ? last : screen?.Rally ??
                     (fallbackRally is { IsValid: true } rally ? rally : builder.Position);
-                screen ??= new ArtillerySmoke { Rally = follow };
+                screen ??= new ArtillerySmoke { Rally = follow, ThreatFaction = raid.TargetFaction };
                 int now = GenTicks.TicksGame;
                 if (ArtillerySmoke.Eligible(raid))
                 {

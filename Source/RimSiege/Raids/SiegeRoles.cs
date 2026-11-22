@@ -1,6 +1,7 @@
 using System.Linq;
 using CombatExtended;
 using HarmonyLib;
+using RimSiege.Fortress;
 using RimSiege.Raids.Artillery;
 using RimWorld;
 using Verse;
@@ -77,7 +78,8 @@ namespace RimSiege.Raids
             !IsHumanRaidEscortMech(pawn) && CanParticipateInTacticalAssault(pawn) && pawn.Spawned &&
             ProjectZ.RaidClimb.Climber(pawn) &&
             (Ordinary(pawn.GetLord()) || LadderAssaultDuty(pawn)) &&
-            ProjectZ.RaidClimb.MayClimb(pawn, false) &&
+            (ProjectZ.RaidClimb.MayClimb(pawn, false) ||
+                FortressSite.SupportSite(pawn)?.CanCoordinateWith(pawn.Faction) == true) &&
             !party.Operators.Contains(pawn) && !pawn.Map.GetComponent<ArtilleryMap>().IsOperator(pawn) &&
             pawn.CurJobDef != JobDefOf.ManTurret && !Demolition(pawn);
 

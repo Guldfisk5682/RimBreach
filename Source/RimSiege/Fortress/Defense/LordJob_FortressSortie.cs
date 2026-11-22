@@ -78,7 +78,7 @@ namespace RimSiege.Fortress
 
             if (returnAt == 0) returnAt = now + IdleLimit;
             if (!defense.CanContinueSortie ||
-                !Targeting.HasPlayerCombatThreats() || !lord.ownedPawns.Any(FortressDefensePosts.CanFight))
+                !Targeting.HasActiveAttackers() || !lord.ownedPawns.Any(FortressDefensePosts.CanFight))
             {
                 ReturnTo(defense, now);
                 return;
@@ -89,7 +89,7 @@ namespace RimSiege.Fortress
                 IntVec3 origin = rallyExit.IsValid ? rallyExit : Site.Blueprint.Outer.CenterCell;
                 Thing replacement = Targeting.CombatTargets()
                     .Where(target => Ground.Outside(target.Position) &&
-                        FortressTargeting.IsActivePlayerCombatThreat(target, lord.faction, Map))
+                        FortressTargeting.IsActiveAttacker(target, lord.faction, Map))
                     .MinBy(target => Api.Distance3D(origin, target.Position, Map));
                 if (replacement != primaryTarget)
                 {

@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using HarmonyLib;
 using ProjectZ;
 using ProjectZ.Patches;
+using RimSiege.Fortress;
 using RimWorld;
 using Verse;
 using Verse.AI;
@@ -245,6 +246,17 @@ namespace RimSiege.Integration
                 allowNewLadders = previousPlacing;
                 availableLanding = previousLanding;
                 Active = previous;
+            }
+        }
+
+        [HarmonyPatch(typeof(RaidClimb), nameof(RaidClimb.MayClimb))]
+        private static class FortressClimb
+        {
+            private static void Postfix(Pawn pawn, bool exit, ref bool __result)
+            {
+                if (!__result && !exit && Active?.Traveller == pawn &&
+                    FortressSite.SupportSite(pawn)?.CanCoordinateWith(pawn.Faction) == true)
+                    __result = true;
             }
         }
 

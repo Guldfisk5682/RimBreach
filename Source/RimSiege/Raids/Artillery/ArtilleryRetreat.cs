@@ -3,6 +3,7 @@ using System.Linq;
 using CombatExtended;
 using CombatExtended.Compatibility;
 using HarmonyLib;
+using RimSiege.Fortress;
 using RimSiege.Integration;
 using RimWorld;
 using Verse;
@@ -22,6 +23,8 @@ namespace RimSiege.Raids.Artillery
         {
             foreach (ArtilleryRaid raid in artillery.TrackedRaids.Where(raid => raid.IncidentKey == 0).ToArray())
             {
+                // Once the Offer camp has released its infantry, only the assault lord uses casualty retreat.
+                if (raid.IsFortressSupport && (raid.InfantryReleased || raid.AssaultCreated)) continue;
                 if (ShouldRetreat(raid.Faction, raid.InitialRaidSize, raid.ViolentLosses.Count,
                     raid.ReachedDefenses, raid.Breaches, raid.RaidSeed) is { } loss &&
                     (!Stubborn || !raid.Breaches || loss >= ActiveBatteryLossFraction || !HasActiveBattery(raid)))
@@ -93,7 +96,8 @@ namespace RimSiege.Raids.Artillery
             foreach (TribalSmokeState raid in raids.TribalSmokeStates)
             {
                 Lord origin = raid.Groups.Select(group => group.Lord).FirstOrDefault(lord => lord != null);
-                if (origin == null || !origin.faction.HostileTo(Faction.OfPlayer) || ShouldRetreat(origin.faction, raid.InitialRaidSize,
+                if (origin == null || !origin.faction.HostileTo(FortressSite.SupportSite(origin)?.Faction ?? Faction.OfPlayer) ||
+                    ShouldRetreat(origin.faction, raid.InitialRaidSize,
                     raid.ViolentLosses.Count, raid.ReachedDefenses, false, raid.RetreatSeed) == null) continue;
 
                 foreach (TribalNativeGroup group in raid.Groups)
@@ -177,10 +181,13 @@ namespace RimSiege.Raids.Artillery
                     __instance.triggers.Count != 1 || __instance.triggers[0] is not Trigger_FractionPawnsLost)
                     return true;
                 ArtilleryMap artillery = lord.Map.GetComponent<ArtilleryMap>();
+                ArtilleryRaid raid = artillery.ForLord(lord);
+                if (lord.LordJob is LordJob_FortressAlliedAssault && raid?.IsFortressSupport == true)
+                    return true;
                 // The coordinated raid owns casualty retreats from arrival,
                 // even while its groups have separate native duty lords.
                 return lord.faction?.def.humanlikeFaction != true ||
-                    (artillery.IncidentForLord(lord) == null && artillery.ForLord(lord) == null &&
+                    (raid == null && artillery.IncidentForLord(lord) == null &&
                      lord.Map.GetComponent<SiegeRaidMap>().TribalSmokeFor(lord) == null);
             }
         }
@@ -191,7 +198,8 @@ namespace RimSiege.Raids.Artillery
             private static void Postfix(Thing __instance)
             {
                 if (__instance is not Pawn { Spawned: true, Downed: false } pawn ||
-                    pawn.Faction?.def.humanlikeFaction != true || !pawn.HostileTo(Faction.OfPlayer)) return;
+                    pawn.Faction?.def.humanlikeFaction != true || pawn.Faction == Faction.OfPlayer ||
+                    !pawn.HostileTo(Faction.OfPlayer) && FortressSite.SupportSite(pawn) == null) return;
                 Map map = pawn.Map;
                 if (!pawn.Position.InBounds(map)) return;
                 ArtilleryMap artillery = map.GetComponent<ArtilleryMap>();
@@ -204,7 +212,7 @@ namespace RimSiege.Raids.Artillery
                 bool? reached = incident?.ReachedDefenses ?? raid?.ReachedDefenses ?? tribal?.ReachedDefenses;
                 if (reached != false) return;
 
-                if (!AtPlayerDefenses(pawn)) return;
+                if (!AtDefenses(pawn)) return;
 
                 if (incident != null) incident.ReachedDefenses = true;
                 else if (raid != null) raid.ReachedDefenses = true;
@@ -212,9 +220,13 @@ namespace RimSiege.Raids.Artillery
             }
         }
 
-        internal static bool AtPlayerDefenses(Pawn pawn) =>
-            pawn is { Spawned: true, Downed: false } && pawn.Position.InBounds(pawn.Map) &&
-            (pawn.Map.areaManager.Home[pawn.Position] || OnPlayerWall(pawn.Position, pawn.Map));
+        internal static bool AtDefenses(Pawn pawn)
+        {
+            if (pawn is not { Spawned: true, Downed: false } || !pawn.Position.InBounds(pawn.Map)) return false;
+            return FortressSite.SupportSite(pawn) is { } site
+                ? site.Blueprint?.ContainsStructure(pawn.Position, pawn.Map) == true
+                : pawn.Map.areaManager.Home[pawn.Position] || OnPlayerWall(pawn.Position, pawn.Map);
+        }
 
         private static bool OnPlayerWall(IntVec3 cell, Map map)
         {
@@ -240,7 +252,8 @@ namespace RimSiege.Raids.Artillery
             private static void Postfix(Lord __instance, LordJob lordJob)
             {
                 if (!SiegeRaidMap.Enabled || __instance.faction?.IsPlayer != false || !__instance.faction.def.humanlikeFaction ||
-                    (Faction.OfPlayer != null && !__instance.faction.HostileTo(Faction.OfPlayer)) ||
+                    (Faction.OfPlayer != null && !__instance.faction.HostileTo(Faction.OfPlayer) &&
+                        FortressSite.SupportSite(__instance) == null) ||
                     lordJob is not LordJob_AssaultColony assault || !Breachers(assault) ||
                     __instance.Graph?.transitions == null)
                     return;

@@ -39,16 +39,27 @@ namespace RimSiege.Raids.Artillery
             internal readonly List<Building> Buildings;
             internal readonly HashSet<Building> Combat;
             internal readonly List<Pawn> Pawns;
-            internal Catalog(Map map)
+            internal Catalog(Map map, Faction targetFaction = null)
             {
-                Buildings = map.listerBuildings.allBuildingsColonist.ToList();
-                Combat = new(map.listerBuildings.allBuildingsColonistCombatTargets);
-                Pawns = map.mapPawns.AllPawnsSpawned.Where(p => p.Faction == Faction.OfPlayer && !p.Dead).ToList();
+                Faction faction = targetFaction ?? Faction.OfPlayer;
+                if (faction == Faction.OfPlayer)
+                {
+                    Buildings = map.listerBuildings.allBuildingsColonist.ToList();
+                    Combat = new(map.listerBuildings.allBuildingsColonistCombatTargets);
+                    Pawns = map.mapPawns.AllPawnsSpawned.Where(pawn => pawn.Faction == faction && !pawn.Dead).ToList();
+                }
+                else
+                {
+                    Buildings = map.listerBuildings.allBuildingsNonColonist.Where(building => building.Faction == faction).ToList();
+                    Combat = new(Buildings.Where(building => building is IAttackTarget));
+                    Pawns = map.mapPawns.SpawnedPawnsInFaction(faction).Where(pawn => !pawn.Dead).ToList();
+                }
             }
         }
         internal const int SearchInterval = 25;
         internal readonly Map Map;
         internal readonly IntVec3 Goal;
+        internal readonly Faction TargetFaction;
         internal readonly List<Thing> Walls = new();
         internal readonly List<Thing> Fallback = new();
         private readonly Dictionary<Thing, WallShape> shapes = new();
@@ -57,19 +68,20 @@ namespace RimSiege.Raids.Artillery
         private readonly record struct WallShape(bool Door, bool Corner, bool Horizontal, bool Vertical, bool OnRoute);
         private readonly record struct Ranked(Thing Thing, int Band, WallShape Shape, float Normal, float Distance);
 
-        internal ArtilleryTargets(Map map, IntVec3 goal, SupportRoute route, Catalog catalog = null)
+        internal ArtilleryTargets(Map map, IntVec3 goal, SupportRoute route, Catalog catalog = null, Faction targetFaction = null)
         {
             Map = map; Goal = goal; floors = IsoFloor.HasFloors(map);
-            catalog ??= new Catalog(map);
+            TargetFaction = targetFaction ?? Faction.OfPlayer;
+            catalog ??= new Catalog(map, TargetFaction);
             foreach (Building building in catalog.Buildings)
             {
                 if (!Valid(building)) continue;
-                if ((building.def.IsWall || building.def.IsDoor) && BreachingUtility.ShouldBreachBuilding(building))
+                if ((building.def.IsWall || building.def.IsDoor) && VanillaBreachTargets.CanBreach(building, TargetFaction))
                     Walls.Add(building);
                 else if (building is Building_Turret || catalog.Combat.Contains(building)) Fallback.Add(building);
             }
             foreach (Pawn pawn in catalog.Pawns)
-                if (pawn.Faction == Faction.OfPlayer && !pawn.Dead) Fallback.Add(pawn);
+                if (Valid(pawn)) Fallback.Add(pawn);
 
             var cells = new HashSet<IntVec3>(Walls.SelectMany(t => t.OccupiedRect()));
             foreach (Thing wall in Walls)
@@ -97,7 +109,7 @@ namespace RimSiege.Raids.Artillery
         }
 
         internal bool Valid(Thing target) => target != null && target.Spawned && !target.Destroyed &&
-            target.Map == Map && target.Faction == Faction.OfPlayer;
+            target.Map == Map && target.Faction == TargetFaction;
 
         // Deployment proves geometry only; actual CE shot eligibility is checked by firing guns.
         internal ArtilleryTargetResult FindGeometry(Faction faction, EmplacementSpec placement, float? effectiveRange = null,

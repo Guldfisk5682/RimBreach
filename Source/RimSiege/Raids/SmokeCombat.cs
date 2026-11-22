@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CombatExtended;
+using RimSiege.Fortress;
 using RimSiege.Integration;
 using RimSiege.Raids.Artillery;
 using RimWorld;
@@ -54,6 +55,7 @@ namespace RimSiege.Raids
             if (inventory == null) return null;
             var grenade = (ThingWithComps)ThingMaker.MakeThing(weaponDef);
             grenade.stackCount = Math.Min(count, weaponDef.stackLimit);
+            if (FortressSite.SupportSite(pawn) != null) FortressAlliedReinforcement.Biocode(grenade, pawn);
             if (inventory.container.TryAdd(grenade, canMergeWithExistingStacks: false)) return grenade;
             grenade.Destroy();
             return null;
@@ -119,11 +121,16 @@ namespace RimSiege.Raids
     internal sealed class SmokeThreatCache
     {
         private readonly bool includeColonists;
+        private readonly Faction threatFaction;
         private Verb[] currentThreats = Array.Empty<Verb>();
         private int threatWindow = -1;
         private readonly Dictionary<IntVec3, bool> exposure = new();
 
-        internal SmokeThreatCache(bool includeColonists) => this.includeColonists = includeColonists;
+        internal SmokeThreatCache(bool includeColonists, Faction threatFaction)
+        {
+            this.includeColonists = includeColonists;
+            this.threatFaction = threatFaction;
+        }
 
         internal Verb[] CurrentThreats(Map map)
         {
@@ -131,7 +138,7 @@ namespace RimSiege.Raids
             if (window != threatWindow)
             {
                 threatWindow = window;
-                currentThreats = CollectThreats(map, includeColonists);
+                currentThreats = CollectThreats(map, includeColonists, threatFaction);
                 exposure.Clear();
             }
             return currentThreats;
@@ -154,12 +161,16 @@ namespace RimSiege.Raids
             return !IsExposed(cell, map);
         }
 
-        internal static Verb[] CollectThreats(Map map, bool includeColonists)
+        internal static Verb[] CollectThreats(Map map, bool includeColonists, Faction threatFaction = null)
         {
-            IEnumerable<IAttackTargetSearcher> shooters =
-                map.listerBuildings.allBuildingsColonistCombatTargets.OfType<IAttackTargetSearcher>();
+            Faction faction = threatFaction ?? Faction.OfPlayer;
+            bool player = faction == Faction.OfPlayer;
+            IEnumerable<Building> buildings = player ? map.listerBuildings.allBuildingsColonistCombatTargets :
+                map.listerBuildings.allBuildingsNonColonist.Where(building => building.Faction == faction);
+            IEnumerable<IAttackTargetSearcher> shooters = buildings.OfType<IAttackTargetSearcher>();
             if (includeColonists)
-                shooters = shooters.Concat(map.mapPawns.FreeColonistsSpawned.OfType<IAttackTargetSearcher>());
+                shooters = shooters.Concat(player ? map.mapPawns.FreeColonistsSpawned :
+                    map.mapPawns.SpawnedPawnsInFaction(faction));
 
             var result = new List<Verb>();
             foreach (IAttackTargetSearcher shooter in shooters)

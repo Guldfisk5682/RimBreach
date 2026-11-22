@@ -12,17 +12,20 @@ namespace RimSiege.Raids.Artillery
         private static readonly ConditionalWeakTable<ArtilleryRaid, SupportRoute> Routes = new ConditionalWeakTable<ArtilleryRaid, SupportRoute>();
         internal readonly Map Map;
         internal readonly IntVec3 Goal;
+        internal readonly Faction TargetFaction;
         internal readonly List<RouteSegmentSnapshot> Segments;
         private readonly HashSet<IntVec3> cells = new();
         private List<Thing> targets;
 
-        private SupportRoute(AssaultRouteSnapshot snapshot)
+        private SupportRoute(AssaultRouteSnapshot snapshot, Faction targetFaction)
         {
             Map = snapshot.Map; Goal = snapshot.Goal; Segments = snapshot.Segments;
+            TargetFaction = targetFaction ?? Faction.OfPlayer;
             foreach (RouteSegmentSnapshot segment in Segments) cells.UnionWith(segment.Nodes);
         }
 
-        private static SupportRoute Wrap(AssaultRouteSnapshot snapshot) => snapshot == null ? null : new SupportRoute(snapshot);
+        private static SupportRoute Wrap(AssaultRouteSnapshot snapshot, Faction targetFaction) =>
+            snapshot == null ? null : new SupportRoute(snapshot, targetFaction);
 
         internal static SupportRoute For(ArtilleryRaid raid) =>
             raid != null && Routes.TryGetValue(raid, out SupportRoute route) ? route : null;
@@ -75,19 +78,20 @@ namespace RimSiege.Raids.Artillery
             // camp plan. Once available it owns the actual assault route.
             IntVec3 goal = data != null && data.breachDest.IsValid ? data.breachDest : raid.Camp.Goal;
             raid.Camp.Goal = goal;
-            SupportRoute route = Wrap(IsoAssaultRoutes.Build(map, traveller, goal, actual, raid.Kind == ArtilleryRaidKind.Ordinary));
+            SupportRoute route = Wrap(IsoAssaultRoutes.Build(map, traveller, goal, actual,
+                raid.Kind == ArtilleryRaidKind.Ordinary), raid.TargetFaction);
             Set(raid, route);
             return route;
         }
 
-        internal static SupportRoute Build(Map map, IntVec3 entry, IntVec3 goal, Pawn traveller = null)
+        internal static SupportRoute Build(Map map, IntVec3 entry, IntVec3 goal, Pawn traveller = null, Faction targetFaction = null)
         {
-            if (traveller != null) return Wrap(IsoAssaultRoutes.Build(map, traveller, goal, noVerticalWork: true));
+            if (traveller != null) return Wrap(IsoAssaultRoutes.Build(map, traveller, goal, noVerticalWork: true), targetFaction);
             RouteSegmentSnapshot segment = VanillaBreachRoutes.Preplan(map, entry, goal);
             if (segment == null) return null;
             var snapshot = new AssaultRouteSnapshot(map, goal);
             snapshot.Segments.Add(segment);
-            return Wrap(snapshot);
+            return Wrap(snapshot, targetFaction);
         }
 
         private void CacheTargets()
@@ -101,9 +105,9 @@ namespace RimSiege.Raids.Artillery
                     if (!cell.InBounds(Map)) continue;
                     Building building = cell.GetEdifice(Map);
                     if (building != null && building.Spawned && !building.Destroyed &&
-                        building.Faction == Faction.OfPlayer &&
+                        building.Faction == TargetFaction &&
                         (building.def.IsDoor || building.def.passability == Traversability.Impassable) &&
-                        BreachingUtility.ShouldBreachBuilding(building) && seen.Add(building))
+                        VanillaBreachTargets.CanBreach(building, TargetFaction) && seen.Add(building))
                         targets.Add(building);
                 }
         }
@@ -112,12 +116,13 @@ namespace RimSiege.Raids.Artillery
         {
             CacheTargets();
             foreach (Thing target in targets)
-                if (target.Spawned && !target.Destroyed && target.Map == Map && BreachingUtility.ShouldBreachBuilding(target))
+                if (target.Spawned && !target.Destroyed && target.Map == Map && target.Faction == TargetFaction &&
+                    VanillaBreachTargets.CanBreach(target, TargetFaction))
                     yield return target;
         }
 
         internal CampSiting PlanningTargets(IntVec3? breachAnchor = null, ArtilleryTargets.Catalog catalog = null) =>
-            new CampSiting(new ArtilleryTargets(Map, Goal, this, catalog), this, breachAnchor);
+            new CampSiting(new ArtilleryTargets(Map, Goal, this, catalog, TargetFaction), this, breachAnchor);
     }
 
 }

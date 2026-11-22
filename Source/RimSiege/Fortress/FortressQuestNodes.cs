@@ -3,6 +3,7 @@ using System.Linq;
 using RimWorld;
 using RimWorld.Planet;
 using RimWorld.QuestGen;
+using UnityEngine;
 using Verse;
 using Verse.AI.Group;
 
@@ -31,6 +32,29 @@ namespace RimSiege.Fortress
         protected override void RunInt() { }
     }
 
+    public sealed class QuestNode_FortressPoints : QuestNode
+    {
+        protected override bool TestRunInt(Slate slate)
+        {
+            SetPoints(slate);
+            return true;
+        }
+
+        protected override void RunInt() => SetPoints(QuestGen.slate);
+
+        private static void SetPoints(Slate slate)
+        {
+            float original = slate.Get<float>("pointsOriginal");
+            int stars = slate.Get("challengeRating", 1);
+            bool harassment = slate.Get("fortressHarassment", false);
+            float points = harassment
+                ? Mathf.Max(2000f, original * (stars switch { 1 => 0.35f, 2 => 0.5f, _ => 0.65f }))
+                : original * (stars switch { 1 => 0.8f, 2 => 1f, _ => 1.2f });
+            slate.Set("points", points);
+            slate.Set("fortressStructurePoints", harassment ? points : original);
+        }
+    }
+
     public sealed class QuestNode_GenerateFortressSite : QuestNode_GenerateSite
     {
         protected override void RunInt()
@@ -38,12 +62,13 @@ namespace RimSiege.Fortress
             base.RunInt();
             Slate slate = QuestGen.slate;
             var site = slate.Get<FortressSite>(storeAs.GetValue(slate));
-            site.OriginalPoints = slate.Get<float>("pointsOriginal");
+            site.OriginalPoints = slate.Get<float>("fortressStructurePoints");
             site.DefenderPoints = slate.Get<float>("points");
             site.Harassment = slate.Get("fortressHarassment", false);
             if (slate.TryGet("fortressForcedLayout", out FortressLayoutKind forced))
                 site.ForcedLayoutKind = forced;
             if (site.Harassment) site.RaidTarget = slate.Get<Map>("map").Parent;
+            else site.AlliedFaction = slate.Get<Pawn>("asker")?.Faction;
         }
     }
 
@@ -71,38 +96,52 @@ namespace RimSiege.Fortress
         [NoTranslate]
         public SlateRef<string> storeFactionAs;
 
-        public SlateRef<Thing> mustBeHostileToFactionOf;
-
-        protected override bool TestRunInt(Slate slate) => TrySetVars(slate);
+        protected override bool TestRunInt(Slate slate) => TrySetVars(slate, generating: false);
 
         protected override void RunInt()
         {
-            if (!TrySetVars(QuestGen.slate))
+            if (!TrySetVars(QuestGen.slate, generating: true))
                 Log.Error("[RimSiege] Could not resolve fortress site parts and faction.");
         }
 
-        private bool TrySetVars(Slate slate)
+        private bool TrySetVars(Slate slate, bool generating)
         {
             if (!sitePartDef.Worker.IsAvailable()) return false;
 
-            float originalPoints = slate.Get("pointsOriginal", slate.Get("points", 0f));
+            float structurePoints = slate.Get<float>("fortressStructurePoints");
             Faction forcedFaction = slate.Get<Faction>("fortressForcedFaction");
             bool hasForcedLayout = slate.TryGet("fortressForcedLayout", out FortressLayoutKind forcedLayout);
-            Faction faction = forcedFaction ?? slate.Get<Faction>("enemyFaction");
-            Faction asker = slate.Get<Pawn>("asker")?.Faction;
-            Faction hostileTo = mustBeHostileToFactionOf.GetValue(slate)?.Faction;
+            Faction requested = forcedFaction ?? slate.Get<Faction>("enemyFaction");
             SitePartDef[] siteParts = { sitePartDef };
-
-            if (faction == null)
+            var factions = Find.FactionManager.AllFactionsListForReading;
+            var defenders = (requested == null ? factions : Enumerable.Repeat(requested, 1))
+                .Where(CanOwnFortress).ToList();
+            if (!slate.Get("fortressHarassment", false))
             {
-                if (!Find.FactionManager.AllFactionsListForReading.Where(CanOwnFortress).TryRandomElement(out faction))
-                    return false;
+                bool CanSend(Pawn leader) => leader is { Dead: false, IsPrisoner: false } &&
+                    leader.Faction is { Hidden: false, temporary: false } publisher && publisher.leader == leader &&
+                    FortressSite.CanFieldSupport(publisher) &&
+                    (!leader.IsWorldPawn() || Find.WorldPawns.GetSituation(leader) != WorldPawnSituation.ReservedByQuest) &&
+                    defenders.Any(defender => publisher.HostileTo(defender));
+
+                Pawn asker = slate.Get<Pawn>("asker");
+                if (!CanSend(asker) && !factions.Select(publisher => publisher.leader).Where(CanSend)
+                        .TryRandomElement(out asker)) return false;
+
+                slate.Set("asker", asker);
+                defenders.RemoveAll(defender => !asker.Faction.HostileTo(defender));
+                if (generating)
+                {
+                    var involved = new QuestPart_InvolvedFactions();
+                    involved.factions.Add(asker.Faction);
+                    QuestGen.quest.AddPart(involved);
+                }
             }
-            else if (!CanOwnFortress(faction)) return false;
+            if (!defenders.TryRandomElement(out Faction faction)) return false;
 
             slate.Set(storeAs.GetValue(slate), siteParts);
             slate.Set("sitePartCount", siteParts.Length);
-            if (QuestGen.Working)
+            if (generating)
             {
                 QuestGen.AddQuestDescriptionConstants(new Dictionary<string, string>
                 {
@@ -115,9 +154,6 @@ namespace RimSiege.Fortress
 
             bool CanOwnFortress(Faction candidate)
             {
-                if (candidate == asker || (hostileTo != null && !candidate.HostileTo(hostileTo)))
-                    return false;
-
                 bool isMech = FortressGarrison.IsMechanoidFaction(candidate);
                 if (hasForcedLayout && isMech != (forcedLayout == FortressLayoutKind.MechCircularBunker))
                     return false;
@@ -125,7 +161,7 @@ namespace RimSiege.Fortress
                     return SiteMakerHelper.FactionCanOwn(siteParts, candidate, disallowNonHostileFactions: true,
                         extraFactionValidator: null);
 
-                if (forcedFaction != candidate && originalPoints < FortressGarrison.MechCompactMinPoints)
+                if (forcedFaction != candidate && structurePoints < FortressGarrison.MechCompactMinPoints)
                     return false;
 
                 // Vanilla rejects hidden factions before reaching the site worker.
@@ -149,6 +185,7 @@ namespace RimSiege.Fortress
             base.Notify_QuestSignalReceived(signal);
             if (signal.tag != Signal || Site == null || Site.Resolved) return;
             Site.Resolved = true;
+            FortressAlliedWithdrawal.NotifyVictory(Site);
             if (Site.Map is { } map && Site.Blueprint is { LayoutKind: FortressLayoutKind.MechCircularBunker } blueprint)
             {
                 foreach (Lord lord in map.lordManager.lords)

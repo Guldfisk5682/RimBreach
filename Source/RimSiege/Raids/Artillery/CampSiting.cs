@@ -27,21 +27,10 @@ namespace RimSiege.Raids.Artillery
             Map map = candidates.Map;
             this.map = map;
             floors = IsoFloor.HasFloors(map);
-            List<LocalTargetInfo> colony = ColonyTargets(map);
             Targets = candidates.All.ToList();
             BreachAnchor = breachAnchor.HasValue && breachAnchor.Value.IsValid
-                ? breachAnchor.Value : FindAnchor(route, candidates, colony);
+                ? breachAnchor.Value : FindAnchor(route, candidates);
             BreachTargets = candidates.FrontAt(BreachAnchor);
-        }
-
-        // These are exactly the colonist and player combat-building collections
-        // used by vanilla RCellFinder.TryFindSiegePosition.
-        internal static List<LocalTargetInfo> ColonyTargets(Map map)
-        {
-            var result = new List<LocalTargetInfo>();
-            foreach (Pawn pawn in map.mapPawns.FreeColonistsSpawned) result.Add(pawn);
-            foreach (Building building in map.listerBuildings.allBuildingsColonistCombatTargets) result.Add(building);
-            return result;
         }
 
         internal float Distance(IntVec3 from, IntVec3 to) =>
@@ -55,7 +44,7 @@ namespace RimSiege.Raids.Artillery
             return UnityEngine.Mathf.Atan2(to.x - from.x, to.z - from.z) * UnityEngine.Mathf.Rad2Deg;
         }
 
-        private IntVec3 FindAnchor(SupportRoute route, ArtilleryTargets candidates, List<LocalTargetInfo> colony)
+        private IntVec3 FindAnchor(SupportRoute route, ArtilleryTargets candidates)
         {
             var walls = new HashSet<Thing>(candidates.Walls);
             foreach (var segment in route.Segments)
@@ -86,7 +75,14 @@ namespace RimSiege.Raids.Artillery
                 }).OrderByDescending(item => item.Forward).ThenBy(item => item.LateralSquared).ThenBy(item => item.Progress)
                   .ThenBy(item => item.Wall.thingIDNumber).First().Wall.Position;
             }
-            return route.Goal.InBounds(map) ? route.Goal : colony.Count != 0 ? colony[0].Cell : candidates.Goal;
+            if (route.Goal.InBounds(map)) return route.Goal;
+            if (candidates.TargetFaction == Faction.OfPlayer)
+            {
+                if (map.mapPawns.FreeColonistsSpawned.FirstOrDefault() is { } pawn) return pawn.Position;
+                if (map.listerBuildings.allBuildingsColonistCombatTargets.FirstOrDefault() is { } building)
+                    return building.Position;
+            }
+            return candidates.Goal;
         }
 
         internal bool Allows(IntVec3 center, float retreat)

@@ -158,6 +158,8 @@ namespace RimSiege.Raids.Artillery
                         ((LordJob_Artillery)lord.LordJob).RequestInfantryAssault();
                     return;
                 }
+                if (raid.IsFortressSupport && raid.AssaultEnded && memo is "NoBuilders" or "NoArtillery")
+                    memo = LordJob_Artillery.RaidEndedMemo;
             }
             lord.ReceiveMemo(memo);
         }

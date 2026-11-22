@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using CombatExtended.AI;
 using HarmonyLib;
+using RimSiege.Fortress;
 using RimSiege.Integration;
 using RimSiege.Raids.Artillery;
 using RimWorld;
@@ -133,7 +134,7 @@ namespace RimSiege.Raids
             SiegeParty party = raids.Party(__instance);
             if (SiegeRaidMap.Enabled && party != null) raids.QueueArrival(__instance);
             if (SiegeRaidMap.Enabled && party?.TribalSmoke is { ReachedDefenses: false } tribal &&
-                ArtilleryRetreat.AtPlayerDefenses(__instance))
+                ArtilleryRetreat.AtDefenses(__instance))
                 tribal.ReachedDefenses = true;
             ArtilleryDeployment.PawnArrived(__instance, map);
             SmokeLoadout.OnPawnRecovered(__instance);
@@ -175,7 +176,7 @@ namespace RimSiege.Raids
         private static void Postfix(Pawn __instance, ref string __result)
         {
             if (SiegeRaidMap.Enabled && Current.ProgramState == ProgramState.Playing && LadderInventory.Get(__instance) != null &&
-                __instance.Faction?.HostileTo(Faction.OfPlayer) == true)
+                (__instance.Faction?.HostileTo(Faction.OfPlayer) == true || FortressSite.SupportSite(__instance) != null))
                 __result += "RS_LadderCarrier".Translate() + " ";
         }
     }
@@ -241,15 +242,16 @@ namespace RimSiege.Raids
     {
         private static bool Prefix(CompTend __instance, ref Job __result)
         {
-            if (!IsActiveHostileRaid(__instance.SelPawn)) return true;
+            if (!IsActiveRaid(__instance.SelPawn)) return true;
             __result = null;
             return false;
         }
 
-        private static bool IsActiveHostileRaid(Pawn pawn)
+        private static bool IsActiveRaid(Pawn pawn)
         {
             if (!SiegeRaidMap.Enabled || pawn is not { Spawned: true, Dead: false, Downed: false, InMentalState: false }) return false;
-            if (pawn.Faction == null || !pawn.Faction.HostileTo(Faction.OfPlayer)) return false;
+            if (pawn.Faction == null || (!pawn.Faction.HostileTo(Faction.OfPlayer) &&
+                FortressSite.SupportSite(pawn)?.CanCoordinateWith(pawn.Faction) != true)) return false;
             if (pawn.GetLord() is not { } lord || lord.CurLordToil is not { } toil) return false;
             ArtilleryMap artillery = pawn.Map.GetComponent<ArtilleryMap>();
             ArtilleryRaid raid = artillery.ForPawn(pawn);

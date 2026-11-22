@@ -22,6 +22,9 @@ namespace RimSiege.Raids.Artillery
         internal float RaidPoints, PawnPoints;
         internal float ConstructionSpeedMultiplier = 1f;
         internal Faction Faction;
+        internal Faction TargetFaction;
+        internal bool IsFortressSupport => TargetFaction != null;
+        internal Faction EffectiveTargetFaction => TargetFaction ?? RimWorld.Faction.OfPlayer;
         internal RaidStrategyDef Strategy;
         internal bool Breaches => Strategy?.Worker is RaidStrategyWorker_ImmediateAttackBreaching;
         internal IncidentParms OriginalParms;
@@ -62,6 +65,7 @@ namespace RimSiege.Raids.Artillery
             Scribe_Values.Look(ref PawnPoints, "pawnPoints");
             Scribe_Values.Look(ref ConstructionSpeedMultiplier, "constructionSpeedMultiplier", 1f);
             Scribe_References.Look(ref Faction, "faction");
+            Scribe_References.Look(ref TargetFaction, "targetFaction");
             Scribe_Defs.Look(ref Strategy, "strategy");
             Scribe_Deep.Look(ref OriginalParms, "originalParms");
             Scribe_Collections.Look(ref Members, "members", LookMode.Reference);

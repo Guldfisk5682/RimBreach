@@ -73,6 +73,8 @@ namespace RimSiege.Fortress
         private FortressDefensePosts Posts => posts ??= new FortressDefensePosts(Map, Site.Blueprint, Ground);
         internal FortressLine Line => line;
         internal bool IntrusionActive => openSectors != 0;
+        internal bool CanManGun(Building_TurretGunCE gun) =>
+            GenTicks.TicksGame >= Site.DefenderMortarsReadyTick || !FortressDefensePosts.Indirect(gun);
         bool IFortressDefenseLord.IntrusionActive => IntrusionActive;
         internal IReadOnlyList<Pawn> Intruders => intruders;
         IReadOnlyList<Pawn> IFortressDefenseLord.Intruders => Intruders;
@@ -420,10 +422,17 @@ namespace RimSiege.Fortress
         private void Review(int now)
         {
             nextReview = now + ReviewInterval;
-            Pawn[] attackers = !lord.faction.HostileTo(Faction.OfPlayer) ? Array.Empty<Pawn>() :
-                Map.mapPawns.PawnsInFaction(Faction.OfPlayer).Where(pawn => pawn.Spawned && !pawn.Downed && !pawn.Dead &&
+            int mortarsReadyTick = Site.DefenderMortarsReadyTick;
+            if (now < mortarsReadyTick) nextReview = Math.Min(nextReview, mortarsReadyTick);
+            Map map = Map;
+            IEnumerable<Pawn> attackersInRange = !lord.faction.HostileTo(Faction.OfPlayer) ? Enumerable.Empty<Pawn>() :
+                map.mapPawns.SpawnedPawnsInFaction(Faction.OfPlayer).Where(pawn => !pawn.Downed && !pawn.Dead &&
                     (pawn.IsFreeColonist || pawn.IsColonyMech ||
-                        pawn.IsAnimal && pawn.training?.HasLearned(TrainableDefOf.Release) == true)).ToArray();
+                        pawn.IsAnimal && pawn.training?.HasLearned(TrainableDefOf.Release) == true));
+            if (map.Parent is FortressSite { AlliedFaction: { } allies } site && lord.faction.HostileTo(allies))
+                attackersInRange = attackersInRange.Concat(map.mapPawns.SpawnedPawnsInFaction(allies)
+                    .Where(pawn => !pawn.Downed && !pawn.Dead && site.IsSupportPawn(pawn)));
+            Pawn[] attackers = attackersInRange.ToArray();
 
             UpdateContacts(now);
             // A passage can start in one sector and run through walls in another.

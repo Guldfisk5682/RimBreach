@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using RimSiege.Fortress;
 using RimSiege.Integration;
 using RimSiege.Raids.Artillery;
 using RimWorld;
@@ -23,16 +24,18 @@ namespace RimSiege.Raids
         internal bool ReachedDefenses;
         private bool screenAbandoned;
 
-        internal static void TryInitialize(SiegeParty party, IncidentParms parms, List<Pawn> pawns, float points)
+        internal static void TryInitialize(SiegeParty party, IncidentParms parms, List<Pawn> pawns, float points,
+            Faction targetFaction = null, bool forceSupport = false)
         {
             ThingDef bomb = ArtillerySmokeDefOf.CE_Weapon_SmokeBomb;
-            if (party == null || bomb == null || points < MinimumSmokePoints || !SiegeRaidMap.IsTribalHumanlike(parms.faction) ||
-                !parms.faction.HostileTo(Faction.OfPlayer) || !parms.attackTargets.NullOrEmpty() ||
+            if (party == null || bomb == null || (!forceSupport && points < MinimumSmokePoints) ||
+                !SiegeRaidMap.IsTribalHumanlike(parms.faction) ||
+                !parms.faction.HostileTo(targetFaction ?? Faction.OfPlayer) || !parms.attackTargets.NullOrEmpty() ||
                 parms.controllerPawn?.Faction == Faction.OfPlayer ||
                 parms.raidStrategy.Worker is RaidStrategyWorker_ShamblerAssault ||
                 parms.raidStrategy.Worker is not (RaidStrategyWorker_ImmediateAttack or RaidStrategyWorker_ImmediateAttackSmart or
                     RaidStrategyWorker_StageThenAttack or RaidStrategyWorker_ImmediateAttackSappers or RaidStrategyWorker_ImmediateAttackBreaching) ||
-                !Rand.Chance(RimSiegeMod.Settings.ArtilleryChance / 10f))
+                (!forceSupport && !Rand.Chance(RimSiegeMod.Settings.ArtilleryChance / 10f)))
                 return;
 
             var state = new TribalSmokeState { InitialRaidSize = pawns.Count };
@@ -51,7 +54,7 @@ namespace RimSiege.Raids
             {
                 state.AssignCarrierQuotas();
                 state.RetreatSeed = state.Groups[0].Lord.loadID;
-                state.ReachedDefenses = pawns.Any(ArtilleryRetreat.AtPlayerDefenses);
+                state.ReachedDefenses = pawns.Any(ArtilleryRetreat.AtDefenses);
                 party.TribalSmoke = state;
             }
         }
@@ -221,6 +224,7 @@ namespace RimSiege.Raids
             {
                 SmokeWeapon = ArtillerySmokeDefOf.CE_Weapon_SmokeBomb,
                 TurretsOnly = true,
+                ThreatFaction = FortressSite.SupportSite(Lord)?.Faction,
                 StartedScreen = true,
                 ThrowRange = SmokeCombat.ThrowRange(ArtillerySmokeDefOf.CE_Weapon_SmokeBomb, margin: 0.8f)
             };
@@ -266,9 +270,10 @@ namespace RimSiege.Raids
 
         private FrontResult UpdateFront(Map map)
         {
-            if (blocker.IsValid && TribalSmokeRoutes.BlockingThingAt(blocker, map) == null)
+            Faction defender = Screen.ThreatFaction ?? Faction.OfPlayer;
+            if (blocker.IsValid && TribalSmokeRoutes.BlockingThingAt(blocker, map, defender) == null)
             {
-                if (TribalSmokeRoutes.BuildCandidateRoute(lead.Position, goal, TraverseParms.For(lead), map) is not { } route)
+                if (TribalSmokeRoutes.BuildCandidateRoute(lead.Position, goal, TraverseParms.For(lead), map, defender) is not { } route)
                     return FrontResult.RouteLost;
                 InstallRoute(Screen, route);
             }
@@ -279,7 +284,7 @@ namespace RimSiege.Raids
             int distance = 3; // Accept a throw position on the route or within one adjacent cell.
             for (int i = progress; i <= Math.Min(end, progress + LookAhead); i++)
             {
-                if (TribalSmokeRoutes.BlockingThingAt(nodes[i], map) != null)
+                if (TribalSmokeRoutes.BlockingThingAt(nodes[i], map, defender) != null)
                 {
                     if (i == 0) return FrontResult.RouteLost;
                     blocker = nodes[i];

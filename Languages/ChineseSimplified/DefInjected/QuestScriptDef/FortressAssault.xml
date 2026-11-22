@@ -4,7 +4,7 @@
     <li>questName-&gt;堡垒围攻</li>
   </RS_FortressAssault.questNameRules.rulesStrings>
   <RS_FortressAssault.questDescriptionRules.rulesStrings>
-    <li>questDescription-&gt;[asker_faction_name]的[asker_nameFull]请你攻占一座由[siteFaction_name]控制的堡垒。堡垒内驻有约[enemiesCount]名[enemiesLabel]。[asker_nameFull]承诺在摧毁据点后会给予你丰厚的报酬，并且你可以随意掠夺堡垒内的战利品。</li>
+    <li>questDescription-&gt;[asker_faction_name]的[asker_nameFull]请求你协助攻打一座由[siteFaction_name]控制的堡垒。堡垒内驻有约[enemiesCount]名[enemiesLabel]。你的部队抵达一小时后，[asker_faction_name]会从同一侧派兵协同进攻。攻占堡垒后，[asker_nameFull]会给予你丰厚的报酬，你也可以拿走堡垒内的战利品。</li>
   </RS_FortressAssault.questDescriptionRules.rulesStrings>
   <RS_FortressHarassment.questNameRules.rulesStrings>
     <li>questName-&gt;敌对堡垒</li>

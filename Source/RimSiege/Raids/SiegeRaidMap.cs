@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using CombatExtended;
 using ProjectZ;
+using RimSiege.Fortress;
 using RimSiege.Integration;
 using RimSiege.Raids.Artillery;
 using RimWorld;
@@ -382,7 +383,7 @@ namespace RimSiege.Raids
         internal static bool StillApplicableForRestore(Pawn pawn) =>
             pawn != null && !pawn.Dead && !pawn.Destroyed && !pawn.Discarded &&
             !pawn.IsPrisoner && !pawn.IsSlave &&
-            pawn.Faction != Faction.OfPlayer && pawn.HostileTo(Faction.OfPlayer);
+            pawn.Faction != Faction.OfPlayer && (pawn.HostileTo(Faction.OfPlayer) || FortressSite.SupportSite(pawn) != null);
 
         internal SmokeAssignment PendingSmokeFor(Pawn pawn) =>
             pawn == null ? null : pendingSmokeRestores.Find(a => a.Pawn == pawn);

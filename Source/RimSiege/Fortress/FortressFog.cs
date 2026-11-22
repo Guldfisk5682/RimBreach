@@ -88,9 +88,11 @@ namespace RimSiege.Fortress
 
         internal static void PawnArrived(Pawn pawn)
         {
-            if (!pawn.Spawned || pawn.Faction != Faction.OfPlayer && !pawn.IsPlayerControlled ||
-                !TryGet(pawn.Map.fogGrid, out FortressFog fog)) return;
-            fog.CheckBreach(pawn.Position, ((FortressSite)fog.map.Parent).Blueprint);
+            if (!pawn.Spawned || !TryGet(pawn.Map.fogGrid, out FortressFog fog) ||
+                fog.map.Parent is not FortressSite site) return;
+            if (pawn.Faction == Faction.OfPlayer || pawn.IsPlayerControlled ||
+                site.IsSupportPawn(pawn) && site.CanCoordinateWith(pawn.Faction))
+                fog.CheckBreach(pawn.Position, site.Blueprint);
         }
 
         private void CheckBreach(IntVec3 position, FortressBlueprint blueprint)
