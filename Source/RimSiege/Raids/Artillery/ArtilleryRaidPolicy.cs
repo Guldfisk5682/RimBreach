@@ -12,7 +12,8 @@ namespace RimSiege.Raids.Artillery
         private const int CampCenterAttempts = 200;
 
         internal static ArtilleryRaid Prepare(IncidentParms parms, float raidPoints, float pawnPoints,
-            Faction targetFaction = null, CellRect? objectiveArea = null, bool forceSupport = false)
+            Faction targetFaction = null, CellRect? objectiveArea = null, bool forceSupport = false,
+            ArtilleryGunPoolDef gunPool = null)
         {
             if (!SiegeRaidMap.Enabled || (!forceSupport && RimSiegeMod.Settings.ArtilleryChance == 0) ||
                 parms.target is not Map map || parms.faction == null ||
@@ -44,11 +45,11 @@ namespace RimSiege.Raids.Artillery
                 kind = worker is RaidStrategyWorker_ImmediateAttackBreaching ? "Breaching"
                     : worker is RaidStrategyWorker_Siege ? "Siege" : "Ordinary";
             }
-            return BuildRaid(parms, raidPoints, pawnPoints, map, kind, targetFaction, objectiveArea, forceSupport);
+            return BuildRaid(parms, raidPoints, pawnPoints, map, kind, targetFaction, objectiveArea, forceSupport, gunPool);
         }
 
         private static ArtilleryRaid BuildRaid(IncidentParms parms, float raidPoints, float pawnPoints, Map map,
-            string kind, Faction targetFaction, CellRect? objectiveArea, bool forceSupport)
+            string kind, Faction targetFaction, CellRect? objectiveArea, bool forceSupport, ArtilleryGunPoolDef gunPool)
         {
             ArtilleryProfileDef profile = DefDatabase<ArtilleryProfileDef>.AllDefsListForReading
                 .FirstOrDefault(p => p.kind == kind);
@@ -57,7 +58,7 @@ namespace RimSiege.Raids.Artillery
 
             float personnel = profile.PersonnelPoints(raidPoints, pawnPoints);
             bool breaching = parms.raidStrategy.Worker is RaidStrategyWorker_ImmediateAttackBreaching;
-            List<ArtilleryPlacement> guns = profile.Configure(raidPoints, personnel, parms.faction, out _, breaching);
+            List<ArtilleryPlacement> guns = profile.Configure(raidPoints, personnel, parms.faction, out _, breaching, gunPool);
             if (!guns.Any(g => g.IsSupport)) return null;
             int constructoids = 0;
             List<PawnKindDef> escortKinds = new List<PawnKindDef>();

@@ -13,6 +13,14 @@ using Verse.AI.Group;
 
 namespace RimSiege.Fortress
 {
+    [DefOf]
+    internal static class FortressArtilleryDefOf
+    {
+        public static ArtilleryGunPoolDef RS_MechFortressArtillery = null;
+
+        static FortressArtilleryDefOf() => DefOfHelper.EnsureInitializedInCtor(typeof(FortressArtilleryDefOf));
+    }
+
     internal static class FortressAlliedReinforcement
     {
         private const float PointsFactor = 0.9f;
@@ -35,8 +43,9 @@ namespace RimSiege.Fortress
         {
             Faction faction = site.AlliedFaction;
             PawnGroupKindDef group = PawnGroupKindDefOf.Combat;
+            bool mechanoidFortress = FortressGarrison.IsMechanoidFaction(site.Faction);
             float points = SupportPoints(site.DefenderPoints, faction.def.MinPointsToGeneratePawnGroup(group),
-                SiegeRaidMap.IsTribalHumanlike(faction), FortressGarrison.IsMechanoidFaction(site.Faction));
+                SiegeRaidMap.IsTribalHumanlike(faction), mechanoidFortress);
             var parms = new IncidentParms
             {
                 target = map, faction = faction, points = points, forced = true,
@@ -47,7 +56,7 @@ namespace RimSiege.Fortress
 
             parms.raidStrategy = SelectStrategy(map, parms, allowSiege: true);
             ArtilleryRaid artillery = ArtilleryRaidPolicy.Prepare(parms, points, points, site.Faction, site.Blueprint.Outer,
-                forceSupport: true);
+                forceSupport: true, gunPool: mechanoidFortress ? FortressArtilleryDefOf.RS_MechFortressArtillery : null);
             if (artillery == null && parms.raidStrategy.Worker is RaidStrategyWorker_Siege)
                 parms.raidStrategy = SelectStrategy(map, parms, allowSiege: false);
             List<Pawn> pawns = Generate(parms, artillery?.PawnPoints ?? points);

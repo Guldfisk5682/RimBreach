@@ -33,7 +33,7 @@ namespace RimSiege.Raids.Artillery
             raidPoints < minPoints || (totalPieces != null && totalPieces.Evaluate(raidPoints) < 1f);
 
         internal List<ArtilleryPlacement> Configure(float raidPoints, float pawnPoints, Faction faction, out float share,
-            bool breaching = false)
+            bool breaching = false, ArtilleryGunPoolDef gunPool = null)
         {
             var result = new List<ArtilleryPlacement>();
             var used = new Dictionary<ArtilleryGunRule, int>();
@@ -48,7 +48,7 @@ namespace RimSiege.Raids.Artillery
             while (result.Count < limit)
             {
                 var choices = new List<ArtilleryGunRule>();
-                foreach (ArtilleryGunRule rule in guns)
+                foreach (ArtilleryGunRule rule in gunPool?.guns ?? guns)
                 {
                     if (rule.turret == null || rule.turret.techLevel > faction.def.techLevel ||
                         (rule.onlyFaction != null && rule.onlyFaction != faction.def) ||
@@ -140,6 +140,11 @@ namespace RimSiege.Raids.Artillery
                 mustHarmHealth: true, techLevel: faction.def.techLevel,
                 allowAntigrainWarhead: false, faction: faction);
         }
+    }
+
+    public sealed class ArtilleryGunPoolDef : Def
+    {
+        public List<ArtilleryGunRule> guns = new List<ArtilleryGunRule>();
     }
 
     public sealed class ArtilleryGunRule

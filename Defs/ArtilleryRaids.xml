@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Defs>
+  <RimSiege.Raids.Artillery.ArtilleryGunPoolDef>
+    <defName>RS_MechFortressArtillery</defName>
+    <guns>
+      <li>
+        <turret>Turret_Mortar</turret><cost>180</cost>
+      </li>
+      <li MayRequire="CETeam.CombatExtendedArmory">
+        <turret>CE_Turret_SPGNine</turret><cost>280</cost><constructionWorkFactor>0.6</constructionWorkFactor>
+        <ammo>Ammo_SPG9Rocket_Frag</ammo>
+      </li>
+      <li>
+        <turret>Turret_Flak</turret><cost>360</cost>
+      </li>
+    </guns>
+  </RimSiege.Raids.Artillery.ArtilleryGunPoolDef>
   <RimSiege.Raids.Artillery.ArtilleryProfileDef>
     <defName>RS_ArtilleryOrdinary</defName>
     <kind>Ordinary</kind>

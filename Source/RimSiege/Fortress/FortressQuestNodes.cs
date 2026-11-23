@@ -118,18 +118,21 @@ namespace RimSiege.Fortress
                 .Where(CanOwnFortress).ToList();
             if (!slate.Get("fortressHarassment", false))
             {
+                bool CanCommission(Faction publisher, Faction defender) => publisher.HostileTo(defender) &&
+                    (publisher.def.techLevel >= TechLevel.Industrial || !FortressGarrison.IsMechanoidFaction(defender));
+
                 bool CanSend(Pawn leader) => leader is { Dead: false, IsPrisoner: false } &&
                     leader.Faction is { Hidden: false, temporary: false } publisher && publisher.leader == leader &&
                     FortressSite.CanFieldSupport(publisher) &&
                     (!leader.IsWorldPawn() || Find.WorldPawns.GetSituation(leader) != WorldPawnSituation.ReservedByQuest) &&
-                    defenders.Any(defender => publisher.HostileTo(defender));
+                    defenders.Any(defender => CanCommission(publisher, defender));
 
                 Pawn asker = slate.Get<Pawn>("asker");
                 if (!CanSend(asker) && !factions.Select(publisher => publisher.leader).Where(CanSend)
                         .TryRandomElement(out asker)) return false;
 
                 slate.Set("asker", asker);
-                defenders.RemoveAll(defender => !asker.Faction.HostileTo(defender));
+                defenders.RemoveAll(defender => !CanCommission(asker.Faction, defender));
                 if (generating)
                 {
                     var involved = new QuestPart_InvolvedFactions();

@@ -188,14 +188,15 @@ namespace RimSiege.Raids
         internal static bool IsExposedToThreats(IntVec3 cell, Map map, Verb[] threats)
         {
             for (int i = 0; i < threats.Length; i++)
-            {
-                Verb verb = threats[i];
-                if (verb.Caster is { Spawned: true } caster &&
-                    IsoFloor.RangeDistance(caster.Position, cell, map) <= verb.EffectiveRange &&
-                    verb.CanHitTarget(cell))
+                if (CanThreaten(threats[i], cell, map))
                     return true;
-            }
             return false;
         }
+
+        internal static bool CanThreaten(Verb verb, IntVec3 cell, Map map) =>
+            verb.Caster is { Spawned: true } caster &&
+            IsoFloor.RangeDistance(caster.Position, cell, map) <= verb.EffectiveRange &&
+            (caster is not Building_TurretGunCE { CompFireArc: { } arc } || arc.WithinFireArc(cell)) &&
+            verb.CanHitTarget(cell);
     }
 }

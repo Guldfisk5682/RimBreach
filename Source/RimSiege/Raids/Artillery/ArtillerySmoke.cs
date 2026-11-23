@@ -362,18 +362,7 @@ namespace RimSiege.Raids.Artillery
             foreach (Verb verb in threats)
             {
                 if (verb.Caster is not { Spawned: true } caster) continue;
-                float range = verb.EffectiveRange;
-                bool hitsCamp = false;
-                for (int i = 0; i < probes.Count; i++)
-                {
-                    IntVec3 probe = probes[i];
-                    if (IsoFloor.RangeDistance(caster.Position, probe, map) <= range && verb.CanHitTarget(probe))
-                    {
-                        hitsCamp = true;
-                        break;
-                    }
-                }
-                if (!hitsCamp) continue;
+                if (!probes.Any(cell => SmokeThreatCache.CanThreaten(verb, cell, map))) continue;
                 campExposed = true;
                 Vector3 dir = (IsoFloor.GroundCellOf(caster.Position, map) - IsoFloor.GroundCellOf(camp.Center, map)).ToVector3();
                 dir.y = 0f;
@@ -401,8 +390,9 @@ namespace RimSiege.Raids.Artillery
         {
             var probes = new List<IntVec3> { camp.Center };
             foreach (ArtilleryPlacement gun in camp.Guns)
-                if (gun.Cell.InBounds(map) && IsoFloor.SameFloor(gun.Cell, camp.Center, map))
-                    probes.Add(gun.Cell);
+                foreach (IntVec3 cell in PlacementCells(gun, map))
+                    if (cell.InBounds(map) && IsoFloor.SameFloor(cell, camp.Center, map))
+                        probes.Add(cell);
 
             for (int i = 0; i < 8; i++)
             {
@@ -648,9 +638,15 @@ namespace RimSiege.Raids.Artillery
         {
             bool Covered(IntVec3 cell) => cell.InBounds(map) &&
                 (Screened(cell, map) || !IsExposed(cell, map, threats));
-            return GenAdj.OccupiedRect(placement.Cell, placement.Rotation, placement.Def.Size).Cells.All(Covered) &&
-                (!placement.NeedsOperator || Covered(ThingUtility.InteractionCellWhenAt(
-                    placement.Def, placement.Cell, placement.Rotation, map)));
+            return PlacementCells(placement, map).All(Covered);
+        }
+
+        private static IEnumerable<IntVec3> PlacementCells(ArtilleryPlacement placement, Map map)
+        {
+            foreach (IntVec3 cell in GenAdj.OccupiedRect(placement.Cell, placement.Rotation, placement.Def.Size))
+                yield return cell;
+            if (placement.NeedsOperator)
+                yield return ThingUtility.InteractionCellWhenAt(placement.Def, placement.Cell, placement.Rotation, map);
         }
 
         internal void ApplyOptionalDuties(Lord camp)
