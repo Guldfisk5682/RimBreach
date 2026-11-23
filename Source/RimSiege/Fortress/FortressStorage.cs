@@ -28,12 +28,12 @@ namespace RimSiege.Fortress
         internal static void Restore(Map map, FortressLayout layout, List<FortressStock> stock)
         {
             foreach (Thing thing in Supplies(map, layout).ToList()) thing.Destroy(DestroyMode.Vanish);
+            var budget = layout.Kind == FortressLayoutKind.MechCircularBunker ? null : new FortressSupplyBudget();
             foreach (FortressStock stack in stock)
             {
                 if (stack.def == null) continue;
-                Thing thing = ThingMaker.MakeThing(stack.def, stack.stuff);
-                thing.stackCount = stack.count;
-                GenPlace.TryPlaceThing(thing, Api.CellOnFloor(stack.ground, stack.floor, map), map, ThingPlaceMode.Direct);
+                FortressStorage.PlaceStack(map, stack.def, stack.stuff,
+                    Api.CellOnFloor(stack.ground, stack.floor, map), stack.count, budget);
             }
         }
 
@@ -63,6 +63,31 @@ namespace RimSiege.Fortress
             Scribe_Values.Look(ref ground, "ground");
             Scribe_Values.Look(ref floor, "floor");
             Scribe_Values.Look(ref count, "count");
+        }
+    }
+
+    internal sealed class FortressSupplyBudget
+    {
+        internal const string ResolveParam = "RimSiege.FortressSupplyBudget";
+
+        private int medicineStacks = 4;
+        private int foodStacks = 20;
+        private int components = 150;
+
+        internal int Limit(ThingDef def, int count)
+        {
+            if (def == ThingDefOf.ComponentIndustrial) return Math.Min(count, Math.Min(components, def.stackLimit));
+            if (def.IsMedicine) return medicineStacks > 0 ? Math.Min(count, def.stackLimit) : 0;
+            if (def.IsNutritionGivingIngestible) return foodStacks > 0 ? Math.Min(count, def.stackLimit) : 0;
+            return count;
+        }
+
+        internal void Record(ThingDef def, int count)
+        {
+            if (count <= 0) return;
+            if (def == ThingDefOf.ComponentIndustrial) components -= count;
+            else if (def.IsMedicine) medicineStacks--;
+            else if (def.IsNutritionGivingIngestible) foodStacks--;
         }
     }
 
@@ -140,7 +165,8 @@ namespace RimSiege.Fortress
             bool Free(IntVec3 cell) => cell.Standable(map) && cell.GetFirstBuilding(map) == null;
         }
 
-        internal static void Fill(Map map, IEnumerable<Building_Storage> shelves, Func<int, ThingDef> contents)
+        internal static void Fill(Map map, IEnumerable<Building_Storage> shelves, Func<int, ThingDef> contents,
+            FortressSupplyBudget budget = null)
         {
             int index = 0;
             foreach (Building_Storage shelf in shelves)
@@ -148,18 +174,26 @@ namespace RimSiege.Fortress
                 foreach (IntVec3 cell in shelf.GetSlotGroup().CellsList)
                 {
                     int slots = cell.GetMaxItemsAllowedInCell(map) - cell.GetItemCount(map);
-                    for (int i = 0; i < slots; i++) Stock(map, contents(index++), cell);
+                    for (int i = 0; i < slots; i++) Stock(map, contents(index++), cell, budget: budget);
                 }
             }
         }
 
-        internal static int Stock(Map map, ThingDef def, IntVec3 cell, int count = int.MaxValue)
+        internal static int Stock(Map map, ThingDef def, IntVec3 cell, int count = int.MaxValue,
+            FortressSupplyBudget budget = null) =>
+            PlaceStack(map, def, null, cell, Math.Min(count, def.stackLimit), budget);
+
+        internal static int PlaceStack(Map map, ThingDef def, ThingDef stuff, IntVec3 cell, int count,
+            FortressSupplyBudget budget)
         {
-            Thing stack = ThingMaker.MakeThing(def);
-            stack.stackCount = Math.Min(count, def.stackLimit);
-            int requested = stack.stackCount;
-            return GenPlace.TryPlaceThing(stack, cell, map, ThingPlaceMode.Direct)
+            int requested = budget?.Limit(def, count) ?? count;
+            if (requested <= 0) return 0;
+            Thing stack = ThingMaker.MakeThing(def, stuff);
+            stack.stackCount = requested;
+            int placed = GenPlace.TryPlaceThing(stack, cell, map, ThingPlaceMode.Direct)
                 ? requested : requested - stack.stackCount;
+            budget?.Record(def, placed);
+            return placed;
         }
     }
 }

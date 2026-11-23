@@ -45,7 +45,8 @@ namespace RimSiege.Fortress
 
     internal static class FortressConstruction
     {
-        internal static bool Build(Map map, FortressLayout layout, FortressBlueprint blueprint, bool reinforced)
+        internal static bool Build(Map map, FortressLayout layout, FortressBlueprint blueprint, bool reinforced,
+            FortressSupplyBudget supplies)
         {
             PrepareGround(map, layout);
             BaseGen.globalSettings.map = map;
@@ -133,7 +134,7 @@ namespace RimSiege.Fortress
             }
 
             if (layout.Kind != FortressLayoutKind.MechCircularBunker)
-                FortressFacilities.Furnish(map, layout, new FactionMaterial(defaultStuff, blueprint.Slab));
+                FortressFacilities.Furnish(map, layout, new FactionMaterial(defaultStuff, blueprint.Slab), supplies);
 
             CellRect ground = Api.GroundRect(map);
             Log.Message($"[RimSiege] Fortress generated on tile {map.Tile}: {layout.Kind} {layout.Size} {layout.Outer}, gate {layout.Gate}, " +

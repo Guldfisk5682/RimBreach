@@ -269,14 +269,17 @@ namespace RimSiege.Fortress
 
     internal static class FortressFacilities
     {
-        internal static void Furnish(Map map, FortressLayout layout, FactionMaterial material)
+        internal static void Furnish(Map map, FortressLayout layout, FactionMaterial material,
+            FortressSupplyBudget budget)
         {
             FortressFacilityPlan plan = layout.Facilities;
             Faction faction = map.ParentFaction;
 
             BaseGen.globalSettings.map = map;
             Push("RS_FortressBarracks", plan.Living.Interior(map, 0));
-            Push("RS_FortressDining", plan.DiningInterior(map));
+            var dining = new ResolveParams { rect = plan.DiningInterior(map), faction = faction };
+            dining.SetCustom(FortressSupplyBudget.ResolveParam, budget);
+            BaseGen.symbolStack.Push("RS_FortressDining", dining);
             CellRect medicalInterior = CellRect.FromLimits(
                 Api.CellOnFloor(plan.MedicalRect.ContractedBy(1).Min, plan.MedicalFloor, map),
                 Api.CellOnFloor(plan.MedicalRect.ContractedBy(1).Max, plan.MedicalFloor, map));
@@ -297,7 +300,7 @@ namespace RimSiege.Fortress
             int ordnanceShelves = supply.Count >= 3 ? 2 : supply.Count > 1 ? 1 : 0;
             if (ordnanceShelves > 0)
             {
-                FortressStorage.Fill(map, supply.Take(supply.Count - ordnanceShelves), SupplyItem);
+                FortressStorage.Fill(map, supply.Take(supply.Count - ordnanceShelves), SupplyItem, budget);
             }
             else if (supply.Count == 1)
             {
@@ -307,7 +310,7 @@ namespace RimSiege.Fortress
                 foreach (IntVec3 cell in cells.Take(fillCells))
                 {
                     int slots = cell.GetMaxItemsAllowedInCell(map) - cell.GetItemCount(map);
-                    for (int i = 0; i < slots; i++) FortressStorage.Stock(map, SupplyItem(index++), cell);
+                    for (int i = 0; i < slots; i++) FortressStorage.Stock(map, SupplyItem(index++), cell, budget: budget);
                 }
             }
 
@@ -318,7 +321,7 @@ namespace RimSiege.Fortress
                 var auxAccess = new HashSet<IntVec3>(auxRoom.Where(cell =>
                     cell.x == auxRoom.CenterCell.x || cell.z == auxRoom.CenterCell.z)) { auxEntry };
                 List<Building_Storage> auxShelves = FortressStorage.PlaceShelves(map, auxRoom, material.Stuff, auxAccess);
-                FortressStorage.Fill(map, auxShelves, SupplyItem);
+                FortressStorage.Fill(map, auxShelves, SupplyItem, budget);
             }
 
             if (!plan.Power.IsEmpty) FurnishPower(map, plan.Power, material.Stuff);

@@ -225,25 +225,29 @@ namespace RimSiege.Fortress
             CellRect usable = ground.ContractedBy(3);
             IntVec3 anchor = slot.Ground;
             CellRect search = CellRect.CenteredOn(anchor, 9, 9).ClipInsideRect(usable);
-            FortressDefensePiece turret = search
-                .Where(cell => !geo.Footprint.Contains(cell) && !cell.GetTerrain(map).IsWater &&
-                    !geo.Gates.Any(gate => cell.InHorDistOf(gate.Approach, 4f)))
-                .OrderBy(cell => (cell - anchor).LengthHorizontalSquared)
-                .Select(cell => At(turretDef, cell, slot.Facing, null, slot.CoveredSectors))
-                .FirstOrDefault(candidate =>
-                    Footprint(candidate).ExpandedBy(1).All(c => usable.Contains(c) && !geo.Footprint.Contains(c) &&
-                        !c.GetTerrain(map).IsWater) &&
-                    Fits(candidate, usable));
-            if (turret == null) return;
-            Add(turret);
-
-            // Ring the exterior turret completely (360 degrees) with Plasteel barricades (passable by Lifters/Constructoids).
-            CellRect footprint = Footprint(turret);
-            foreach (IntVec3 ringCell in footprint.ExpandedBy(1).EdgeCells)
+            FortressDefensePiece turret = null;
+            IntVec3[] cover = Array.Empty<IntVec3>();
+            foreach (IntVec3 cell in search.OrderBy(cell => (cell - anchor).LengthHorizontalSquared))
             {
-                FortressDefensePiece barricade = At(ThingDefOf.Barricade, ringCell, Rot4.North);
-                if (Fits(barricade, usable)) Add(barricade);
+                if (geo.Footprint.Contains(cell) || cell.GetTerrain(map).IsWater ||
+                    geo.Gates.Any(gate => cell.InHorDistOf(gate.Approach, 4f))) continue;
+                FortressDefensePiece candidate = At(turretDef, cell, slot.Facing, null, slot.CoveredSectors);
+                CellRect ring = Footprint(candidate).ExpandedBy(1);
+                if (!ring.FullyContainedWithin(usable) ||
+                    ring.Any(c => geo.Footprint.Contains(c) || reserved.Contains(c)) || !Fits(candidate, usable))
+                    continue;
+
+                IntVec3[] cells = ring.EdgeCells.Where(c => FortressArmament.CanPlacePicketBarricade(c, map)).ToArray();
+                if (cells.Length <= cover.Length) continue;
+                turret = candidate;
+                cover = cells;
+                if (cover.Length == ring.EdgeCellsCount) break;
             }
+            if (turret == null) return;
+
+            Add(turret);
+            foreach (IntVec3 cell in cover)
+                Add(At(ThingDefOf.Barricade, cell, Rot4.North));
         }
 
         private void PlaceBastionFlanks(ThingDef machineGun, FortressGunOption wallSupport)

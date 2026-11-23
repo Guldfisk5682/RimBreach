@@ -115,6 +115,7 @@ namespace RimSiege.Fortress
 
         internal void StockEmplacements(List<ArmedEmplacement> emplacements)
         {
+            bool mechanoid = geometry.Kind == FortressLayoutKind.MechCircularBunker;
             operatingCells.UnionWith(emplacements.Where(gun => gun.Turret.def.hasInteractionCell)
                 .Select(gun => gun.Turret.InteractionCell));
 
@@ -176,8 +177,8 @@ namespace RimSiege.Fortress
                     reserve[nearest].Add(ammo);
                 }
 
-                if (geometry.Kind != FortressLayoutKind.MechCircularBunker || geometry.Footprint.Contains(ground))
-                    StockReady(ammo, readyCount, turret);
+                if (!mechanoid || geometry.Footprint.Contains(ground))
+                    StockReady(ammo, mechanoid ? readyCount : magazine * 10, turret);
             }
 
             var ordnance = new List<(AmmoDef Ammo, int Ready, int Reserve, IntVec3[][] Storage)>();
@@ -301,18 +302,22 @@ namespace RimSiege.Fortress
             {
                 foreach (IntVec3 cell in slots)
                 {
-                    int openSlots = cell.GetMaxItemsAllowedInCell(map) - cell.GetItemCount(map);
-                    if (openSlots == 0 && cell.GetItems(map).Any(stack => stack.def == ammo && stack.stackCount < ammo.stackLimit))
-                        openSlots = 1;
-                    for (int i = 0; i < openSlots && remaining > 0; i++)
-                    {
-                        int stackCount = Math.Min(remaining, ammo.stackLimit);
-                        remaining -= FortressStorage.Stock(map, ammo, cell, stackCount);
-                    }
+                    remaining -= StockAmmoAt(ammo, remaining, cell);
                     if (remaining <= 0) return totalCount;
                 }
             }
             return totalCount - remaining;
+        }
+
+        private int StockAmmoAt(AmmoDef ammo, int count, IntVec3 cell)
+        {
+            int openSlots = cell.GetMaxItemsAllowedInCell(map) - cell.GetItemCount(map);
+            if (openSlots == 0 && cell.GetItems(map).Any(stack => stack.def == ammo && stack.stackCount < ammo.stackLimit))
+                openSlots = 1;
+            int remaining = count;
+            for (int i = 0; i < openSlots && remaining > 0; i++)
+                remaining -= FortressStorage.Stock(map, ammo, cell, remaining);
+            return count - remaining;
         }
 
         internal void StockInfantry(IEnumerable<Pawn> guards, List<ArmedEmplacement> emplacements)
@@ -323,6 +328,12 @@ namespace RimSiege.Fortress
                 .OrderByDescending(group => group.Count()).ThenBy(group => group.Key.defName)
                 .Select(group => (Ammo: group.Key, Magazine: group.Max(user => user.MagSize))).ToArray();
             if (types.Length == 0) return;
+
+            if (geometry.Kind != FortressLayoutKind.MechCircularBunker)
+            {
+                StockInfantryReserve(types.Select(type => type.Ammo));
+                return;
+            }
 
             foreach (var type in types)
                 StockShelf(keep, type.Ammo, minStacks: 2);
@@ -349,6 +360,21 @@ namespace RimSiege.Fortress
                 var type = types[0];
                 ArmedEmplacement post = sector.OrderBy(gun => IsExplosiveAmmo(gun.Ammo, gun.Turret)).First();
                 StockReady(type.Ammo, type.Magazine, post.Turret);
+            }
+        }
+
+        private void StockInfantryReserve(IEnumerable<AmmoDef> types)
+        {
+            IntVec3[] slots = towers.Prepend(keep).SelectMany(module => storage[module])
+                .Concat(supplySlots).Distinct().ToArray();
+            var stocked = slots.SelectMany(cell => cell.GetItems(map)).Select(item => item.def).OfType<AmmoDef>().ToHashSet();
+            foreach (AmmoDef ammo in types)
+            {
+                if (stocked.Contains(ammo)) continue;
+                foreach (IntVec3 cell in slots)
+                    if (cell.GetItemCount(map) < cell.GetMaxItemsAllowedInCell(map) &&
+                        FortressStorage.Stock(map, ammo, cell) > 0)
+                        break;
             }
         }
 
@@ -395,8 +421,12 @@ namespace RimSiege.Fortress
                 }
                 if (cell.GetItemCount(map) >= cell.GetMaxItemsAllowedInCell(map)) continue;
                 shelf.GetStoreSettings().filter.SetAllow(ammo, true);
-                FortressStorage.Stock(map, ammo, cell, count);
-                return;
+                if (geometry.Kind == FortressLayoutKind.MechCircularBunker)
+                {
+                    FortressStorage.Stock(map, ammo, cell, count);
+                    return;
+                }
+                if (StockAmmoAt(ammo, count, cell) > 0) return;
             }
 
             bool WorkingCell(IntVec3 candidate, IntVec3 shelfCell) => candidate.InBounds(map) &&

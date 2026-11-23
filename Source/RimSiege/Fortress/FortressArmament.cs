@@ -25,6 +25,11 @@ namespace RimSiege.Fortress
             kind == FortressLayoutKind.MechCircularBunker && def == ThingDefOf.Barricade ? ThingDefOf.Plasteel :
             GenStuff.DefaultStuffFor(def);
 
+        internal static bool CanPlacePicketBarricade(IntVec3 cell, Map map) =>
+            cell.GetTerrain(map).passability != Traversability.Impassable &&
+            GenConstruct.CanBuildOnTerrain(ThingDefOf.Barricade, cell, map, Rot4.North, stuffDef: ThingDefOf.Plasteel) &&
+            !cell.GetThingList(map).Any(thing => thing is Building && !thing.def.destroyable);
+
         internal static List<ArmedEmplacement> Spawn(Map map, FortressLayout layout, List<FortressDefensePiece> pieces)
         {
             var emplacements = new List<ArmedEmplacement>();
@@ -34,6 +39,14 @@ namespace RimSiege.Fortress
                 // Optional DLC or CE Guns may have been removed between visits.
                 if (piece.Def == null) continue;
                 IntVec3 cell = piece.CellOn(map);
+                if (layout.Kind == FortressLayoutKind.MechCircularBunker && piece.Floor == 0 &&
+                    piece.Def == ThingDefOf.Barricade && !layout.Geometry.Footprint.Contains(piece.Ground))
+                {
+                    if (!cell.InBounds(map) || !CanPlacePicketBarricade(cell, map)) continue;
+                    foreach (Thing obstacle in cell.GetThingList(map)
+                        .Where(thing => thing.def.destroyable && thing is Plant or Building).ToArray())
+                        obstacle.Destroy(DestroyMode.Vanish);
+                }
                 bool unroof = piece.Def.building?.IsMortar == true ||
                     layout.Facilities.Mortar.Contains(cell) || layout.Facilities.SecondMortar.Contains(cell);
                 if (unroof)

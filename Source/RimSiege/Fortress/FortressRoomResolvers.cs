@@ -42,10 +42,11 @@ namespace RimSiege.Fortress
                 BaseGenUtility.AnyDoorAdjacentCardinalTo(cell, map) ||
                 cell.x == rp.rect.CenterCell.x || cell.z == rp.rect.CenterCell.z));
             List<Building_Storage> shelves = FortressStorage.PlaceShelves(map, rp.rect, ThingDefOf.WoodLog, access);
-            FortressStorage.Fill(map, shelves, _ => food);
+            rp.TryGetCustom(FortressSupplyBudget.ResolveParam, out FortressSupplyBudget budget);
+            FortressStorage.Fill(map, shelves, _ => food, budget);
             if (shelves.Count == 0 && CellFinder.TryFindRandomCellInsideWith(rp.rect,
                 cell => cell.Standable(map) && cell.GetFirstBuilding(map) == null, out IntVec3 stockCell))
-                FortressStorage.Stock(map, food, stockCell);
+                FortressStorage.Stock(map, food, stockCell, budget: budget);
         }
     }
 

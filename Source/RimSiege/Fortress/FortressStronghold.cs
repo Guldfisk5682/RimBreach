@@ -9,7 +9,8 @@ namespace RimSiege.Fortress
 {
     internal static class FortressStronghold
     {
-        internal static IntVec3 Furnish(Map map, FortressLayout layout, ThingDef stuff, bool reserveLootShelf)
+        internal static IntVec3 Furnish(Map map, FortressLayout layout, ThingDef stuff, bool reserveLootShelf,
+            FortressSupplyBudget budget)
         {
             if (layout.Kind == FortressLayoutKind.MechCircularBunker)
                 return FurnishMechBunker(map, layout, stuff);
@@ -47,7 +48,7 @@ namespace RimSiege.Fortress
 
             if (layout.Kind == FortressLayoutKind.HumanBastion)
             {
-                FurnishBastionVaults(map, layout, stuff, powered);
+                FurnishBastionVaults(map, layout, stuff, powered, budget);
             }
             else
             {
@@ -68,7 +69,8 @@ namespace RimSiege.Fortress
             return lootShelf;
         }
 
-        private static void FurnishBastionVaults(Map map, FortressLayout layout, ThingDef stuff, bool powered)
+        private static void FurnishBastionVaults(Map map, FortressLayout layout, ThingDef stuff, bool powered,
+            FortressSupplyBudget budget)
         {
             Faction faction = map.ParentFaction;
             bool industrial = layout.Facilities.Industrial;
@@ -117,7 +119,7 @@ namespace RimSiege.Fortress
                 int reserveCount = shelves.Count / 2;
                 if (reserveCount <= 0) continue;
 
-                FortressStorage.Fill(map, shelves.Take(reserveCount), index => VaultReserveItem(index));
+                FortressStorage.Fill(map, shelves.Take(reserveCount), VaultReserveItem, budget);
             }
 
             ThingDef VaultReserveItem(int index)

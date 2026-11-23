@@ -12,6 +12,7 @@ namespace RimSiege.Fortress
         internal FortressLayoutKind LayoutKind = FortressLayoutKind.SquareKeep;
         internal FortressSize Size;
         internal CellRect Outer;
+        internal IntVec3 GroundSize;
         internal Rot4 GateSide;
         internal bool FourGates;
         internal int Top;
@@ -58,6 +59,7 @@ namespace RimSiege.Fortress
             Scribe_Values.Look(ref LayoutKind, "layoutKind", FortressLayoutKind.SquareKeep);
             bool hasSize = Size == FortressSize.Large;
             Scribe_Values.Look(ref Outer, "outer");
+            Scribe_Values.Look(ref GroundSize, "groundSize");
             Scribe_Values.Look(ref hasSize, "large",
                 Outer.Width == FortressGeometry.OuterSideFor(LayoutKind, FortressSize.Large));
             Size = hasSize ? FortressSize.Large : FortressSize.Compact;

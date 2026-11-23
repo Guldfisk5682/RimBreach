@@ -1,11 +1,35 @@
 using System.Collections.Generic;
 using System.Linq;
+using HarmonyLib;
 using ProjectZ;
 using RimWorld;
+using RimWorld.Planet;
 using Verse;
 
 namespace RimSiege.Fortress
 {
+    [HarmonyPatch(typeof(MapGenerator), nameof(MapGenerator.GenerateMap))]
+    internal static class MechFortressMapSizePatch
+    {
+        private const int MechMapSide = 275;
+
+        // Set the ground dimensions before ProjectZ expands mapSize into floor bands.
+        [HarmonyPriority(Priority.First)]
+        private static void Prefix(MapParent parent, bool isPocketMap, ref IntVec3 mapSize)
+        {
+            if (isPocketMap || parent is not FortressSite site) return;
+            if (site.Blueprint is { } blueprint)
+            {
+                if (blueprint.GroundSize.x > 0 && blueprint.GroundSize.z > 0)
+                    mapSize = new IntVec3(blueprint.GroundSize.x, mapSize.y, blueprint.GroundSize.z);
+                return;
+            }
+            if (FortressGarrison.IsMechanoidFaction(site.Faction) ||
+                site.ForcedLayoutKind == FortressLayoutKind.MechCircularBunker)
+                mapSize = new IntVec3(MechMapSide, mapSize.y, MechMapSide);
+        }
+    }
+
     public sealed class GenStep_Fortress : GenStep
     {
         private const string LayoutSeedKey = "RimSiege.FortressLayoutSeed";
@@ -84,11 +108,14 @@ namespace RimSiege.Fortress
                     return;
                 }
 
+                CellRect ground = Api.GroundRect(map);
                 Build(map, parms, site, layout, new FortressBlueprint
                 {
                     LayoutKind = layout.Kind,
                     Size = layout.Size,
                     Outer = layout.Outer,
+                    GroundSize = layout.Kind == FortressLayoutKind.MechCircularBunker
+                        ? new IntVec3(ground.Width, map.Size.y, ground.Height) : IntVec3.Zero,
                     GateSide = layout.GateSide,
                     FourGates = layout.FourGates,
                     Top = layout.Tiers.Length - 1,
@@ -113,13 +140,15 @@ namespace RimSiege.Fortress
             Rand.PushState(blueprint.FurnishingSeed);
             try
             {
-                if (layout == null || !FortressConstruction.Build(map, layout, blueprint, reinforced))
+                var supplies = mechanoid ? null : new FortressSupplyBudget();
+                if (layout == null || !FortressConstruction.Build(map, layout, blueprint, reinforced, supplies))
                 {
                     site?.GenerationFailed();
                     return;
                 }
 
-                IntVec3 lootShelf = FortressStronghold.Furnish(map, layout, blueprint.Stuff, site?.Harassment == true);
+                IntVec3 lootShelf = FortressStronghold.Furnish(map, layout, blueprint.Stuff, site?.Harassment == true,
+                    supplies);
                 if (site != null)
                 {
                     blueprint.LootShelfGround = lootShelf.IsValid ? Api.GroundCellOf(lootShelf, map) : IntVec3.Invalid;
