@@ -18,6 +18,8 @@ namespace RimSiege.Fortress
         internal int FurnishingSeed;
         internal ThingDef Stuff;
         internal TerrainDef Slab;
+        // Older and uniform-deck sites have no secondary slab material.
+        internal TerrainDef UnarmoredSlab;
         internal List<IntVec3> NaturalBarrier;
         internal FortressFacilityPlan Facilities;
         internal List<FortressStock> Stock;
@@ -48,6 +50,9 @@ namespace RimSiege.Fortress
             new HashSet<IntVec3>(NaturalBarrier ?? new List<IntVec3>()),
             Size, LayoutKind, Top, Facilities, FourGates);
 
+        internal TerrainDef SlabAt(FortressTier tier, IntVec3 cell) =>
+            UnarmoredSlab == null || tier.ArmoredDeck.Contains(cell) ? Slab : UnarmoredSlab;
+
         public void ExposeData()
         {
             Scribe_Values.Look(ref LayoutKind, "layoutKind", FortressLayoutKind.SquareKeep);
@@ -62,6 +67,7 @@ namespace RimSiege.Fortress
             Scribe_Values.Look(ref FurnishingSeed, "furnishingSeed");
             Scribe_Defs.Look(ref Stuff, "stuff");
             Scribe_Defs.Look(ref Slab, "slab");
+            Scribe_Defs.Look(ref UnarmoredSlab, "unarmoredSlab");
             Scribe_Collections.Look(ref NaturalBarrier, "naturalBarrier", LookMode.Value);
             Scribe_Collections.Look(ref Stock, "stock", LookMode.Deep);
             Scribe_Collections.Look(ref Defenses, "defenses", LookMode.Deep);

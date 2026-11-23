@@ -33,6 +33,7 @@ namespace RimSiege.Fortress
         internal readonly List<FortressBuilding> Buildings = new();
         internal readonly List<StairGeometry> Stairs = new();
         internal readonly List<IntVec3> Deck = new();
+        internal readonly HashSet<IntVec3> ArmoredDeck = new();
         internal readonly HashSet<IntVec3> Openings = new();
         internal readonly List<FortressRoomFloor> Interiors = new();
     }

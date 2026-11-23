@@ -45,7 +45,7 @@ namespace RimSiege.Fortress
 
     internal static class FortressConstruction
     {
-        internal static bool Build(Map map, FortressLayout layout, FactionMaterial material, bool reinforced)
+        internal static bool Build(Map map, FortressLayout layout, FortressBlueprint blueprint, bool reinforced)
         {
             PrepareGround(map, layout);
             BaseGen.globalSettings.map = map;
@@ -64,8 +64,9 @@ namespace RimSiege.Fortress
                     BaseGen.symbolStack.Push("clear", CellRect.SingleCell(ladder.Foot));
             BaseGen.Generate();
             ThingDef stairs = DefDatabase<ThingDef>.GetNamed("PZ_Stairs");
+            ThingDef defaultStuff = blueprint.Stuff;
             ThingDef floorMaterial = layout.Kind == FortressLayoutKind.MechCircularBunker
-                ? FactionMaterial.HardestLocalStone(map) : material.Stuff;
+                ? FactionMaterial.HardestLocalStone(map) : defaultStuff;
             TerrainDef finish = BaseGenUtility.CorrespondingTerrainDef(floorMaterial, beautiful: false, map.ParentFaction);
             if (!finish.layerable) finish = TerrainDefOf.Concrete;
             TerrainDef sterile = DefDatabase<TerrainDef>.GetNamed("SterileTile");
@@ -81,16 +82,17 @@ namespace RimSiege.Fortress
                     FortressTier tier = layout.Tiers[level];
                     foreach (IntVec3 cell in tier.Deck)
                     {
-                        if (tier.Openings.Contains(cell) || cell.GetTerrain(map) == material.Slab) continue;
-                        if (!CanPlace(material.Slab, cell, Rot4.North, null, map, refog)) return false;
-                        map.terrainGrid.SetTerrain(cell, material.Slab);
+                        TerrainDef slab = blueprint.SlabAt(tier, cell);
+                        if (tier.Openings.Contains(cell) || cell.GetTerrain(map) == slab) continue;
+                        if (!CanPlace(slab, cell, Rot4.North, null, map, refog)) return false;
+                        map.terrainGrid.SetTerrain(cell, slab);
                     }
 
                     foreach (FortressBuilding part in tier.Buildings)
                     {
                         ThingDef def = part.Def == ThingDefOf.Wall ? wall : part.Def == ThingDefOf.Door ? door :
                             embrasure != null && part.Def.defName == "CE_Embrasure" ? embrasure : part.Def;
-                        ThingDef stuff = def.MadeFromStuff ? (part.StuffOverride ?? material.Stuff) : null;
+                        ThingDef stuff = def.MadeFromStuff ? (part.StuffOverride ?? defaultStuff) : null;
                         Spawn(def, part.Cell, part.Rotation, stuff, map);
                     }
 
@@ -107,8 +109,8 @@ namespace RimSiege.Fortress
                     foreach (StairGeometry stair in tier.Stairs)
                     {
                         RevealForPlacement(stair.exit, map, refog);
-                        if (!CanPlace(stairs, stair.center, stair.rot, material.Stuff, map, refog)) return false;
-                        Spawn(stairs, stair.center, stair.rot, material.Stuff, map);
+                        if (!CanPlace(stairs, stair.center, stair.rot, defaultStuff, map, refog)) return false;
+                        Spawn(stairs, stair.center, stair.rot, defaultStuff, map);
                     }
                 }
 
@@ -131,12 +133,12 @@ namespace RimSiege.Fortress
             }
 
             if (layout.Kind != FortressLayoutKind.MechCircularBunker)
-                FortressFacilities.Furnish(map, layout, material);
+                FortressFacilities.Furnish(map, layout, new FactionMaterial(defaultStuff, blueprint.Slab));
 
             CellRect ground = Api.GroundRect(map);
             Log.Message($"[RimSiege] Fortress generated on tile {map.Tile}: {layout.Kind} {layout.Size} {layout.Outer}, gate {layout.Gate}, " +
                 $"ground {ground.Width}x{ground.Height}, {layout.Tiers.Length} levels, {layout.Ladders.Count} ladders, " +
-                $"{material.Stuff.defName}, reinforced={reinforced}, {layout.NaturalBarrier.Count} natural wall cells.");
+                $"{defaultStuff.defName}, reinforced={reinforced}, {layout.NaturalBarrier.Count} natural wall cells.");
             return true;
         }
 

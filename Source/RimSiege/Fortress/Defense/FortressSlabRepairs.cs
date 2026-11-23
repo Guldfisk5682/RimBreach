@@ -9,27 +9,26 @@ namespace RimSiege.Fortress
     [StaticConstructorOnStartup]
     internal sealed class FortressSlabRepairs
     {
-        private readonly TerrainDef slab;
         private readonly TerrainDef openAir = DefDatabase<TerrainDef>.GetNamed("PZ_OpenAir");
-        private readonly HashSet<IntVec3> deck = new();
+        private readonly Dictionary<IntVec3, TerrainDef> deck = new();
         private readonly HashSet<IntVec3> pending = new();
 
         static FortressSlabRepairs() => Api.FloorChanged += OnFloorChanged;
 
         internal FortressSlabRepairs(Map map, FortressBlueprint blueprint)
         {
-            slab = blueprint.Slab;
             FortressLayout layout = blueprint.Rebuild(map);
             if (layout == null) return;
             foreach (FortressTier tier in layout.Tiers.Skip(1))
-                deck.UnionWith(tier.Deck.Where(cell => !tier.Openings.Contains(cell)));
-            pending.UnionWith(deck.Where(cell => cell.GetTerrain(map) == openAir));
+                foreach (IntVec3 cell in tier.Deck)
+                    if (!tier.Openings.Contains(cell)) deck.TryAdd(cell, blueprint.SlabAt(tier, cell));
+            pending.UnionWith(deck.Keys.Where(cell => cell.GetTerrain(map) == openAir));
         }
 
         internal bool HasPending => pending.Count != 0;
 
         internal bool FloorChanged(IntVec3 cell, bool built) =>
-            built ? pending.Remove(cell) : deck.Contains(cell) && pending.Add(cell);
+            built ? pending.Remove(cell) : deck.ContainsKey(cell) && pending.Add(cell);
 
         internal void PlacePending(Map map, Faction faction)
         {
@@ -41,6 +40,7 @@ namespace RimSiege.Fortress
                     pending.Remove(cell);
                     continue;
                 }
+                TerrainDef slab = deck[cell];
                 if (cell.GetThingList(map).Any(thing => thing.def.entityDefToBuild == slab) ||
                     !GenConstruct.CanPlaceBlueprintAt_NewTemp(slab, cell, Rot4.North, map, ignoreEdgeArea: true).Accepted)
                     continue;

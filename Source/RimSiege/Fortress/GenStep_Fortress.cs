@@ -73,6 +73,17 @@ namespace RimSiege.Fortress
                     return;
                 }
 
+                TerrainDef slab = material.Slab;
+                TerrainDef unarmoredSlab = null;
+                if (layout.Kind == FortressLayoutKind.MechCircularBunker &&
+                    (!Api.TryGetFloorFor(ThingDefOf.Plasteel, out slab) ||
+                     !Api.TryGetFloorFor(ThingDefOf.Steel, out unarmoredSlab)))
+                {
+                    Log.Warning($"[RimSiege] Steel and plasteel floor definitions are required for the mechanoid bunker on tile {map.Tile}.");
+                    site?.GenerationFailed();
+                    return;
+                }
+
                 Build(map, parms, site, layout, new FortressBlueprint
                 {
                     LayoutKind = layout.Kind,
@@ -83,7 +94,8 @@ namespace RimSiege.Fortress
                     Top = layout.Tiers.Length - 1,
                     NaturalBarrier = layout.NaturalBarrier.ToList(),
                     Stuff = material.Stuff,
-                    Slab = material.Slab,
+                    Slab = slab,
+                    UnarmoredSlab = unarmoredSlab,
                     Facilities = layout.Facilities,
                     FurnishingSeed = Rand.Int
                 });
@@ -101,8 +113,7 @@ namespace RimSiege.Fortress
             Rand.PushState(blueprint.FurnishingSeed);
             try
             {
-                if (layout == null || !FortressConstruction.Build(map, layout,
-                        new FactionMaterial(blueprint.Stuff, blueprint.Slab), reinforced))
+                if (layout == null || !FortressConstruction.Build(map, layout, blueprint, reinforced))
                 {
                     site?.GenerationFailed();
                     return;

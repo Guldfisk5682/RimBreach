@@ -393,13 +393,14 @@ namespace RimSiege.Fortress
 
             Tiers[0].Interiors.Add(new FortressRoomFloor(Outer, false, false, floorInteriorCells));
 
-            // 8. Continuous Floor 1 Plasteel armored slab laid strictly outward (BFS <= 6) from Floor 0 roof-holders.
+            // 8. Continuous Floor 1 deck laid outward (BFS <= 6) from Floor 0 roof-holders.
+            FortressTier upperTier = Tiers[1];
             var allOpenings = new HashSet<IntVec3>(siloOpenings);
             allOpenings.UnionWith(liftOpenings);
             foreach (IntVec3 cell in siloOpenings)
-                Tiers[1].Openings.Add(Api.CellOnFloor(cell, 1, map));
+                upperTier.Openings.Add(Api.CellOnFloor(cell, 1, map));
 
-            var armoredCapGround = new HashSet<IntVec3>();
+            var deckGround = new HashSet<IntVec3>();
             var supportDist = new Dictionary<IntVec3, int>(footprint.Count);
             var supportQueue = new Queue<IntVec3>();
             foreach (IntVec3 cell in roofHolders)
@@ -426,11 +427,11 @@ namespace RimSiege.Fortress
             {
                 if (allOpenings.Contains(cell) || NaturalBarrier.Contains(cell)) continue;
                 if (!supportDist.TryGetValue(cell, out int dist) || dist > 6) return false;
-                armoredCapGround.Add(cell);
+                deckGround.Add(cell);
             }
 
-            foreach (IntVec3 cell in armoredCapGround.OrderBy(c => supportDist[c]))
-                Tiers[1].Deck.Add(Api.CellOnFloor(cell, 1, map));
+            foreach (IntVec3 cell in deckGround.OrderBy(c => supportDist[c]))
+                upperTier.Deck.Add(Api.CellOnFloor(cell, 1, map));
 
             // 9. Floor 1 structures:
             //    - 4 Enclosed Oblique Cupolas (outer Plasteel embrasures, inner Plasteel back-walls, roofed standing cells)
@@ -438,16 +439,16 @@ namespace RimSiege.Fortress
             //    - Ammo Vaults, Power Cell rooms, Generator/Facility rooms, Frontal Pillboxes covered with Uranium walls
             //      (automatically upgraded to Reinforced Uranium on Large), recessed 6x6 around mortar silos.
             var cupolaRoofFloor1 = new List<IntVec3>(cupolaStanding.Count);
-            foreach (IntVec3 cell in armoredCapGround)
+            foreach (IntVec3 cell in deckGround)
             {
                 IntVec3 upper = Api.CellOnFloor(cell, 1, map);
                 if (cupolaEmbrasures.Contains(cell))
                 {
-                    Tiers[1].Buildings.Add(new FortressBuilding(embrasure, upper, Rot4.North, plasteel));
+                    upperTier.Buildings.Add(new FortressBuilding(embrasure, upper, Rot4.North, plasteel));
                 }
                 else if (cupolaBackWalls.Contains(cell))
                 {
-                    Tiers[1].Buildings.Add(new FortressBuilding(ThingDefOf.Wall, upper, Rot4.North, plasteel));
+                    upperTier.Buildings.Add(new FortressBuilding(ThingDefOf.Wall, upper, Rot4.North, plasteel));
                 }
                 else if (cupolaStanding.Contains(cell))
                 {
@@ -459,16 +460,18 @@ namespace RimSiege.Fortress
                 }
                 else if (reinforcedUraniumCapGround.Contains(cell))
                 {
-                    Tiers[1].Buildings.Add(new FortressBuilding(reinforcedWall, upper, Rot4.North, uranium));
+                    upperTier.Buildings.Add(new FortressBuilding(reinforcedWall, upper, Rot4.North, uranium));
+                    upperTier.ArmoredDeck.Add(upper);
                 }
                 else if (uraniumCapGround.Contains(cell))
                 {
-                    Tiers[1].Buildings.Add(new FortressBuilding(ThingDefOf.Wall, upper, Rot4.North, uranium));
+                    upperTier.Buildings.Add(new FortressBuilding(ThingDefOf.Wall, upper, Rot4.North, uranium));
+                    upperTier.ArmoredDeck.Add(upper);
                 }
             }
 
             if (cupolaRoofFloor1.Count > 0)
-                Tiers[1].Interiors.Add(new FortressRoomFloor(Outer, false, true, cupolaRoofFloor1, KeepFloor: true));
+                upperTier.Interiors.Add(new FortressRoomFloor(Outer, false, true, cupolaRoofFloor1, KeepFloor: true));
 
             // 10. Quadrant zones & modules (aligned to C4 quadrants 0:NE, 1:SE, 2:SW, 3:NW) + exterior picket slots.
             var zones = new List<FortressBastionZone>(4);
@@ -536,7 +539,7 @@ namespace RimSiege.Fortress
             Geometry = new FortressGeometry(
                 Kind, Size, Outer, footprint, interior, perimeter, outerEdge,
                 new HashSet<IntVec3>(), courtyardBounds, coreRect, gates, zones, slots,
-                curtainPosts, interiorPosts, armoredCapGround, coreInterior, mortarSilos,
+                curtainPosts, interiorPosts, deckGround, coreInterior, mortarSilos,
                 logisticsRooms, ammoRooms, powerCellRooms, facilityRooms, cupolaGrounds);
             return true;
 
