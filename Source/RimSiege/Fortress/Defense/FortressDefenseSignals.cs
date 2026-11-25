@@ -5,8 +5,8 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using CombatExtended;
-using CombatExtended.AI;
 using HarmonyLib;
+using RimSiege.Raids.Encirclement;
 using RimWorld;
 using Verse;
 using Verse.AI;
@@ -19,13 +19,15 @@ namespace RimSiege.Fortress
     {
         private static void Postfix(Pawn pawn, ref bool __result)
         {
-            if (__result || pawn.Map?.Parent is not FortressSite ||
-                pawn.GetLord() is not { CurLordToil: LordToil_FortressDefense } lord ||
-                !FortressSupportJobs.NeedsFeeding(pawn)) return;
+            if (__result || pawn.Map == null || !FortressSupportJobs.NeedsFeeding(pawn)) return;
             // The native job reserves its patient before checking this predicate.
             Pawn feeder = pawn.Map.reservationManager.FirstRespectedReserver(pawn, pawn);
-            __result = feeder != null && feeder.GetLord() == lord &&
-                feeder.CurJobDef == JobDefOf.FeedPatient && feeder.CurJob.targetB.Pawn == pawn;
+            if (feeder == null || feeder.CurJobDef != JobDefOf.FeedPatient || feeder.CurJob.targetB.Pawn != pawn) return;
+            Lord lord = feeder.GetLord();
+            bool fortress = pawn.Map.Parent is FortressSite && lord is { CurLordToil: LordToil_FortressDefense } &&
+                pawn.GetLord() == lord;
+            bool encirclement = lord?.LordJob is LordJob_EncirclementCamp && feeder.Faction == pawn.Faction;
+            __result = fortress || encirclement;
         }
     }
 
@@ -34,20 +36,8 @@ namespace RimSiege.Fortress
     {
         private static bool Prefix(JobDriver_TakeToBed __instance) =>
             __instance.job.def != JobDefOf.Rescue ||
-            __instance.pawn.GetLord()?.LordJob is not LordJob_FortressDefense ||
+            __instance.pawn.GetLord()?.LordJob is not (LordJob_FortressDefense or LordJob_EncirclementCamp) ||
             __instance.job.targetA.Pawn?.Faction != __instance.pawn.Faction;
-    }
-
-    [HarmonyPatch(typeof(CompTend), nameof(CompTend.TryGiveTacticalJob))]
-    internal static class FortressTendReservationPatch
-    {
-        private static bool Prefix(CompTend __instance)
-        {
-            Pawn pawn = __instance.SelPawn;
-            if (pawn.GetLord()?.CurLordToil is not LordToil_FortressDefense) return true;
-            if (pawn.CurJobDef == JobDefOf.TendPatient && pawn.CurJob.targetA.Pawn == pawn) return false;
-            return pawn.CanReserve(pawn);
-        }
     }
 
     [HarmonyPatch(typeof(Building_TurretGunCE), nameof(Building_TurretGunCE.TryFindNewTarget))]

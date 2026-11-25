@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <RS_FieldWeatherController.label>天气控制器</RS_FieldWeatherController.label>
+  <RS_FieldWeatherController.description>使殖民地持续降雨或降雪的围城设备。</RS_FieldWeatherController.description>
+  <RS_FieldClimateAdjuster.label>温度调节器</RS_FieldClimateAdjuster.label>
+  <RS_FieldClimateAdjuster.description>使殖民地气温进一步升高或降低的围城设备。</RS_FieldClimateAdjuster.description>
+  <RS_FieldToxicSpewer.label>毒气发生器</RS_FieldToxicSpewer.label>
+  <RS_FieldToxicSpewer.description>使殖民地陷入毒尘的围城设备。</RS_FieldToxicSpewer.description>
+  <RS_FieldEMIDynamo.label>电磁干扰器</RS_FieldEMIDynamo.label>
+  <RS_FieldEMIDynamo.description>使殖民地电气设备停摆的围城设备。</RS_FieldEMIDynamo.description>
+  <RS_SiegeMechNode.label>围城机械节点</RS_SiegeMechNode.label>
+  <RS_SiegeMechNode.description>为机械族营地提供照明，并加速附近施工的自供电节点。</RS_SiegeMechNode.description>
+</LanguageData>

@@ -19,6 +19,7 @@ namespace RimSiege.Raids.Artillery
         internal readonly List<ArtilleryPlacement> Cover;
         internal readonly int Capacity;
         internal readonly int Openness;
+        internal readonly int GunClearance;
         // Arrival-time validation can use an autonomous battery's real builder.
         internal Pawn ConstructionWorker;
         private readonly HashSet<IntVec3> interior = new();
@@ -56,9 +57,11 @@ namespace RimSiege.Raids.Artillery
         }
 
         internal CampField(Map map, IntVec3 center, IntVec3 anchor, List<ArtilleryPlacement> cover,
-            Dictionary<IntVec3, bool> terrain, Dictionary<(ThingDef, ThingDef, Rot4, IntVec3), bool> placements)
+            Dictionary<IntVec3, bool> terrain, Dictionary<(ThingDef, ThingDef, Rot4, IntVec3), bool> placements,
+            int gunClearance)
         {
             Map = map; Center = center; Cover = cover; this.placements = placements;
+            GunClearance = gunClearance;
             IntVec3 goal = IsoFloor.HasFloors(map) ? IsoFloor.GroundCellOf(anchor, map) : anchor;
             IntVec3 ground = IsoFloor.HasFloors(map) ? IsoFloor.GroundCellOf(center, map) : center;
             forward = new Vector2(goal.x - ground.x, goal.z - ground.z).normalized;
@@ -128,7 +131,8 @@ namespace RimSiege.Raids.Artillery
             // Support occupies the front/rear rows first; camp defense uses
             // the rear flanks of the same work area.
             // Physical separation and work/supply reservations are checked later.
-            float lateral = count <= 1 ? 0f : Mathf.Lerp(-BatteryHalfWidth, BatteryHalfWidth, ordinal / (float)(count - 1));
+            float halfWidth = Mathf.Max(BatteryHalfWidth, GunClearance + 2f);
+            float lateral = count <= 1 ? 0f : Mathf.Lerp(-halfWidth, halfWidth, ordinal / (float)(count - 1));
             Vector2 desired = template.IsSupport
                 ? forward * (template.IsDirectSupport ? RowDepth : -RowDepth) + right * lateral
                 : -forward * (RowDepth * 2f) + right * (ordinal % 2 == 0 ? -BatteryHalfWidth : BatteryHalfWidth);

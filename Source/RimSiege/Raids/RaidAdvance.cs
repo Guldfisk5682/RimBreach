@@ -79,10 +79,12 @@ namespace RimSiege.Raids
 
     public sealed class JobGiver_RaidAdvance : ThinkNode_JobGiver
     {
-        internal static bool Eligible(Pawn pawn, SiegeRaidMap map) => SiegeRaidMap.Enabled &&
+        internal static bool Eligible(Pawn pawn, SiegeRaidMap map) =>
             SiegeRoles.CanParticipateInTacticalAssault(pawn) &&
-            map.Party(pawn) is { TribalSmoke: null } && pawn.mindState.duty?.def == DutyDefOf.AssaultColony &&
-            pawn.GetLord()?.CurLordToil is LordToil_AssaultColony;
+            map.Party(pawn) is { TribalSmoke: null, TacticsEnabled: true } party &&
+            pawn.mindState.duty?.def == DutyDefOf.AssaultColony &&
+            (pawn.GetLord()?.CurLordToil is LordToil_AssaultColony ||
+                party.Encirclement && pawn.GetLord()?.CurLordToil is LordToil_AssaultColonyBreaching);
 
         protected override Job TryGiveJob(Pawn pawn)
         {
@@ -112,7 +114,7 @@ namespace RimSiege.Raids
     {
         private static void Postfix(Verb __instance, LocalTargetInfo __0, bool __result)
         {
-            if (!__result || !SiegeRaidMap.Enabled || __instance.IsMeleeAttack ||
+            if (!__result || __instance.IsMeleeAttack ||
                 __instance.Caster is not Pawn { Spawned: true, Downed: false } pawn ||
                 !SiegeRoles.CanParticipateInTacticalAssault(pawn) || SiegeRoles.CloseAssault(pawn) ||
                 SmokeCombat.IsSmokeWeapon(__instance.EquipmentSource?.def) || LadderPerch.Get(pawn) != null ||
@@ -121,7 +123,7 @@ namespace RimSiege.Raids
             if (pawn.GetLord()?.CurLordToil is not
                 (LordToil_AssaultColony or LordToil_AssaultColonyBreaching or LordToil_AssaultColonySappers)) return;
             SiegeParty party = pawn.Map.GetComponent<SiegeRaidMap>().Party(pawn);
-            if (party == null) return;
+            if (party?.TacticsEnabled != true) return;
             if (party.AdvanceFor(pawn) != null) party.Advanced.Add(pawn);
             if (party.CoverBuilders.Contains(pawn)) return;
             if (FieldCover.TryPlace(pawn, target.Position).IsValid)

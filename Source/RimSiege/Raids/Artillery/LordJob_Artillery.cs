@@ -13,6 +13,7 @@ namespace RimSiege.Raids.Artillery
         private int raidKey;
         private ArtilleryRaidKind kind;
         private bool pendingInfantryAssault;
+        private bool adoptedBattery;
 
         public LordJob_Artillery() { }
 
@@ -22,6 +23,7 @@ namespace RimSiege.Raids.Artillery
         {
             raidKey = raid.Key;
             kind = raid.Kind;
+            adoptedBattery = raid.Encirclement;
         }
 
         internal int RaidKey => raidKey;
@@ -59,9 +61,10 @@ namespace RimSiege.Raids.Artillery
             for (int i = 0; i < siegeAssault.triggers.Count; i++)
                 if (siegeAssault.triggers[i] is Trigger_PawnHarmed or Trigger_FractionPawnsLost or Trigger_TicksPassed)
                     siegeAssault.triggers[i] = new Trigger_ArtilleryInfantryAssault(siegeAssault.triggers[i]);
+            LordToil failed = null;
             if (!UsesNativeAssault)
             {
-                LordToil failed = new LordToil_ArtilleryTransfer();
+                failed = new LordToil_ArtilleryTransfer();
                 graph.AddToil(failed);
                 siegeAssault.target = failed;
                 // The native wake action runs after the transition; transfer empties this lord.
@@ -75,8 +78,11 @@ namespace RimSiege.Raids.Artillery
                     transition.AddSource(smoke);
 
             var raidEnded = new Transition(siege, exit);
+            if (failed != null) raidEnded.AddSource(failed);
             raidEnded.AddTrigger(new Trigger_Memo(RaidEndedMemo));
             graph.AddTransition(raidEnded);
+            if (adoptedBattery)
+                graph.StartingToil = siege;
             return graph;
         }
 
@@ -86,6 +92,7 @@ namespace RimSiege.Raids.Artillery
             Scribe_Values.Look(ref raidKey, "raidKey");
             Scribe_Values.Look(ref kind, "kind");
             Scribe_Values.Look(ref pendingInfantryAssault, "pendingInterference");
+            Scribe_Values.Look(ref adoptedBattery, "adoptedBattery");
         }
 
         internal void RequestInfantryAssault()
@@ -97,7 +104,7 @@ namespace RimSiege.Raids.Artillery
         {
             base.Notify_AddedToLord();
             Raid.CampLord = lord;
-            Raid.Phase = ArtilleryPhase.Travelling;
+            Raid.Phase = adoptedBattery ? ArtilleryPhase.Supporting : ArtilleryPhase.Travelling;
         }
 
         internal bool InitialAmmoReady;

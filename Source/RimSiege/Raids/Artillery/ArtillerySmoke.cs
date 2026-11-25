@@ -4,6 +4,7 @@ using System.Linq;
 using CombatExtended;
 using HarmonyLib;
 using RimSiege.Integration;
+using RimSiege.Raids.Encirclement;
 using RimWorld;
 using UnityEngine;
 using Verse;
@@ -35,6 +36,28 @@ namespace RimSiege.Raids.Artillery
         internal bool LoadoutRestored;
         internal IntVec3 Stand, Target;
         internal int RetryAt;
+        private readonly List<(IntVec3 Stand, IntVec3 Target, int Until)> recentRejects = new();
+
+        internal void RecordReject(IntVec3 stand, IntVec3 target, int until)
+        {
+            Stand = stand;
+            Target = target;
+            RetryAt = until;
+            recentRejects.RemoveAll(r => r.Stand == stand && r.Target == target);
+            if (recentRejects.Count >= 4) recentRejects.RemoveAt(0);
+            recentRejects.Add((stand, target, until));
+        }
+
+        internal bool BlockedAt(IntVec3 stand, IntVec3 target, int now)
+        {
+            if (now < RetryAt && Stand == stand && Target == target) return true;
+            for (int i = recentRejects.Count - 1; i >= 0; i--)
+            {
+                if (now >= recentRejects[i].Until) { recentRejects.RemoveAt(i); continue; }
+                if (recentRejects[i].Stand == stand && recentRejects[i].Target == target) return true;
+            }
+            return false;
+        }
 
         public void ExposeData()
         {
@@ -56,6 +79,7 @@ namespace RimSiege.Raids.Artillery
         internal int Order;
         internal bool Required = true;
         internal bool Covered;
+        internal bool IsSteppingStone;
         internal Pawn ClaimedBy;
         internal int ClaimUntil;
         internal int RetryAt;
@@ -79,6 +103,7 @@ namespace RimSiege.Raids.Artillery
             Scribe_Values.Look(ref Order, "order");
             Scribe_Values.Look(ref Required, "required", true);
             Scribe_Values.Look(ref Covered, "covered");
+            Scribe_Values.Look(ref IsSteppingStone, "steppingStone");
             Scribe_References.Look(ref ClaimedBy, "claimedBy");
             Scribe_Values.Look(ref ClaimUntil, "claimUntil");
             Scribe_Values.Look(ref RetryAt, "retryAt");
@@ -199,12 +224,49 @@ namespace RimSiege.Raids.Artillery
 
         internal bool CanThrowFrom(IntVec3 cell, Map map) => IsLocal || CanAdvance(cell, map);
 
-        internal ArtillerySmoke LocalScreen(IntVec3 focus) => new()
+        internal ArtillerySmoke LocalScreen(IntVec3 focus, bool? turretsOnly = null)
         {
-            Rally = focus, ThrowRange = ThrowRange, StartedScreen = true, IsLocal = true,
-            ThreatFaction = ThreatFaction, TurretsOnly = TurretsOnly,
-            threatCache = ThreatCache
-        };
+            bool effective = turretsOnly ?? TurretsOnly;
+            return new()
+            {
+                Rally = focus, ThrowRange = ThrowRange, StartedScreen = true, IsLocal = true,
+                ThreatFaction = ThreatFaction, TurretsOnly = effective,
+                threatCache = effective == TurretsOnly ? ThreatCache : null
+            };
+        }
+
+        internal void PruneSteppingStones(Map map)
+        {
+            Targets.RemoveAll(t => t.IsSteppingStone && (t.IsDone(map) ||
+                !t.Cell.InBounds(map) || !t.Cell.Walkable(map)));
+        }
+
+        internal SmokeTarget EnsureSteppingStone(IntVec3 stand, IntVec3 cell, Map map)
+        {
+            PruneSteppingStones(map);
+            SmokeTarget existing = Targets.Find(t => t.IsSteppingStone && IsoFloor.SameFloor(t.Cell, cell, map) &&
+                t.Cell.DistanceToSquared(cell) < MinTargetSpacingSq);
+            if (existing != null) return existing;
+            if (Targets.Count(t => t.IsSteppingStone) >= 4) return null;
+            var stone = new SmokeTarget
+            {
+                Cell = cell, Stand = stand, Order = -1, Required = false, IsSteppingStone = true
+            };
+            Targets.Add(stone);
+            return stone;
+        }
+
+        internal void PopulateCampTargets(CampPlan camp, IntVec3 rally, Pawn lead, Map map, Predicate<IntVec3> allowed = null)
+        {
+            if (camp == null || lead == null || map == null) return;
+            Verb[] threats = ThreatCache.CurrentThreats(map);
+            bool Exposed(IntVec3 cell) => IsExposed(cell, map, threats);
+            TraverseParms traverse = TraverseParms.For(lead);
+            float range = ThrowRange > 0f ? ThrowRange : SafeThrowRange();
+            AssessCampThreats(camp, rally, map, threats, out _, out float threatAngle);
+            AddCampScreen(Targets, rally, camp, threatAngle, map, traverse, range, Exposed, allowed);
+            if (Targets.Count == 0) AddLocalTarget(map, camp.Center, allowed);
+        }
 
         internal void AddLocalTarget(Map map, IntVec3 anchor, Predicate<IntVec3> allowed = null)
         {
@@ -243,35 +305,11 @@ namespace RimSiege.Raids.Artillery
                 .ToList();
             if (eligible.Count < 2) return null;
 
-            Pawn lead = eligible[0];
-            IntVec3 entry = lead.Position;
-            TraverseParms traverse = TraverseParms.For(lead);
-            Verb[] threats = SmokeThreatCache.CollectThreats(map, includeColonists: true, raid.TargetFaction);
-            bool Exposed(IntVec3 cell) => IsExposed(cell, map, threats);
-
-            outcome = "no sheltered rally within 20 cells";
-            IntVec3 rally = fallbackRally = FindRally(entry, map, traverse, Exposed);
-            if (!rally.IsValid) return null;
-            outcome = "no route from rally to camp";
-            using PawnPath route = map.pathFinder.FindPathNow(rally, raid.Camp.Center, traverse, null, PathEndMode.OnCell);
-            if (route == null || !route.Found) return null;
-
-            var nodes = route.NodesReversed.AsEnumerable().Reverse().ToList();
-            float throwRange = SafeThrowRange();
-            var targets = new List<SmokeTarget>();
-            AssessCampThreats(raid.Camp, rally, map, threats, out bool campExposed, out float threatAngle);
-            int maxApproach = Math.Clamp(eligible.Count, 2, MaxApproachStations);
-            bool routeExposed = AddApproachTargets(targets, nodes, rally, raid.Camp, campExposed, threatAngle,
-                maxApproach, map, traverse, throwRange, Exposed);
-            if (campExposed)
-                AddCampScreen(targets, rally, raid.Camp, threatAngle, map, traverse, throwRange, Exposed);
-            if (targets.Count == 0)
-            {
-                outcome = $"no smoke stations (routeExposed={routeExposed}, campExposed={campExposed})";
-                return null;
-            }
-
-            int desiredCarriers = Math.Min(eligible.Count, Math.Max(2, targets.Count));
+            ArtillerySmoke screen = PlanApproach(raid.Camp, eligible[0], raid.TargetFaction, eligible.Count,
+                out fallbackRally, out outcome);
+            if (screen == null) return null;
+            IntVec3 rally = screen.Rally;
+            int desiredCarriers = Math.Min(eligible.Count, Math.Max(2, screen.Targets.Count));
             var carriers = new List<Pawn>(desiredCarriers);
             var grenades = new Dictionary<Pawn, ThingWithComps>(desiredCarriers);
             outcome = "fewer than two carriers accepted the smoke kit";
@@ -291,23 +329,11 @@ namespace RimSiege.Raids.Artillery
                 return null;
             }
             outcome = "screen planned";
-
-            int now = GenTicks.TicksGame;
-            int budget = ComputeBudgetTicks(nodes, map, targets.Count, carriers.Count);
-            var screen = new ArtillerySmoke
-            {
-                Rally = rally,
-                Deadline = now + budget,
-                InitialPawns = lord.ownedPawns.Count(Ready),
-                ThreatFaction = raid.TargetFaction,
-                ThrowRange = throwRange,
-                StartedScreen = true,
-                Targets = targets,
-                ApproachRoute = nodes
-            };
+            screen.Deadline = GenTicks.TicksGame + ComputeBudgetTicks(screen.ApproachRoute, map, screen.Targets.Count, carriers.Count);
+            screen.InitialPawns = lord.ownedPawns.Count(Ready);
             for (int i = 0; i < carriers.Count; i++)
             {
-                SmokeTarget initial = i < targets.Count ? targets[i] : null;
+                SmokeTarget initial = i < screen.Targets.Count ? screen.Targets[i] : null;
                 screen.Assignments.Add(new SmokeAssignment
                 {
                     Pawn = carriers[i],
@@ -318,6 +344,49 @@ namespace RimSiege.Raids.Artillery
                 });
             }
             return screen;
+        }
+
+        internal static ArtillerySmoke PlanApproach(CampPlan camp, Pawn lead, Faction targetFaction, int teamSize,
+            out IntVec3 rally, out string outcome, bool turretsOnly = false)
+        {
+            Map map = lead.Map;
+            IntVec3 entry = lead.Position;
+            TraverseParms traverse = TraverseParms.For(lead);
+            Verb[] threats = SmokeThreatCache.CollectThreats(map, includeColonists: !turretsOnly, targetFaction);
+            bool Exposed(IntVec3 cell) => IsExposed(cell, map, threats);
+
+            outcome = "no sheltered rally within 20 cells";
+            rally = FindRally(entry, map, traverse, Exposed);
+            if (!rally.IsValid) return null;
+            outcome = "no route from rally to camp";
+            using PawnPath route = map.pathFinder.FindPathNow(rally, camp.Center, traverse, null, PathEndMode.OnCell);
+            if (route == null || !route.Found) return null;
+
+            var nodes = route.NodesReversed.AsEnumerable().Reverse().ToList();
+            float throwRange = SafeThrowRange();
+            var targets = new List<SmokeTarget>();
+            AssessCampThreats(camp, rally, map, threats, out bool campExposed, out float threatAngle);
+            int maxApproach = Math.Clamp(teamSize, 2, MaxApproachStations);
+            bool routeExposed = AddApproachTargets(targets, nodes, rally, camp, campExposed, threatAngle,
+                maxApproach, map, traverse, throwRange, Exposed);
+            if (campExposed) AddCampScreen(targets, rally, camp, threatAngle, map, traverse, throwRange, Exposed);
+            if (targets.Count == 0)
+            {
+                outcome = $"no smoke stations (routeExposed={routeExposed}, campExposed={campExposed})";
+                return null;
+            }
+
+            outcome = "screen planned";
+            return new ArtillerySmoke
+            {
+                Rally = rally,
+                ThreatFaction = targetFaction,
+                TurretsOnly = turretsOnly,
+                ThrowRange = throwRange,
+                StartedScreen = true,
+                Targets = targets,
+                ApproachRoute = nodes
+            };
         }
 
         private static bool IsExposed(IntVec3 cell, Map map, Verb[] threats) =>
@@ -474,20 +543,20 @@ namespace RimSiege.Raids.Artillery
         }
 
         private static void AddCampScreen(List<SmokeTarget> targets, IntVec3 rally, CampPlan camp, float threatAngle,
-            Map map, TraverseParms traverse, float throwRange, Predicate<IntVec3> exposed)
+            Map map, TraverseParms traverse, float throwRange, Predicate<IntVec3> exposed, Predicate<IntVec3> allowed = null)
         {
             Vector3 away = new Vector3(-Mathf.Cos(threatAngle), 0f, -Mathf.Sin(threatAngle));
             IntVec3 Anchor(IntVec3 cell) => cell + new IntVec3(Mathf.RoundToInt(away.x * 5f), 0, Mathf.RoundToInt(away.z * 5f));
 
             // Center + 6-point hex ring covers r=0..9.5 around the camp and clustered inner drop spots.
-            TryAddTargetNear(targets, camp.Center, camp.Center, 2, CampOrder, true, Anchor(camp.Center), rally, map, traverse, throwRange, exposed);
+            TryAddTargetNear(targets, camp.Center, camp.Center, 2, CampOrder, true, Anchor(camp.Center), rally, map, traverse, throwRange, exposed, allowed);
 
             for (int i = 0; i < 6; i++)
             {
                 float angle = threatAngle + i * (Mathf.PI / 3f);
                 IntVec3 ringCell = OffsetCell(camp.Center, angle, CampRingRadius);
                 int ringOrder = (i <= 1 || i == 5) ? CampOrder : CampOrder + 1;
-                TryAddTargetNear(targets, ringCell, camp.Center, 2, ringOrder, true, Anchor(ringCell), rally, map, traverse, throwRange, exposed);
+                TryAddTargetNear(targets, ringCell, camp.Center, 2, ringOrder, true, Anchor(ringCell), rally, map, traverse, throwRange, exposed, allowed);
             }
 
             // Outer ring at r=9.5 extends continuous cover out to r~13.5 facing active threats and exposed flanks.
@@ -499,7 +568,7 @@ namespace RimSiege.Raids.Artillery
                 IntVec3 outerCell = OffsetCell(camp.Center, angle, OuterPerimeterRadius);
                 int probeRadius = Math.Abs(step) <= 2 ? 3 : 2;
                 if (!HasExposedNear(outerCell, camp.Center, probeRadius, map, exposed)) continue;
-                TryAddTargetNear(targets, outerCell, camp.Center, 2, OuterOrder, true, Anchor(outerCell), rally, map, traverse, throwRange, exposed);
+                TryAddTargetNear(targets, outerCell, camp.Center, 2, OuterOrder, true, Anchor(outerCell), rally, map, traverse, throwRange, exposed, allowed);
             }
 
             // Cover any exposed gun or embrasure tile left uncovered by terrain nudges.
@@ -515,7 +584,7 @@ namespace RimSiege.Raids.Artillery
                 if (!point.InBounds(map) || !IsoFloor.SameFloor(point, camp.Center, map) || !exposed(point)) return;
                 if (targets.Any(t => t.Required && IsoFloor.SameFloor(t.Cell, point, map) &&
                     t.Cell.DistanceToSquared(point) <= 9)) return;
-                TryAddTargetNear(targets, point, camp.Center, 1, CampOrder + 1, true, Anchor(point), rally, map, traverse, throwRange, exposed);
+                TryAddTargetNear(targets, point, camp.Center, 2, CampOrder + 1, true, Anchor(point), rally, map, traverse, throwRange, exposed, allowed);
             }
         }
 
@@ -534,11 +603,11 @@ namespace RimSiege.Raids.Artillery
 
         private static bool TryAddTargetNear(List<SmokeTarget> targets, IntVec3 desired, IntVec3 floorRef,
             int maxNudge, int order, bool required, IntVec3 anchor, IntVec3 reachSeed, Map map,
-            TraverseParms traverse, float throwRange, Predicate<IntVec3> exposed)
+            TraverseParms traverse, float throwRange, Predicate<IntVec3> exposed, Predicate<IntVec3> allowed = null)
         {
             foreach (IntVec3 cell in GenRadial.RadialCellsAround(desired, maxNudge, true))
             {
-                if (TryAddTarget(targets, cell, floorRef, order, required, anchor, reachSeed, map, traverse, throwRange, exposed))
+                if (TryAddTarget(targets, cell, floorRef, order, required, anchor, reachSeed, map, traverse, throwRange, exposed, allowed))
                     return true;
             }
             return false;
@@ -546,9 +615,10 @@ namespace RimSiege.Raids.Artillery
 
         private static bool TryAddTarget(List<SmokeTarget> targets, IntVec3 cell, IntVec3 floorRef, int order,
             bool required, IntVec3 anchor, IntVec3 reachSeed, Map map, TraverseParms traverse,
-            float throwRange, Predicate<IntVec3> exposed)
+            float throwRange, Predicate<IntVec3> exposed, Predicate<IntVec3> allowed = null)
         {
-            if (!cell.InBounds(map) || !IsoFloor.SameFloor(cell, floorRef, map) || cell.Filled(map) || !cell.Walkable(map))
+            if (!cell.InBounds(map) || !IsoFloor.SameFloor(cell, floorRef, map) || cell.Filled(map) || !cell.Walkable(map) ||
+                allowed != null && !allowed(cell))
                 return false;
             if (targets.Any(t => (!required || t.Required) &&
                 IsoFloor.SameFloor(t.Cell, cell, map) &&
@@ -661,6 +731,9 @@ namespace RimSiege.Raids.Artillery
 
         internal bool HasCarrier(Pawn pawn) => AssignmentFor(pawn) is { Fighting: false };
 
+        internal bool CanRetryThrowFrom(Pawn pawn, IntVec3 stand, IntVec3 target, int now) =>
+            AssignmentFor(pawn) is not { } assignment || !assignment.BlockedAt(stand, target, now);
+
         internal static bool IsInCombat(Pawn pawn, int now)
         {
             if (pawn?.mindState == null) return false;
@@ -705,11 +778,22 @@ namespace RimSiege.Raids.Artillery
         internal void OnThrowRejected(Pawn pawn, IntVec3 targetCell)
         {
             int now = GenTicks.TicksGame;
-            foreach (SmokeTarget target in Targets)
+            if (IsLocal && pawn.GetLord()?.LordJob is LordJob_EncirclementCamp &&
+                AssignmentFor(pawn) is { } assignment)
             {
+                // A clear grid line can still fail CE's cast. Move to another
+                // stand instead of retrying the same throw when the claim expires.
+                assignment.RecordReject(pawn.Position, targetCell, now + 120);
+            }
+            for (int i = Targets.Count - 1; i >= 0; i--)
+            {
+                SmokeTarget target = Targets[i];
                 if (target.ClaimedBy == pawn) target.ClaimedBy = null;
                 if (targetCell.IsValid && target.Cell == targetCell)
-                    target.RetryAt = Math.Max(target.RetryAt, now + 20);
+                {
+                    if (target.IsSteppingStone) Targets.RemoveAt(i);
+                    else target.RetryAt = Math.Max(target.RetryAt, now + 20);
+                }
             }
             NextEvalTick = now;
         }
@@ -926,7 +1010,8 @@ namespace RimSiege.Raids.Artillery
                 .ThenBy(candidate => tribal != null && !candidate.Required)
                 .ThenBy(candidate => pawn.Position.DistanceToSquared(candidate.Stand)).ToList();
             SmokeTarget throwTarget = screen.CanThrowFrom(pawn.Position, map)
-                ? candidates.FirstOrDefault(target => CanThrowNow(pawn.Position, target, map, throwRange)) : null;
+                ? candidates.FirstOrDefault(target => screen.CanRetryThrowFrom(pawn, pawn.Position, target.Cell, now) &&
+                    CanThrowNow(pawn.Position, target, map, throwRange)) : null;
             if (throwTarget != null)
             {
                 Job throwSmoke = JobMaker.MakeJob(ArtillerySmokeDefOf.RS_LayArtillerySmoke, throwTarget.Cell, grenade);
@@ -934,16 +1019,30 @@ namespace RimSiege.Raids.Artillery
                 return throwSmoke;
             }
 
-            int pathBudget = 3;
+            int pathBudget = 6;
             foreach (SmokeTarget target in candidates)
             {
                 if (pathBudget == 0) break;
-                IntVec3 moveSpot = FindMoveSpot(pawn, target, map, throwRange, screen, ref pathBudget,
+                int perTargetBudget = Math.Min(pathBudget, 2);
+                int before = perTargetBudget;
+                IntVec3 moveSpot = FindMoveSpot(pawn, target, map, throwRange, screen, ref perTargetBudget,
                     requireThrowPosition: tribal != null);
+                pathBudget -= before - perTargetBudget;
                 if (!moveSpot.IsValid) continue;
                 Job move = JobMaker.MakeJob(ArtillerySmokeDefOf.RS_ApproachSmokeThrow, moveSpot, 90, checkOverrideOnExpiry: true);
                 move.targetC = target.Cell;
                 return move;
+            }
+
+            // If exposed ground blocks walking to any smoke station, throw a stepping-stone
+            // smoke from the current safe edge to bridge the gap into the battery.
+            if (screen.IsLocal && candidates.Count > 0 && screen.CanThrowFrom(pawn.Position, map))
+            {
+                foreach (SmokeTarget goal in candidates.Take(3))
+                {
+                    Job step = TrySteppingStone(pawn, goal, grenade, map, throwRange, screen, now);
+                    if (step != null) return step;
+                }
             }
 
             if (tribal?.Waypoint is { IsValid: true } waypoint && waypoint != pawn.Position &&
@@ -974,16 +1073,73 @@ namespace RimSiege.Raids.Artillery
             {
                 IntVec3 cell = i < 0 ? stand : stand + offsets[i];
                 if (cell == pawn.Position || !cell.InBounds(map) || !cell.Standable(map) ||
+                    !screen.CanRetryThrowFrom(pawn, cell, target.Cell, GenTicks.TicksGame) ||
                     requireThrowPosition && !screen.CanAdvance(cell, map) ||
                     !CanThrowNow(cell, target, map, throwRange) ||
                     !map.pawnDestinationReservationManager.CanReserve(cell, pawn) ||
                     !pawn.CanReach(cell, PathEndMode.OnCell, Danger.Deadly)) continue;
                 pathBudget--;
                 IntVec3 approach = CoveredApproach(pawn, cell, screen, target, throwRange);
-                if (!requireThrowPosition || CanThrowNow(approach, target, map, throwRange)) return approach;
+                if (approach.IsValid && (!requireThrowPosition || CanThrowNow(approach, target, map, throwRange))) return approach;
                 if (pathBudget == 0) break;
             }
             return IntVec3.Invalid;
+        }
+
+        private static Job TrySteppingStone(Pawn pawn, SmokeTarget goal, ThingWithComps grenade, Map map,
+            float throwRange, ArtillerySmoke screen, int now)
+        {
+            using PawnPath path = map.pathFinder.FindPathNow(pawn.Position, goal.Cell, TraverseParms.For(pawn),
+                null, PathEndMode.Touch);
+            if (path == null || !path.Found) return null;
+
+            var nodes = path.NodesReversed;
+            int firstBlocked = -1;
+            for (int i = nodes.Count - 1; i >= 0; i--)
+            {
+                IntVec3 node = nodes[i];
+                if (node == pawn.Position) continue;
+                if (!screen.CanAdvance(node, map))
+                {
+                    firstBlocked = i;
+                    break;
+                }
+            }
+            if (firstBlocked < 0) return null;
+
+            // Aim a few cells past the first exposed node along the route so smoke bridges forward.
+            IntVec3 best = IntVec3.Invalid;
+            int end = Math.Max(0, firstBlocked - 4);
+            for (int i = end; i <= firstBlocked; i++)
+            {
+                IntVec3 cell = nodes[i];
+                if (!cell.InBounds(map) || !cell.Walkable(map) || cell.Filled(map) ||
+                    ArtillerySmoke.Screened(cell, map)) continue;
+                if (!screen.CanRetryThrowFrom(pawn, pawn.Position, cell, now) ||
+                    !SmokeCombat.CanThrowNow(pawn.Position, cell, map, throwRange)) continue;
+                best = cell;
+                break;
+            }
+            if (!best.IsValid)
+            {
+                foreach (IntVec3 cell in GenRadial.RadialCellsAround(nodes[firstBlocked], 2, true))
+                {
+                    if (!cell.InBounds(map) || !IsoFloor.SameFloor(cell, pawn.Position, map) ||
+                        !cell.Walkable(map) || cell.Filled(map) || ArtillerySmoke.Screened(cell, map)) continue;
+                    if (!screen.CanRetryThrowFrom(pawn, pawn.Position, cell, now) ||
+                        !SmokeCombat.CanThrowNow(pawn.Position, cell, map, throwRange)) continue;
+                    best = cell;
+                    break;
+                }
+            }
+            if (!best.IsValid) return null;
+
+            SmokeTarget stone = screen.EnsureSteppingStone(pawn.Position, best, map);
+            if (stone == null || !stone.CanClaim(pawn, map, now) ||
+                !SmokeCombat.CanThrowNow(pawn.Position, stone.Cell, map, throwRange)) return null;
+            Job throwSmoke = JobMaker.MakeJob(ArtillerySmokeDefOf.RS_LayArtillerySmoke, stone.Cell, grenade);
+            throwSmoke.maxNumStaticAttacks = 1;
+            return throwSmoke;
         }
 
         internal static IntVec3 CoveredApproach(Pawn pawn, IntVec3 destination, ArtillerySmoke screen,
@@ -1003,7 +1159,8 @@ namespace RimSiege.Raids.Artillery
                 if (node == pawn.Position) continue;
                 if (smokeOnly ? !ArtillerySmoke.Screened(node, map) : !screen.CanAdvance(node, map)) break;
                 last = node;
-                if (target != null && CanThrowNow(node, target, map, throwRange)) return node;
+                if (target != null && screen.CanRetryThrowFrom(pawn, node, target.Cell, GenTicks.TicksGame) &&
+                    CanThrowNow(node, target, map, throwRange)) return node;
             }
             return last;
         }
@@ -1109,6 +1266,12 @@ namespace RimSiege.Raids.Artillery
             if (___pawn.mindState?.duty?.def == ArtillerySmokeDefOf.RS_ArtilleryInfantryHold)
             {
                 if (ArtillerySmoke.Screened(__instance.nextCell, ___pawn.Map)) return true;
+                ___pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
+                return false;
+            }
+            if (___pawn.GetLord()?.LordJob is LordJob_EncirclementCamp { Campaign: { } siege } &&
+                !siege.CanCampPawnEnter(___pawn, __instance.nextCell))
+            {
                 ___pawn.jobs.EndCurrentJob(JobCondition.InterruptForced, startNewJob: false);
                 return false;
             }

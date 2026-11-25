@@ -3,6 +3,7 @@ using System.Linq;
 using CombatExtended;
 using CombatExtended.AI;
 using HarmonyLib;
+using RimSiege.Raids.Encirclement;
 using RimWorld;
 using Verse;
 using Verse.AI;
@@ -117,6 +118,8 @@ namespace RimSiege.Raids.Artillery
         {
             if (pawn?.GetLord()?.LordJob is LordJob_Artillery job)
                 return job.Raid.SmokeFor(pawn);
+            if (pawn?.GetLord()?.LordJob is LordJob_EncirclementCamp camp)
+                return camp.Campaign?.ScreenFor(pawn)?.Work;
             ArtilleryRaid raid = pawn?.MapHeld?.GetComponent<ArtilleryMap>()?.ForPawn(pawn);
             return raid?.SmokeFor(pawn);
         }
@@ -130,6 +133,9 @@ namespace RimSiege.Raids.Artillery
         internal static ArtillerySmoke ActiveScreen(Pawn pawn)
         {
             if (pawn == null) return null;
+            if (pawn.GetLord()?.LordJob is LordJob_EncirclementCamp camp &&
+                pawn.mindState?.duty?.def == EncirclementDefs.RS_EncirclementSmoke)
+                return camp.Campaign?.ScreenFor(pawn)?.Work;
             if (pawn.GetLord()?.LordJob is LordJob_ArtilleryMechEscort escort &&
                 pawn.mindState?.duty?.def == ArtillerySmokeDefOf.RS_ArtilleryMechSmokeEscort)
                 return escort.Raid?.Smoke;

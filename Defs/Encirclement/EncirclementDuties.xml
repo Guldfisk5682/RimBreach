@@ -1,0 +1,98 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Defs>
+  <DutyDef>
+    <defName>RS_EncirclementBuild</defName>
+    <alwaysShowWeapon>true</alwaysShowWeapon>
+    <thinkNode Class="ThinkNode_Priority">
+      <subNodes>
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementRetreatFromTurrets" />
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementBuildFight">
+          <targetAcquireRadius>22</targetAcquireRadius>
+        </li>
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementWork" />
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementFight">
+          <targetAcquireRadius>22</targetAcquireRadius>
+        </li>
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementDeployment" />
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementSafeWander">
+          <wanderRadius>12</wanderRadius>
+          <locomotionUrgencyOutsideRadius>Jog</locomotionUrgencyOutsideRadius>
+          <expiryInterval>180</expiryInterval>
+        </li>
+      </subNodes>
+    </thinkNode>
+  </DutyDef>
+  <DutyDef>
+    <defName>RS_EncirclementGunner</defName>
+    <alwaysShowWeapon>true</alwaysShowWeapon>
+    <thinkNode Class="ThinkNode_Priority">
+      <subNodes>
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementRetreatFromTurrets" />
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementGunner" />
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementFight">
+          <targetAcquireRadius>22</targetAcquireRadius>
+        </li>
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementDeployment" />
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementSafeWander">
+          <wanderRadius>12</wanderRadius>
+          <locomotionUrgencyOutsideRadius>Jog</locomotionUrgencyOutsideRadius>
+          <expiryInterval>180</expiryInterval>
+        </li>
+      </subNodes>
+    </thinkNode>
+  </DutyDef>
+  <DutyDef>
+    <defName>RS_EncirclementSentry</defName>
+    <alwaysShowWeapon>true</alwaysShowWeapon>
+    <thinkNode Class="ThinkNode_Priority">
+      <subNodes>
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementRetreatFromTurrets" />
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementFight">
+          <targetAcquireRadius>22</targetAcquireRadius>
+        </li>
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementSafeWander">
+          <wanderRadius>12</wanderRadius>
+          <locomotionUrgencyOutsideRadius>Jog</locomotionUrgencyOutsideRadius>
+          <expiryInterval>180</expiryInterval>
+        </li>
+      </subNodes>
+    </thinkNode>
+  </DutyDef>
+  <DutyDef>
+    <defName>RS_EncirclementReserve</defName>
+    <alwaysShowWeapon>true</alwaysShowWeapon>
+    <thinkNode Class="ThinkNode_Priority">
+      <subNodes>
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementTend" />
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementRetreatFromTurrets" />
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementFight">
+          <targetAcquireRadius>22</targetAcquireRadius>
+        </li>
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementNeeds" />
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementSafeWander">
+          <wanderRadius>12</wanderRadius>
+          <locomotionUrgencyOutsideRadius>Jog</locomotionUrgencyOutsideRadius>
+          <expiryInterval>180</expiryInterval>
+        </li>
+      </subNodes>
+    </thinkNode>
+  </DutyDef>
+  <DutyDef>
+    <defName>RS_EncirclementSmoke</defName>
+    <alwaysShowWeapon>true</alwaysShowWeapon>
+    <thinkNode Class="ThinkNode_Priority">
+      <subNodes>
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementSmokeSupply" />
+        <li Class="RimSiege.Raids.Artillery.JobGiver_ArtillerySmoke" />
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementFight">
+          <targetAcquireRadius>22</targetAcquireRadius>
+        </li>
+        <li Class="RimSiege.Raids.Encirclement.JobGiver_EncirclementSafeWander">
+          <wanderRadius>12</wanderRadius>
+          <locomotionUrgencyOutsideRadius>Jog</locomotionUrgencyOutsideRadius>
+          <expiryInterval>180</expiryInterval>
+        </li>
+      </subNodes>
+    </thinkNode>
+  </DutyDef>
+</Defs>

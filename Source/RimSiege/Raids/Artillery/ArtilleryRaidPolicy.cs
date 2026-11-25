@@ -147,11 +147,18 @@ namespace RimSiege.Raids.Artillery
                 }
                 yield break;
             }
+            foreach (IntVec3 cell in DirectCenters(map, entry, siting, direct.Min(g => ranges[g]), attempts, native))
+                yield return cell;
+        }
+
+        internal static IEnumerable<IntVec3> DirectCenters(Map map, IntVec3 entry, CampSiting siting,
+            float range, int attempts, IntVec3? native = null)
+        {
             IntVec3 searchTarget = siting.BreachAnchor;
             IntVec3 center = IsoFloor.HasFloors(map)
                 ? IsoFloor.CellOnFloor(IsoFloor.GroundCellOf(searchTarget, map), IsoFloor.FloorOf(entry, map), map) : searchTarget;
-            float range = direct.Min(g => ranges[g]) + UnityEngine.Mathf.Sqrt(2f) * CampPlanner.GunAreaRadius;
-            CellRect search = CellRect.CenteredOn(center, UnityEngine.Mathf.CeilToInt(range));
+            float searchRadius = range + UnityEngine.Mathf.Sqrt(2f) * CampPlanner.GunAreaRadius;
+            CellRect search = CellRect.CenteredOn(center, UnityEngine.Mathf.CeilToInt(searchRadius));
             search.ClipInsideMap(map);
             if (IsoFloor.HasFloors(map))
             {
@@ -161,13 +168,13 @@ namespace RimSiege.Raids.Artillery
             // Preserve the 200-centre budget. Deployment feasibility and firepower
             // are ranked by CampPlanner; approach distance orders equivalent sites.
             var candidates = new List<IntVec3>();
-            if (native.InBounds(map))
+            if (native is { } nativeCenter && nativeCenter.InBounds(map))
             {
                 IntVec3 projected = IsoFloor.HasFloors(map)
-                    ? IsoFloor.CellOnFloor(IsoFloor.GroundCellOf(native, map), IsoFloor.FloorOf(entry, map), map) : native;
+                    ? IsoFloor.CellOnFloor(IsoFloor.GroundCellOf(nativeCenter, map), IsoFloor.FloorOf(entry, map), map) : nativeCenter;
                 if (projected.InBounds(map)) candidates.Add(projected);
             }
-            float preferred = direct.Min(g => ranges[g]) - CampSiting.RangeMargin;
+            float preferred = range - CampSiting.RangeMargin;
             bool floors = IsoFloor.HasFloors(map);
             int sourceFloor = floors ? IsoFloor.FloorOf(entry, map) : 0;
             int targetFloor = floors ? IsoFloor.FloorOf(searchTarget, map) : 0;

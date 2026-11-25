@@ -67,8 +67,8 @@ namespace RimSiege.Raids
             if (raids == null || pawn == null) return false;
             if (raids.Applies(pawn)) return true;
             Lord lord = pawn.GetLord();
-            if (lord?.LordJob is LordJob_ArtilleryMechEscort) return true;
-            if (!SiegeRoles.IsHumanRaidEscortMech(pawn) || raids.Party(pawn) == null) return false;
+            if (lord?.LordJob is LordJob_ArtilleryMechEscort) return SiegeRaidMap.Enabled;
+            if (!SiegeRoles.IsHumanRaidEscortMech(pawn) || raids.Party(pawn)?.TacticsEnabled != true) return false;
             ArtilleryRaid raid = pawn.Map.GetComponent<ArtilleryMap>().ForPawn(pawn);
             return raid != null && (lord == raid.CampLord && pawn.mindState.duty?.def == ArtillerySmokeDefOf.RS_ArtilleryMechSmokeEscort ||
                 lord == raid.AssaultLord && lord?.CurLordToil is LordToil_AssaultColonyBreaching);
@@ -148,7 +148,6 @@ namespace RimSiege.Raids
             if (pawn.GetLord()?.LordJob is Fortress.LordJob_FortressSortie)
                 return canHit && TryMakeStationaryCombatJob(pawn, out job);
 
-            if (!SiegeRaidMap.Enabled) return false;
             SiegeRaidMap raids = pawn.Map.GetComponent<SiegeRaidMap>();
             if (!AppliesTo(pawn, raids)) return false;
 
@@ -183,13 +182,13 @@ namespace RimSiege.Raids
 
         private static void Postfix(Pawn pawn, Job __result, MethodBase __originalMethod)
         {
-            if (__result == null || !SiegeRaidMap.Enabled) return;
+            if (__result == null || pawn.Map == null) return;
             bool trashing = __originalMethod.DeclaringType == typeof(JobGiver_AITrashColonyClose) ||
                 __originalMethod.DeclaringType == typeof(JobGiver_AITrashBuildingsDistant);
             bool escortMoving = __result.def == JobDefOf.Goto && SiegeRoles.IsHumanRaidEscortMech(pawn);
-            bool carrierTrashing = trashing && LadderInventory.Get(pawn) != null;
-            if (!escortMoving && !carrierTrashing) return;
+            if (!escortMoving && !trashing) return;
             SiegeRaidMap raids = pawn.Map.GetComponent<SiegeRaidMap>();
+            if (!escortMoving && LadderInventory.Get(pawn) == null && raids.Party(pawn)?.Encirclement != true) return;
             if (escortMoving ? !RaidStationaryCombat.AppliesTo(pawn, raids) : !raids.Applies(pawn)) return;
 
             // Reconsider the job in the normal think tree when a shot or ladder opens up.

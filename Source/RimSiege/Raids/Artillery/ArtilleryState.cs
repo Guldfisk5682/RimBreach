@@ -50,6 +50,7 @@ namespace RimSiege.Raids.Artillery
         internal Lord MechEscortLord;
         internal bool WaitingForFirstGun, InitialAmmoRequested;
         internal bool ScreenedDeployment;
+        internal bool Encirclement;
 
         public ArtilleryRaid() { }
 
@@ -59,6 +60,7 @@ namespace RimSiege.Raids.Artillery
             Scribe_Values.Look(ref Key, "key");
             Scribe_Values.Look(ref IncidentKey, "incidentKey");
             Scribe_Values.Look(ref RaidSeed, "raidSeed");
+            Scribe_Values.Look(ref Encirclement, "encirclement");
             Scribe_Values.Look(ref Kind, "kind");
             Scribe_Values.Look(ref Phase, "phase");
             Scribe_Values.Look(ref RaidPoints, "raidPoints");

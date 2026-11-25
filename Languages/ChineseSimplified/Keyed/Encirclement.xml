@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <RS_EnableEncirclement>启用全面合围</RS_EnableEncirclement>
+  <RS_EnableEncirclementDescription>允许游戏后期的敌对派系封锁殖民地、分批入场并建造围城营地。</RS_EnableEncirclementDescription>
+  <RS_EncirclementMinPoints>全面合围最低威胁点数（{0}）</RS_EncirclementMinPoints>
+  <RS_EncirclementWarningTitle>合围预警</RS_EncirclementWarningTitle>
+  <RS_EncirclementScout>殖民地侦察员</RS_EncirclementScout>
+  <RS_EncirclementSkySmoke>遮蔽天空的烟雾</RS_EncirclementSkySmoke>
+  <RS_EncirclementSkyVeil>遮蔽天空的黑幕</RS_EncirclementSkyVeil>
+  <RS_EncirclementWarning>{0}发现{1}的大部队正向{2}进发，预计一天后抵达。先遣部队将在十二小时后封锁殖民地，届时{3}会影响穿梭机的安全起降。\n\n{0}建议尽快储备食物、弹药、药品和备用电力，并加固防线。</RS_EncirclementWarning>
+  <RS_EncirclementWarningDescription>{0}的围城部队正在接近。</RS_EncirclementWarningDescription>
+  <RS_EncirclementSmokeVeilDescription>{0}派出的大股部队已封锁{1}。烟幕将持续笼罩殖民地，影响穿梭机起降以及日照。</RS_EncirclementSmokeVeilDescription>
+  <RS_EncirclementBlackVeilDescription>{0}派出的大股部队已封锁{1}。黑幕将持续笼罩殖民地，影响穿梭机起降以及日照。</RS_EncirclementBlackVeilDescription>
+  <RS_EncirclementBlockadeTitle>合围封锁</RS_EncirclementBlockadeTitle>
+  <RS_EncirclementShuttleSmoke>{0}布设的防空火力网和遮蔽天空的烟雾影响了穿梭机的安全起降。</RS_EncirclementShuttleSmoke>
+  <RS_EncirclementShuttleVeil>{0}布设的防空火力网和遮蔽天空的黑幕影响了穿梭机的安全起降。</RS_EncirclementShuttleVeil>
+  <RS_EncirclementShuttleDiverted>{0}穿梭机和乘员已转入世界地图等待。</RS_EncirclementShuttleDiverted>
+  <RS_EncirclementArrivalTitle>合围先遣队抵达</RS_EncirclementArrivalTitle>
+  <RS_EncirclementReinforcementsTitle>合围部队增援</RS_EncirclementReinforcementsTitle>
+  <RS_EncirclementMainForceTitle>合围主力抵达</RS_EncirclementMainForceTitle>
+  <RS_EncirclementWave1>{0}的围城封锁先遣部队已经抵达{1}。</RS_EncirclementWave1>
+  <RS_EncirclementWave2>{0}的围城封锁增援部队已抵达{1}，他们将会布置炮击阵地攻击殖民地。</RS_EncirclementWave2>
+  <RS_EncirclementWave3>{0}的围城封锁主力部队已经抵达{1}。</RS_EncirclementWave3>
+  <RS_EncirclementVictoryTitle>突破合围</RS_EncirclementVictoryTitle>
+  <RS_EncirclementVictory>殖民地已击退{0}的围城部队。空域封锁已解除，天空正在恢复明亮。</RS_EncirclementVictory>
+</LanguageData>

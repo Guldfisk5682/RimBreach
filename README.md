@@ -1,10 +1,14 @@
 # RimBreach
 
-RimBreach is a RimWorld mod built on IsoRimZ and Combat Extended. It adds artillery-supported raids and fortress assault quests for **RimWorld 1.7 Unstable**.
+RimBreach is a RimWorld mod built on IsoRimZ and Combat Extended. It adds artillery-supported raids, multi-phase encirclement sieges, and fortress assault quests for **RimWorld 1.7 Unstable**.
 
 ## Artillery-supported raids
 
 Human and mechanoid raiders can establish artillery positions to support their main assault. Stronger raids can bring heavier guns, and eligible raiders can carry folding ladders to scale your walls.
+
+## Encirclement sieges
+
+Late-game hostile factions can launch multi-phase encirclements that blockade your airspace, establish fortified rear camps with harassment devices and barracks, push forward heavy artillery batteries under smoke or shield cover, and assemble waves for a final assault.
 
 ## Fortress assaults
 

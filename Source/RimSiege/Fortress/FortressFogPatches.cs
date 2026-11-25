@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
+using RimSiege.Raids.Encirclement;
 using Verse;
 
 namespace RimSiege.Fortress
@@ -17,15 +18,18 @@ namespace RimSiege.Fortress
             yield return AccessTools.Method(typeof(FogGrid), "UnfogWorker");
         }
 
-        private static bool Prefix(FogGrid __instance, IntVec3 c) =>
-            !FortressFog.TryGet(__instance, out FortressFog fog) || !fog.Conceals(c);
+        internal static bool Conceals(FogGrid grid, IntVec3 cell) =>
+            FortressFog.TryGet(grid, out FortressFog fortress) && fortress.Conceals(cell) ||
+            EncirclementFog.TryGet(grid, out EncirclementFog camp) && camp.Conceals(cell);
+
+        private static bool Prefix(FogGrid __instance, IntVec3 c) => !Conceals(__instance, c);
     }
 
     [HarmonyPatch(typeof(FloodFillerFog), nameof(FloodFillerFog.FloodUnfog))]
     internal static class FortressFloodFogPatch
     {
         private static bool Prefix(IntVec3 root, Map map) =>
-            !FortressFog.TryGet(map.fogGrid, out FortressFog fog) || !fog.Conceals(root);
+            !FortressUnfogPatch.Conceals(map.fogGrid, root);
 
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
         {
@@ -42,10 +46,13 @@ namespace RimSiege.Fortress
             }
         }
 
-        private static Predicate<IntVec3> LimitFlood(Predicate<IntVec3> pass, Map map) =>
-            FortressFog.TryGet(map.fogGrid, out FortressFog fog)
-                ? cell => !fog.Conceals(cell) && pass(cell)
-                : pass;
+        private static Predicate<IntVec3> LimitFlood(Predicate<IntVec3> pass, Map map)
+        {
+            bool fortressActive = FortressFog.TryGet(map.fogGrid, out FortressFog fortress);
+            bool campActive = EncirclementFog.TryGet(map.fogGrid, out EncirclementFog camp);
+            if (!fortressActive && !campActive) return pass;
+            return cell => fortress?.Conceals(cell) != true && camp?.Conceals(cell) != true && pass(cell);
+        }
     }
 
     [HarmonyPatch(typeof(Thing), nameof(Thing.Position), MethodType.Setter)]
@@ -53,7 +60,9 @@ namespace RimSiege.Fortress
     {
         private static void Postfix(Thing __instance)
         {
-            if (__instance is Pawn pawn) FortressFog.PawnArrived(pawn);
+            if (__instance is not Pawn pawn) return;
+            FortressFog.PawnArrived(pawn);
+            EncirclementFog.PawnArrived(pawn);
         }
     }
 
@@ -62,7 +71,9 @@ namespace RimSiege.Fortress
     {
         private static void Postfix(Pawn __instance, bool respawningAfterLoad)
         {
-            if (!respawningAfterLoad) FortressFog.PawnArrived(__instance);
+            if (respawningAfterLoad) return;
+            FortressFog.PawnArrived(__instance);
+            EncirclementFog.PawnArrived(__instance);
         }
     }
 }

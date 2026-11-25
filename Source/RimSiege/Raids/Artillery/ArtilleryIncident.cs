@@ -14,6 +14,7 @@ namespace RimSiege.Raids.Artillery
         internal bool Breaches;
         internal bool RetreatAnnounced;
         internal bool ShieldAssigned;
+        internal bool Encirclement;
         internal List<Lord> NativeLords = new();
         internal List<string> CompletionTags = new();
         internal bool CompletionPending, CompletionSent;
@@ -38,6 +39,7 @@ namespace RimSiege.Raids.Artillery
         {
             Scribe_Values.Look(ref Key, "key");
             Scribe_Values.Look(ref ShieldAssigned, "shieldAssigned");
+            Scribe_Values.Look(ref Encirclement, "encirclement");
             Scribe_Values.Look(ref InitialRaidSize, "initialRaidSize");
             Scribe_Collections.Look(ref ViolentLosses, "violentLossIds", LookMode.Value);
             ViolentLosses ??= new();

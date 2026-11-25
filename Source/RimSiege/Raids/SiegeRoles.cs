@@ -69,13 +69,16 @@ namespace RimSiege.Raids
         internal static bool LadderAssaultDuty(Pawn pawn)
         {
             Lord lord = pawn.GetLord();
-            if (Ordinary(lord)) return pawn.mindState?.duty?.def == DutyDefOf.AssaultColony;
+            if (Ordinary(lord) || lord?.CurLordToil is LordToil_AssaultColony &&
+                pawn.MapHeld?.GetComponent<SiegeRaidMap>().Party(pawn)?.Encirclement == true)
+                return pawn.mindState?.duty?.def == DutyDefOf.AssaultColony;
             return lord?.CurLordToil is LordToil_AssaultColonyBreaching &&
                 (pawn.mindState?.duty?.def == DutyDefOf.AssaultColony || pawn.mindState?.duty?.def == DutyDefOf.Escort);
         }
 
         internal static bool Eligible(Pawn pawn, SiegeParty party) =>
             !IsHumanRaidEscortMech(pawn) && CanParticipateInTacticalAssault(pawn) && pawn.Spawned &&
+            (!party.Encirclement || !MechBattery.IsConstructoid(pawn)) &&
             ProjectZ.RaidClimb.Climber(pawn) &&
             (Ordinary(pawn.GetLord()) || LadderAssaultDuty(pawn)) &&
             (ProjectZ.RaidClimb.MayClimb(pawn, false) ||

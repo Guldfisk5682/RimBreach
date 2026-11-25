@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <RS_EnableEncirclement>Enable encirclement raids</RS_EnableEncirclement>
+  <RS_EnableEncirclementDescription>Allow late-game factions to blockade a colony and build siege camps over several waves.</RS_EnableEncirclementDescription>
+  <RS_EncirclementMinPoints>Minimum encirclement threat points ({0})</RS_EncirclementMinPoints>
+  <RS_EncirclementWarningTitle>Approaching encirclement</RS_EncirclementWarningTitle>
+  <RS_EncirclementScout>A colony scout</RS_EncirclementScout>
+  <RS_EncirclementSkySmoke>sky-blotting smoke</RS_EncirclementSkySmoke>
+  <RS_EncirclementSkyVeil>a sky-blotting veil</RS_EncirclementSkyVeil>
+  <RS_EncirclementWarning>{0} spotted a large army from {1} moving toward {2}. The army is expected to arrive in one day. Its vanguard will blockade the colony in twelve hours and use {3} to cut off safe shuttle departures and landings.\n\n{0} recommends stockpiling food, ammunition, medicine, and backup power and reinforcing the defenses.</RS_EncirclementWarning>
+  <RS_EncirclementWarningDescription>An encircling army from {0} is approaching.</RS_EncirclementWarningDescription>
+  <RS_EncirclementSmokeVeilDescription>{0} has sent a large force to blockade {1}. A smoke screen will continue to shroud the colony, disrupting shuttle takeoff and landing and reducing sunlight.</RS_EncirclementSmokeVeilDescription>
+  <RS_EncirclementBlackVeilDescription>{0} has sent a large force to blockade {1}. A dark veil will continue to shroud the colony, disrupting shuttle takeoff and landing and reducing sunlight.</RS_EncirclementBlackVeilDescription>
+  <RS_EncirclementBlockadeTitle>Encirclement blockade</RS_EncirclementBlockadeTitle>
+  <RS_EncirclementShuttleSmoke>The anti-air fire network and sky-blotting smoke from {0} prevent safe shuttle takeoff and landing.</RS_EncirclementShuttleSmoke>
+  <RS_EncirclementShuttleVeil>The anti-air fire network and sky-blotting veil from {0} prevent safe shuttle takeoff and landing.</RS_EncirclementShuttleVeil>
+  <RS_EncirclementShuttleDiverted>{0} The shuttle and its passengers are waiting on the world map.</RS_EncirclementShuttleDiverted>
+  <RS_EncirclementArrivalTitle>Encirclement vanguard</RS_EncirclementArrivalTitle>
+  <RS_EncirclementReinforcementsTitle>Encirclement reinforcements</RS_EncirclementReinforcementsTitle>
+  <RS_EncirclementMainForceTitle>Encirclement main force</RS_EncirclementMainForceTitle>
+  <RS_EncirclementWave1>The encirclement vanguard from {0} has arrived at {1}.</RS_EncirclementWave1>
+  <RS_EncirclementWave2>Encirclement reinforcements from {0} have arrived at {1}. They will set up artillery batteries to bombard the colony.</RS_EncirclementWave2>
+  <RS_EncirclementWave3>The encirclement main force from {0} has arrived at {1}.</RS_EncirclementWave3>
+  <RS_EncirclementVictoryTitle>Encirclement broken</RS_EncirclementVictoryTitle>
+  <RS_EncirclementVictory>The siege by {0} has been broken. The airspace is opening and daylight is returning.</RS_EncirclementVictory>
+</LanguageData>

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using CombatExtended;
 using CombatExtended.Compatibility;
+using RimSiege.Raids.Encirclement;
 using RimWorld;
 using Verse;
 using Verse.AI;
@@ -170,6 +171,7 @@ namespace RimSiege.Raids.Artillery
         {
             if (pawns.Count == 0 || (raid.AssaultEnded && (raid.IsFortressSupport || !raid.KeepsSeparateCrew))) return;
             if (raid.AssaultLord != null && !camp.Map.lordManager.lords.Contains(raid.AssaultLord)) raid.AssaultLord = null;
+            if (raid.Encirclement && raid.AssaultLord == null) return;
             if (raid.AssaultLord == null && raid.KeepsSeparateCrew) raid.AssaultEnded = false;
             camp.RemovePawns(pawns);
             foreach (Pawn pawn in pawns)
@@ -195,6 +197,8 @@ namespace RimSiege.Raids.Artillery
             SiegeRaidMap raids = camp.Map.GetComponent<SiegeRaidMap>();
             foreach (Pawn pawn in pawns.OrderBy(SiegeRoles.LadderPriority))
             {
+                if (raid.Encirclement && raids.Party(raid.Id) is { } encirclement)
+                    raids.Include(pawn, encirclement);
                 SiegeParty party = raids.Party(pawn);
                 if (party == null) continue;
                 raids.Issue(pawn, party);
@@ -335,7 +339,9 @@ namespace RimSiege.Raids.Artillery
             // Keep the autonomous battery registered across that handoff gap.
             bool retainBattery = retainWithAssault && (AssaultStillLive(raid, map) ||
                 (raid.Kind == ArtilleryRaidKind.Mechanoid && !raid.AssaultEnded && raid.CampLord != null &&
-                 map.lordManager.lords.Contains(raid.CampLord)));
+                 map.lordManager.lords.Contains(raid.CampLord)) ||
+                raid.Encirclement && raid.Kind == ArtilleryRaidKind.Mechanoid &&
+                GameCondition_Encirclement.CampaignOn(map)?.IncidentKey == raid.IncidentKey);
             foreach (ArtilleryPlacement item in Placements(raid.Camp))
             {
                 item.Operator = null;

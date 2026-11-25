@@ -3,7 +3,7 @@
   <name>RimBreach</name>
   <author>Guldfisk5682</author>
   <packageId>Guldfisk.RimSiege</packageId>
-  <modVersion>1.6.1</modVersion>
+  <modVersion>1.7.0</modVersion>
   <supportedVersions>
     <li>1.7</li>
   </supportedVersions>
@@ -52,7 +52,7 @@
     <li>Peren.IsoRimProjectZ</li>
     <li>Peren.IsoRimWaylith.CEPack</li>
   </loadAfter>
-  <description>RimBreach is a RimWorld mod built on IsoRimZ and Combat Extended. It adds artillery-supported raids and fortress assault quests.
+  <description>RimBreach is a RimWorld mod built on IsoRimZ and Combat Extended. It adds artillery-supported raids, multi-phase encirclement sieges, and fortress assault quests.
 
 For RimWorld 1.7 Unstable.</description>
 </ModMetaData>

@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <GameConditionDef>
+    <defName>RS_Encirclement</defName>
+    <conditionClass>RimSiege.Raids.Encirclement.GameCondition_Encirclement</conditionClass>
+    <label>encirclement</label>
+    <description>An enemy army is preparing to encircle this colony.</description>
+    <canBePermanent>true</canBePermanent>
+    <showPermanentInTooltip>false</showPermanentInTooltip>
+    <preventIncidents>true</preventIncidents>
+    <allowUnderground>false</allowUnderground>
+    <natural>false</natural>
+    <exclusiveConditions>
+      <li MayRequire="Ludeon.RimWorld.Anomaly">UnnaturalDarkness</li>
+    </exclusiveConditions>
+  </GameConditionDef>
+
+  <GameConditionDef Name="RS_EncirclementVeil" Abstract="True">
+    <canBePermanent>true</canBePermanent>
+    <showPermanentInTooltip>false</showPermanentInTooltip>
+    <preventNeutralVisitors>true</preventNeutralVisitors>
+    <causesTraderCaravanExit>true</causesTraderCaravanExit>
+    <preventShuttleLaunch>true</preventShuttleLaunch>
+    <allowUnderground>false</allowUnderground>
+    <natural>false</natural>
+    <displayOnUI>false</displayOnUI>
+  </GameConditionDef>
+  <GameConditionDef ParentName="RS_EncirclementVeil">
+    <defName>RS_EncirclementSmokeVeil</defName>
+    <conditionClass>GameCondition_SmokeSpewer</conditionClass>
+    <label>sky-blotting smoke</label>
+    <description>Smoke from the encircling army is reducing sunlight over the colony.</description>
+  </GameConditionDef>
+  <GameConditionDef ParentName="RS_EncirclementVeil">
+    <defName>RS_EncirclementSunVeil</defName>
+    <conditionClass>GameCondition_NoSunlight</conditionClass>
+    <label>sky-blotting veil</label>
+    <description>The encircling army has cut off sunlight over the colony.</description>
+  </GameConditionDef>
+  <GameConditionDef Name="RS_EncirclementFieldCondition" Abstract="True">
+    <allowUnderground>false</allowUnderground>
+    <natural>false</natural>
+  </GameConditionDef>
+  <GameConditionDef ParentName="RS_EncirclementFieldCondition">
+    <defName>RS_EncirclementWeather</defName>
+    <conditionClass>GameCondition_ForceWeather</conditionClass>
+    <label>weather control</label>
+    <description>A nearby weather controller is forcing precipitation over the colony.</description>
+    <weatherDef>Rain</weatherDef>
+  </GameConditionDef>
+  <GameConditionDef ParentName="RS_EncirclementFieldCondition">
+    <defName>RS_EncirclementClimate</defName>
+    <conditionClass>GameCondition_TemperatureOffset</conditionClass>
+    <label>temperature control</label>
+    <description>A nearby temperature adjuster is changing the outdoor temperature.</description>
+  </GameConditionDef>
+  <GameConditionDef ParentName="RS_EncirclementFieldCondition">
+    <defName>RS_EncirclementFallout</defName>
+    <conditionClass>GameCondition_ToxicFallout</conditionClass>
+    <label>toxic fallout</label>
+    <description>A nearby toxic spewer is spreading toxic fallout over the colony.</description>
+    <pennedAnimalsSeekShelter>true</pennedAnimalsSeekShelter>
+  </GameConditionDef>
+  <GameConditionDef ParentName="RS_EncirclementFieldCondition">
+    <defName>RS_EncirclementEMI</defName>
+    <conditionClass>GameCondition_DisableElectricity</conditionClass>
+    <label>electrical equipment disabled</label>
+    <description>A nearby EMI dynamo is keeping the colony's electrical equipment offline.</description>
+  </GameConditionDef>
+</Defs>

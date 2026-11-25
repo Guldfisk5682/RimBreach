@@ -402,39 +402,43 @@ namespace RimSiege.Fortress
         internal static Job Treat(Pawn doctor, Pawn patient)
         {
             if (!patient.health.HasHediffsNeedingTend() || !CanCareFor(doctor, patient)) return null;
-            return Tend(doctor, patient);
+            return Tend(doctor, patient, () => FortressMedicine(doctor));
         }
 
         internal static Job Care(Pawn doctor, Pawn patient)
         {
             if (doctor == patient || !NeedsCare(patient) || !CanCareFor(doctor, patient)) return null;
-            bool needsTending = patient.health.HasHediffsNeedingTend();
-            if (needsTending && HealthUtility.TicksUntilDeathDueToBloodLoss(patient) < 2500)
-                return Tend(doctor, patient);
-
-            if (((LordJob_FortressDefense)doctor.GetLord().LordJob).Line != FortressLine.Keep &&
-                HealthAIUtility.CanRescueNow(doctor, patient))
-            {
-                Building_Bed bed = RestUtility.FindBedFor(patient, doctor, checkSocialProperness: false);
-                if (bed != null)
-                {
-                    Job rescue = JobMaker.MakeJob(JobDefOf.Rescue, patient, bed);
-                    rescue.count = 1;
-                    return rescue;
-                }
-            }
-
-            if (needsTending) return Tend(doctor, patient);
-            return NeedsFeeding(patient) ? FeedPatient.JobOnThing(doctor, patient) : null;
+            var defense = (LordJob_FortressDefense)doctor.GetLord().LordJob;
+            return Care(doctor, patient, defense.Line == FortressLine.Keep ? null :
+                () => RestUtility.FindBedFor(patient, doctor, checkSocialProperness: false), () => FortressMedicine(doctor));
         }
 
-        private static Job Tend(Pawn doctor, Pawn patient)
+        internal static Job Care(Pawn doctor, Pawn patient, Func<Building_Bed> findBed, Func<Thing> findMedicine)
+        {
+            bool needsTending = patient.health.HasHediffsNeedingTend();
+            if (doctor != patient && findBed != null &&
+                (!needsTending || HealthUtility.TicksUntilDeathDueToBloodLoss(patient) >= 2500) &&
+                HealthAIUtility.CanRescueNow(doctor, patient) && findBed() is { } bed)
+            {
+                Job rescue = JobMaker.MakeJob(JobDefOf.Rescue, patient, bed);
+                rescue.count = 1;
+                return rescue;
+            }
+
+            if (needsTending) return Tend(doctor, patient, findMedicine);
+            return doctor != patient && NeedsFeeding(patient) ? FeedPatient.JobOnThing(doctor, patient) : null;
+        }
+
+        private static Thing FortressMedicine(Pawn doctor) =>
+            GenClosest.ClosestThingReachable(doctor.Position, doctor.Map, ThingRequest.ForGroup(ThingRequestGroup.Medicine),
+                PathEndMode.ClosestTouch, TraverseParms.For(doctor, Danger.Some), 32f,
+                item => !item.IsForbidden(doctor) && doctor.CanReserve(item, 10, 1) &&
+                    ((LordJob_FortressDefense)doctor.GetLord().LordJob).Ground.Inside(item.Position));
+
+        private static Job Tend(Pawn doctor, Pawn patient, Func<Thing> findMedicine)
         {
             Thing medicine = HealthAIUtility.FindBestMedicine(doctor, patient, onlyUseInventory: true) ??
-                GenClosest.ClosestThingReachable(doctor.Position, doctor.Map, ThingRequest.ForGroup(ThingRequestGroup.Medicine),
-                    PathEndMode.ClosestTouch, TraverseParms.For(doctor, Danger.Some), 32f,
-                    item => !item.IsForbidden(doctor) && doctor.CanReserve(item, 10, 1) &&
-                        ((LordJob_FortressDefense)doctor.GetLord().LordJob).Ground.Inside(item.Position));
+                findMedicine();
             Job job = JobMaker.MakeJob(JobDefOf.TendPatient, patient, medicine);
             job.endAfterTendedOnce = doctor == patient;
             return job;

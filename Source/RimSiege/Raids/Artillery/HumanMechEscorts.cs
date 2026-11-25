@@ -256,7 +256,7 @@ namespace RimSiege.Raids.Artillery
             (damage.isExplosive || (!typeof(DamageWorker_Flame).IsAssignableFrom(damage.workerClass) &&
                 damage.hediff != DamageDefOf.Burn.hediff));
 
-        private static Pawn GenerateMech(PawnKindDef kind, Faction faction, int tile)
+        internal static Pawn GenerateMech(PawnKindDef kind, Faction faction, int tile)
         {
             Pawn pawn = PawnGenerator.GeneratePawn(new PawnGenerationRequest(
                 kind, faction, PawnGenerationContext.NonPlayer, tile,

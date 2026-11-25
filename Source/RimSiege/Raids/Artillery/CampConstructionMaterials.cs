@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
+using RimSiege.Raids.Encirclement;
 using RimWorld;
 using Verse;
 using Verse.AI;
@@ -15,7 +16,9 @@ namespace RimSiege.Raids.Artillery
         private const float MaterialRadius = 25f;
         [ThreadStatic] internal static Pawn Current;
 
-        internal static bool Applies(Pawn pawn, Thing target) => PlacementFor(pawn, target) != null;
+        internal static bool Applies(Pawn pawn, Thing target) => PlacementFor(pawn, target) != null ||
+            target != null && target.Faction == pawn?.Faction &&
+            (pawn.GetLord()?.LordJob is LordJob_EncirclementCamp camp && camp.Campaign?.Work?.Owns(target) == true);
 
         internal static ArtilleryPlacement PlacementFor(Pawn pawn, Thing target)
         {
@@ -33,7 +36,8 @@ namespace RimSiege.Raids.Artillery
         {
             if (Current == null || pawn != Current || pawn.mindState.maxDistToSquadFlag <= 0f) return null;
             float previous = pawn.mindState.maxDistToSquadFlag;
-            pawn.mindState.maxDistToSquadFlag = Math.Max(previous, MaterialRadius);
+            float radius = pawn.GetLord()?.LordJob is LordJob_EncirclementCamp ? EncirclementWork.MaterialRadius : MaterialRadius;
+            pawn.mindState.maxDistToSquadFlag = Math.Max(previous, radius);
             return previous;
         }
 

@@ -8,6 +8,7 @@ using HarmonyLib;
 using RimSiege.Fortress;
 using RimSiege.Integration;
 using RimSiege.Raids.Artillery;
+using RimSiege.Raids.Encirclement;
 using RimWorld;
 using Verse;
 using Verse.AI;
@@ -132,7 +133,7 @@ namespace RimSiege.Raids
             LadderInventory.Restore(__instance);
             SiegeRaidMap raids = map.GetComponent<SiegeRaidMap>();
             SiegeParty party = raids.Party(__instance);
-            if (SiegeRaidMap.Enabled && party != null) raids.QueueArrival(__instance);
+            if (party?.TacticsEnabled == true) raids.QueueArrival(__instance);
             if (SiegeRaidMap.Enabled && party?.TribalSmoke is { ReachedDefenses: false } tribal &&
                 ArtilleryRetreat.AtDefenses(__instance))
                 tribal.ReachedDefenses = true;
@@ -175,7 +176,8 @@ namespace RimSiege.Raids
     {
         private static void Postfix(Pawn __instance, ref string __result)
         {
-            if (SiegeRaidMap.Enabled && Current.ProgramState == ProgramState.Playing && LadderInventory.Get(__instance) != null &&
+            if ((SiegeRaidMap.Enabled || __instance.MapHeld?.GetComponent<SiegeRaidMap>().Party(__instance)?.Encirclement == true) &&
+                Current.ProgramState == ProgramState.Playing && LadderInventory.Get(__instance) != null &&
                 (__instance.Faction?.HostileTo(Faction.OfPlayer) == true || FortressSite.SupportSite(__instance) != null))
                 __result += "RS_LadderCarrier".Translate() + " ";
         }
@@ -261,6 +263,18 @@ namespace RimSiege.Raids
                 return false;
             return artillery.ForLord(lord) != null || artillery.IncidentForLord(lord) != null ||
                 pawn.Map.GetComponent<SiegeRaidMap>().Party(pawn) != null;
+        }
+    }
+
+    [HarmonyPatch(typeof(CompTend), nameof(CompTend.TryGiveTacticalJob))]
+    internal static class GarrisonTendReservationPatch
+    {
+        private static bool Prefix(CompTend __instance)
+        {
+            Pawn pawn = __instance.SelPawn;
+            if (pawn.GetLord()?.CurLordToil is not (LordToil_FortressDefense or LordToil_EncirclementCamp)) return true;
+            if (pawn.CurJobDef == JobDefOf.TendPatient && pawn.CurJob.targetA.Pawn == pawn) return false;
+            return pawn.CanReserve(pawn);
         }
     }
 }

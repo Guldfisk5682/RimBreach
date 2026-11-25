@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <QuestScriptDef>
+    <defName>RS_Encirclement</defName>
+    <autoAccept>true</autoAccept>
+    <defaultHidden>true</defaultHidden>
+    <isRootSpecial>true</isRootSpecial>
+    <questNameRules>
+      <rulesStrings>
+        <li>questName->Encirclement</li>
+      </rulesStrings>
+    </questNameRules>
+    <root Class="RimSiege.Raids.Encirclement.QuestNode_Root_Encirclement" />
+  </QuestScriptDef>
+  <IncidentDef>
+    <defName>RS_Encirclement</defName>
+    <label>encirclement</label>
+    <category>ThreatBig</category>
+    <targetTags><li>Map_PlayerHome</li></targetTags>
+    <workerClass>RimSiege.Raids.Encirclement.IncidentWorker_Encirclement</workerClass>
+    <questScriptDef>RS_Encirclement</questScriptDef>
+    <earliestDay>60</earliestDay>
+    <minRefireDays>40</minRefireDays>
+    <baseChance>0.35</baseChance>
+    <requireColonistsPresent>true</requireColonistsPresent>
+  </IncidentDef>
+</Defs>

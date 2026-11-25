@@ -16,7 +16,7 @@ namespace RimSiege.Raids
     {
         private static bool Prefix(Pawn pawn, bool exit, ref Job __result)
         {
-            if (exit || IsoSiegePlanner.Active != null || LadderPerch.Get(pawn)?.atTop == true || !SiegeRaidMap.Enabled || pawn?.Map == null ||
+            if (exit || IsoSiegePlanner.Active != null || LadderPerch.Get(pawn)?.atTop == true || pawn?.Map == null ||
                 !pawn.Map.GetComponent<SiegeRaidMap>().Applies(pawn)) return true;
             // Only the kit-backed planner opens new routes for these ordinary raids.
             // The original sapper jobs remain available as the final fallback.
@@ -90,7 +90,7 @@ namespace RimSiege.Raids
         private static void Postfix(StairGrid __instance, VLink l)
         {
             if (Scribe.mode != LoadSaveMode.Inactive || Current.ProgramState != ProgramState.Playing) return;
-            if (!SiegeRaidMap.Enabled || l.thing is not Building_SiegeLadder ladder || l.topBlocker) return;
+            if (l.thing is not Building_SiegeLadder ladder || l.topBlocker) return;
             __instance.map?.GetComponent<SiegeRaidMap>()?.WakeForLadder(ladder.Faction);
         }
     }

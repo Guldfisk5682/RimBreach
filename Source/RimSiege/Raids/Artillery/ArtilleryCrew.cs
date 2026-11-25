@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
 using RimSiege.Integration;
+using RimSiege.Raids.Encirclement;
 using Verse.AI;
 using Verse;
 using Verse.AI.Group;
@@ -75,6 +76,14 @@ namespace RimSiege.Raids.Artillery
             var crew = new HashSet<Pawn>(raid.Camp.Guns.Where(g => g.Operator != null).Select(g => g.Operator));
             if (raid.BatterySupport is { } support)
                 crew.UnionWith(support.Helpers.Where(p => p?.GetLord() == camp));
+            Pawn technician = raid.Encirclement && camp.LordJob is LordJob_MechArtillery mech &&
+                raid.Camp.Guns.Any(g => g.Building is { Spawned: true } b && b.Faction == raid.Faction)
+                ? mech.ConstructionWorker : null;
+            if (technician != null)
+            {
+                crew.Add(technician);
+                crew.UnionWith(camp.ownedPawns.Where(EncirclementMechEscort.Eligible));
+            }
             int projects = ArtilleryCamp.Placements(raid.Camp).Count(Pending);
             if (projects == 0) return crew;
             var toil = (LordToil_Siege)camp.CurLordToil;
@@ -94,7 +103,8 @@ namespace RimSiege.Raids.Artillery
                     .ThenBy(pawn => pawn.Position.DistanceToSquared(raid.Camp.Center))
                     .Take(helpers));
             }
-            crew.RemoveWhere(p => SiegeRoles.IsMainForceOnly(p, camp.LordJob is LordJob_MechArtillery));
+            crew.RemoveWhere(p => SiegeRoles.IsMainForceOnly(p, camp.LordJob is LordJob_MechArtillery) &&
+                !(technician != null && EncirclementMechEscort.Eligible(p)));
             return crew;
         }
 

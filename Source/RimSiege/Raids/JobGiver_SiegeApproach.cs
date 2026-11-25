@@ -14,8 +14,12 @@ namespace RimSiege.Raids
         {
             if (LadderPerch.Get(pawn) != null) return true;
             SiegeRaidMap raids = pawn.Map?.GetComponent<SiegeRaidMap>();
-            return raids?.Applies(pawn) == true && SiegeRoles.CloseAssault(pawn) &&
-                (LadderInventory.Get(pawn) != null || raids.RecoveryFor(pawn) != null);
+            if (raids?.Applies(pawn) != true) return false;
+            if (SiegeRoles.CloseAssault(pawn) &&
+                (LadderInventory.Get(pawn) != null || raids.RecoveryFor(pawn) != null)) return true;
+            SiegeParty party = raids.Party(pawn);
+            return party.Encirclement && !SiegeRoles.FireSupportMech(pawn) &&
+                SiegeRoles.Eligible(pawn, party) && party.HasLadderRoute(pawn);
         }
     }
 
@@ -23,7 +27,7 @@ namespace RimSiege.Raids
     {
         protected override bool Satisfied(Pawn pawn)
         {
-            if (!SiegeRaidMap.Enabled || pawn.Map == null || pawn.mindState?.duty is not { } duty ||
+            if (pawn.Map == null || pawn.mindState?.duty is not { } duty ||
                 duty.def != DutyDefOf.Escort) return false;
             SiegeRaidMap raids = pawn.Map.GetComponent<SiegeRaidMap>();
             if (!raids.Applies(pawn) || raids.Party(pawn) is not { } party) return false;
@@ -53,7 +57,7 @@ namespace RimSiege.Raids
             if (perch?.atTop == true) return RaidVertical.ClearJob(pawn, perch);
             bool carrier = LadderInventory.Get(pawn) != null;
             bool walkableRoute = party.Planner.Destination(pawn, true).IsValid;
-            if (carrier && !walkableRoute)
+            if (carrier && !walkableRoute && (!party.Encirclement || !party.HasLadderRoute(pawn)))
             {
                 Job independent = party.Plan(pawn);
                 if (independent != null)

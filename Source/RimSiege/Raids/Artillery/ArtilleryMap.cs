@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using CombatExtended;
 using HarmonyLib;
+using RimSiege.Raids.Encirclement;
 using RimWorld;
 using Verse;
 using Verse.AI.Group;
@@ -25,10 +26,19 @@ namespace RimSiege.Raids.Artillery
         internal void Register(ArtilleryRaid raid, IEnumerable<Pawn> pawns)
         {
             if (raid.Key == 0) raid.Key = nextKey++;
+            AssignMembers(raid, pawns);
+            raids.Add(raid);
+            raid.RegisterBuildings();
+        }
+
+        internal void AssignMembers(ArtilleryRaid raid, IEnumerable<Pawn> pawns)
+        {
+            foreach (Pawn pawn in raid.Members)
+                if (pawn != null && ForPawn(pawn) == raid) members.Remove(pawn);
             raid.Members = pawns.ToList();
             raid.InitialRaidSize = raid.Members.Count;
-            raids.Add(raid);
-            Index(raid);
+            foreach (Pawn pawn in raid.Members)
+                if (pawn != null) members[pawn] = raid;
         }
 
         internal void RegisterIncident(ArtilleryIncident incident)
@@ -108,6 +118,18 @@ namespace RimSiege.Raids.Artillery
 
         internal void NotifyLordRemoved(Lord removed)
         {
+            if (IncidentForLord(removed) is { Encirclement: true } campaign &&
+                campaign.NativeLords.Remove(removed))
+            {
+                foreach (ArtilleryRaid battery in raids.Where(r => r.AssaultLord == removed).ToArray())
+                {
+                    battery.AssaultLord = null;
+                    NotifyAssaultEnded(battery);
+                    FinishIfEnded(battery);
+                }
+                FinishIncident(campaign);
+                return;
+            }
             ArtilleryRaid raid = ForLord(removed);
             if (raid == null)
             {
@@ -132,7 +154,8 @@ namespace RimSiege.Raids.Artillery
             if (raid.AssaultEnded) return;
             raid.AssaultEnded = true;
             // Independent crews and Offer camps can finish their support after the assault ends.
-            if (raid.KeepsSeparateCrew || raid.IsFortressSupport) return;
+            if (raid.KeepsSeparateCrew || raid.IsFortressSupport ||
+                raid.Encirclement && raid.Kind == ArtilleryRaidKind.Mechanoid) return;
             Lord camp = raid.CampLord;
             if (camp != null && map.lordManager.lords.Contains(camp)) camp.ReceiveMemo(LordJob_Artillery.RaidEndedMemo);
             else ArtilleryCamp.Abandon(raid, map);
@@ -141,6 +164,8 @@ namespace RimSiege.Raids.Artillery
         internal void FinishIfEnded(ArtilleryRaid raid)
         {
             if (raid == null || !raids.Contains(raid) ||
+                raid.Encirclement && (!raid.AssaultCreated || raid.Kind == ArtilleryRaidKind.Mechanoid &&
+                    GameCondition_Encirclement.CampaignOn(map)?.IncidentKey == raid.IncidentKey) ||
                 (raid.CampLord != null && map.lordManager.lords.Contains(raid.CampLord)) ||
                 (raid.AssaultLord != null && map.lordManager.lords.Contains(raid.AssaultLord)) ||
                 (raid.VanguardLord != null && map.lordManager.lords.Contains(raid.VanguardLord)) ||
@@ -207,6 +232,12 @@ namespace RimSiege.Raids.Artillery
             {
                 ArtilleryRaid raid = raids[i];
                 Index(raid);
+                if (raid.Encirclement)
+                {
+                    if (!raid.AssaultEnded && raid.Camp != null)
+                        SupportRoute.Set(raid, SupportRoute.Build(map, raid.Camp.Center, raid.Camp.Goal));
+                    if (!raid.AssaultCreated) continue;
+                }
                 ArtilleryRetreat.RestoreEscortExits(raid);
                 if (raid.InitialRaidSize == 0) raid.InitialRaidSize = raid.Members.Count;
                 if (raid.AssaultLord != null) raid.AssaultCreated = true;
@@ -255,8 +286,10 @@ namespace RimSiege.Raids.Artillery
             if (newLordToil is not LordToil_ExitMap && newLordToil is not LordToil_PanicFlee) return;
             ArtilleryMap raids = __instance.Map?.GetComponent<ArtilleryMap>();
             ArtilleryRaid raid = raids?.ForLord(__instance);
-            if (raid != null && raid.AssaultLord == __instance)
-                raids.NotifyAssaultEnded(raid);
+            if (raid == null || raid.AssaultLord != __instance) return;
+            if (!raid.Encirclement) raids.NotifyAssaultEnded(raid);
+            else foreach (ArtilleryRaid battery in raids.TrackedRaids.Where(r => r.AssaultLord == __instance).ToArray())
+                raids.NotifyAssaultEnded(battery);
         }
     }
 }

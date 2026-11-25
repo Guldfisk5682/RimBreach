@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <RS_Encirclement.label>全面合围</RS_Encirclement.label>
+  <RS_EncirclementSmokeVeil.label>烟雾蔽日</RS_EncirclementSmokeVeil.label>
+  <RS_EncirclementSunVeil.label>黑幕遮日</RS_EncirclementSunVeil.label>
+  <RS_EncirclementWeather.label>天气控制</RS_EncirclementWeather.label>
+  <RS_EncirclementWeather.description>附近的天气控制器正在使殖民地持续降雨或降雪。</RS_EncirclementWeather.description>
+  <RS_EncirclementClimate.label>温度调节</RS_EncirclementClimate.label>
+  <RS_EncirclementClimate.description>附近的温度调节器正在改变室外温度。</RS_EncirclementClimate.description>
+  <RS_EncirclementFallout.label>正在散播毒尘</RS_EncirclementFallout.label>
+  <RS_EncirclementFallout.description>附近的毒气发生器正在向殖民地散播有毒尘埃。</RS_EncirclementFallout.description>
+  <RS_EncirclementEMI.label>电气设备停摆</RS_EncirclementEMI.label>
+  <RS_EncirclementEMI.description>附近的电磁干扰器正在使殖民地的电气设备停摆。</RS_EncirclementEMI.description>
+</LanguageData>

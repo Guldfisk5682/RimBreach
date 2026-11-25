@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <ThingDef ParentName="BuildingBase" Name="RS_FieldDeviceBase" Abstract="True">
+    <thingClass>Building</thingClass>
+    <size>(3,3)</size>
+    <tickerType>Normal</tickerType>
+    <passability>PassThroughOnly</passability>
+    <fillPercent>0.55</fillPercent>
+    <rotatable>false</rotatable>
+    <techLevel>Industrial</techLevel>
+    <terrainAffordanceNeeded>Heavy</terrainAffordanceNeeded>
+    <statBases>
+      <MaxHitPoints>450</MaxHitPoints>
+      <WorkToBuild>5200</WorkToBuild>
+      <Flammability>0.3</Flammability>
+    </statBases>
+    <costList>
+      <Steel>140</Steel>
+      <ComponentIndustrial>5</ComponentIndustrial>
+    </costList>
+    <building>
+      <claimable>false</claimable>
+      <ai_combatDangerous>true</ai_combatDangerous>
+    </building>
+    <modExtensions>
+      <li Class="RimSiege.Integration.SiegeConstructionExtension" />
+    </modExtensions>
+  </ThingDef>
+  <ThingDef ParentName="RS_FieldDeviceBase">
+    <defName>RS_FieldWeatherController</defName>
+    <label>weather controller</label>
+    <description>A siege device that forces rain or snow over the colony.</description>
+    <graphicData>
+      <texPath>Things/Building/Misc/DropBeacon</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(3,3)</drawSize>
+    </graphicData>
+    <comps>
+      <li Class="CompProperties_CausesGameCondition">
+        <compClass>RimSiege.Raids.Encirclement.CompEncirclementDevice</compClass>
+        <conditionDef>RS_EncirclementWeather</conditionDef>
+        <worldRange>0</worldRange>
+        <preventConditionStacking>false</preventConditionStacking>
+      </li>
+    </comps>
+  </ThingDef>
+  <ThingDef ParentName="RS_FieldDeviceBase">
+    <defName>RS_FieldClimateAdjuster</defName>
+    <label>temperature adjuster</label>
+    <description>A siege device that makes the local temperature more extreme over the colony.</description>
+    <graphicData>
+      <texPath>Things/Building/Power/WoodFiredGenerator</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(3,3)</drawSize>
+    </graphicData>
+    <comps>
+      <li Class="CompProperties_CausesGameCondition">
+        <compClass>RimSiege.Raids.Encirclement.CompEncirclementDevice</compClass>
+        <conditionDef>RS_EncirclementClimate</conditionDef>
+        <worldRange>0</worldRange>
+        <preventConditionStacking>false</preventConditionStacking>
+      </li>
+    </comps>
+  </ThingDef>
+  <ThingDef ParentName="RS_FieldDeviceBase">
+    <defName>RS_FieldToxicSpewer</defName>
+    <label>toxic spewer</label>
+    <description>A siege device that spreads toxic fallout over the colony.</description>
+    <graphicData>
+      <texPath>Things/Building/Power/ChemfuelPoweredGenerator</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(3,3)</drawSize>
+    </graphicData>
+    <comps>
+      <li Class="CompProperties_CausesGameCondition">
+        <compClass>RimSiege.Raids.Encirclement.CompEncirclementDevice</compClass>
+        <conditionDef>RS_EncirclementFallout</conditionDef>
+        <worldRange>0</worldRange>
+        <preventConditionStacking>false</preventConditionStacking>
+      </li>
+    </comps>
+  </ThingDef>
+  <ThingDef ParentName="RS_FieldDeviceBase">
+    <defName>RS_FieldEMIDynamo</defName>
+    <label>EMI dynamo</label>
+    <description>A siege device that shuts down electrical equipment over the colony.</description>
+    <graphicData>
+      <texPath>Things/Building/Power/Battery</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+      <drawSize>(3,3)</drawSize>
+    </graphicData>
+    <comps>
+      <li Class="CompProperties_CausesGameCondition">
+        <compClass>RimSiege.Raids.Encirclement.CompEncirclementDevice</compClass>
+        <conditionDef>RS_EncirclementEMI</conditionDef>
+        <worldRange>0</worldRange>
+        <preventConditionStacking>false</preventConditionStacking>
+      </li>
+    </comps>
+  </ThingDef>
+  <ThingDef ParentName="BuildingBase">
+    <defName>RS_SiegeMechNode</defName>
+    <label>siege construction node</label>
+    <description>A self-powered mechanoid node that illuminates the camp and accelerates nearby construction.</description>
+    <thingClass>Building</thingClass>
+    <size>(1,1)</size>
+    <passability>PassThroughOnly</passability>
+    <rotatable>false</rotatable>
+    <techLevel>Spacer</techLevel>
+    <graphicData>
+      <texPath>Things/Building/Mech/Gloomlight</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(1,1)</drawSize>
+    </graphicData>
+    <statBases>
+      <MaxHitPoints>180</MaxHitPoints>
+      <WorkToBuild>1200</WorkToBuild>
+      <Flammability>0</Flammability>
+    </statBases>
+    <costList>
+      <Steel>40</Steel>
+      <ComponentIndustrial>1</ComponentIndustrial>
+    </costList>
+    <comps>
+      <li Class="CompProperties_Glower">
+        <glowRadius>8</glowRadius>
+        <glowColor>(86,155,235,0)</glowColor>
+      </li>
+    </comps>
+    <building>
+      <claimable>false</claimable>
+    </building>
+    <modExtensions>
+      <li Class="RimSiege.Integration.SiegeConstructionExtension" />
+    </modExtensions>
+  </ThingDef>
+</Defs>

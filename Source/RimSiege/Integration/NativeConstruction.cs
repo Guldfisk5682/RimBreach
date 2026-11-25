@@ -38,11 +38,20 @@ namespace RimSiege.Integration
             }
         }
 
-        internal static bool CanPlaceFortressRebuild(BuildableDef def, IntVec3 cell, Rot4 rotation, Map map, ThingDef stuff)
+        internal static bool CanPlaceFortressRebuild(BuildableDef def, IntVec3 cell, Rot4 rotation, Map map, ThingDef stuff) =>
+            CanPlaceUnderFog(def, cell, rotation, map, stuff, ignoreEdgeArea: false);
+
+        internal static bool CanPlaceSiegeProject(BuildableDef def, IntVec3 cell, Rot4 rotation, Map map, ThingDef stuff,
+            bool install = false) => (install ? def.installBlueprintDef : def.blueprintDef) != null &&
+            CanPlaceUnderFog(def, cell, rotation, map, stuff, ignoreEdgeArea: true);
+
+        private static bool CanPlaceUnderFog(BuildableDef def, IntVec3 cell, Rot4 rotation, Map map, ThingDef stuff,
+            bool ignoreEdgeArea)
         {
             var previous = hiddenPlacement;
             hiddenPlacement = (map, GenAdj.OccupiedRect(cell, rotation, def.Size));
-            try { return GenConstruct.CanPlaceBlueprintAt(def, cell, rotation, map, stuffDef: stuff).Accepted; }
+            try { return GenConstruct.CanPlaceBlueprintAt(def, cell, rotation, map, stuffDef: stuff,
+                ignoreEdgeArea: ignoreEdgeArea).Accepted; }
             finally { hiddenPlacement = previous; }
         }
 

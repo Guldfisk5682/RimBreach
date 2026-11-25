@@ -14,6 +14,8 @@ namespace RimSiege
         public int HumanMechMinPoints = 5000;
         public bool ScaleArtilleryConstruction = true;
         public bool ModifySpecialWeapons;
+        public bool EnableEncirclement = true;
+        public int EncirclementMinPoints = 8000;
 
         public override void ExposeData()
         {
@@ -27,6 +29,8 @@ namespace RimSiege
             Scribe_Values.Look(ref ScaleArtilleryConstruction, "scaleArtilleryConstruction", true);
             Scribe_Values.Look(ref FortressFog, "fortressFog", false);
             Scribe_Values.Look(ref ModifySpecialWeapons, "modifySpecialWeapons", false);
+            Scribe_Values.Look(ref EnableEncirclement, "enableEncirclement", true);
+            Scribe_Values.Look(ref EncirclementMinPoints, "encirclementMinPoints", 8000);
         }
     }
 }

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using CombatExtended;
 using HarmonyLib;
@@ -59,6 +60,16 @@ namespace RimSiege.Raids.Artillery
             if (incident != null) incident.ShieldAssigned = true;
         }
 
+        internal static bool TryDropNear(Map map, Faction faction, IntVec3 center, HashSet<IntVec3> reserved)
+        {
+            IntVec3 spot = GenRadial.RadialCellsAround(center, 8f, true).FirstOrFallback(cell =>
+                cell.InBounds(map) && IsoFloor.SameFloor(cell, center, map) && !reserved.Contains(cell) &&
+                DropCellFinder.IsGoodDropSpot(cell, map, allowFogged: true, canRoofPunch: false) &&
+                !cell.GetThingList(map).Any(t => t is Building or Blueprint or Frame) &&
+                GenSpawn.CanSpawnAt(RS_MechSupportShield, cell, map, Rot4.North, canWipeEdifices: false), IntVec3.Invalid);
+            return spot.IsValid && Drop(spot, map, faction);
+        }
+
         private static bool Drop(IntVec3 cell, Map map, Faction faction)
         {
             // The mech-cluster building pod lifecycle, with immediate opening
@@ -81,6 +92,20 @@ namespace RimSiege.Raids.Artillery
             }
             DropPodUtility.MakeDropPodAt(cell, map, pod, faction);
             return true;
+        }
+
+        internal static bool ActiveNear(Map map, Faction faction, IntVec3 center)
+        {
+            if (map == null || faction == null || RS_MechSupportShield == null || !center.IsValid) return false;
+            float radius = (RS_MechSupportShield.GetCompProperties<CompProperties_ProjectileInterceptor>()?.radius ?? 5f) + 8f;
+            foreach (Thing shield in map.listerThings.ThingsOfDef(RS_MechSupportShield))
+            {
+                if (!shield.Spawned || shield.Destroyed || shield.Faction != faction ||
+                    !IsoFloor.SameFloor(shield.Position, center, map) ||
+                    !shield.Position.InHorDistOf(center, radius)) continue;
+                if (shield.TryGetComp<CompProjectileInterceptor>() is { Active: true }) return true;
+            }
+            return false;
         }
 
         internal static void Destroy(Thing shield)

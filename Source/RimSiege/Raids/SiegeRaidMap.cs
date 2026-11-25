@@ -18,6 +18,8 @@ namespace RimSiege.Raids
         public int InitialCount;
         public int Issued;
         public int LadderQuotaPercent = 10;
+        internal bool Encirclement;
+        internal bool TacticsEnabled => Encirclement || SiegeRaidMap.Enabled;
         public List<Pawn> Members = new List<Pawn>();
         public List<Pawn> Operators = new List<Pawn>();
         internal IsoSiegePlanner Planner;
@@ -91,6 +93,7 @@ namespace RimSiege.Raids
             Scribe_Values.Look(ref InitialCount, "initialCount");
             Scribe_Values.Look(ref Issued, "issued");
             Scribe_Values.Look(ref LadderQuotaPercent, "ladderQuotaPercent", 10);
+            Scribe_Values.Look(ref Encirclement, "encirclement");
             Scribe_Collections.Look(ref Members, "members", LookMode.Reference);
             Scribe_Collections.Look(ref Operators, "operators", LookMode.Reference);
             Scribe_Collections.Look(ref Advances, "advanceGroups", LookMode.Deep);
@@ -122,12 +125,12 @@ namespace RimSiege.Raids
         internal SiegeParty Party(Pawn pawn) => membership.TryGetValue(pawn, out SiegeParty party) ? party : null;
         internal SiegeParty Party(int id) => parties.FirstOrDefault(p => p.Id == id);
 
-        internal bool Applies(Pawn pawn) => Enabled && SiegeRoles.CanParticipateInTacticalAssault(pawn) &&
-            Party(pawn) != null && SiegeRoles.LadderAssaultDuty(pawn);
+        internal bool Applies(Pawn pawn) => Party(pawn)?.TacticsEnabled == true &&
+            SiegeRoles.CanParticipateInTacticalAssault(pawn) && SiegeRoles.LadderAssaultDuty(pawn);
 
         internal void WakeForLadder(Faction faction)
         {
-            if (!Enabled || faction == null || parties.Count == 0) return;
+            if (faction == null || parties.Count == 0) return;
             var wake = new List<Pawn>();
             foreach (SiegeParty party in parties)
                 foreach (Pawn pawn in party.Members)
@@ -158,9 +161,9 @@ namespace RimSiege.Raids
                 if (pawn != null) membership[pawn] = party;
         }
 
-        internal SiegeParty Register(List<Pawn> pawns, Faction faction, bool deferKits = false)
+        internal SiegeParty Register(List<Pawn> pawns, Faction faction, bool deferKits = false, bool encirclement = false)
         {
-            if (!Enabled || !IsoFloor.HasFloors(map)) return null;
+            if ((!Enabled && !encirclement) || !IsoFloor.HasFloors(map)) return null;
             for (int i = parties.Count - 1; i >= 0; i--)
             {
                 SiegeParty old = parties[i];
@@ -180,7 +183,7 @@ namespace RimSiege.Raids
             SiegeParty party = new SiegeParty
             {
                 Id = nextId++, InitialCount = initialCount, Members = tacticalMembers,
-                LadderQuotaPercent = LadderQuotaFor(faction)
+                LadderQuotaPercent = LadderQuotaFor(faction), Encirclement = encirclement
             };
             parties.Add(party);
             Index(party);
@@ -204,8 +207,15 @@ namespace RimSiege.Raids
 
         internal void IssueInOrder(IEnumerable<Pawn> pawns)
         {
-            foreach (Pawn pawn in pawns.Where(pawn => Party(pawn) != null).OrderBy(SiegeRoles.LadderPriority))
+            foreach (Pawn pawn in pawns.Where(pawn => Party(pawn)?.TacticsEnabled == true).OrderBy(SiegeRoles.LadderPriority))
                 Issue(pawn, Party(pawn));
+        }
+
+        internal void Include(Pawn pawn, SiegeParty party)
+        {
+            if (membership.ContainsKey(pawn)) return;
+            party.Members.Add(pawn);
+            membership[pawn] = party;
         }
 
         internal void QueueArrival(Pawn pawn) => arriving.Add(pawn);
@@ -288,7 +298,7 @@ namespace RimSiege.Raids
             int now = Find.TickManager.TicksGame;
             if (arriving.Count != 0)
             {
-                if (Enabled) IssueInOrder(arriving);
+                IssueInOrder(arriving);
                 arriving.Clear();
             }
             if (pendingSmokeRestores.Count != 0 && now % 300 == 0)
@@ -297,8 +307,8 @@ namespace RimSiege.Raids
             for (int i = 0; i < parties.Count; i++)
                 parties[i].TribalSmoke?.Tick(now);
             bool recover = dropped.Count != 0 && now % 60 == 0;
-            bool checkStalledCombat = Enabled && parties.Count != 0 && now % 60 == 0;
-            bool recheckCarriers = Enabled && parties.Count != 0 && now % RaidClimb.MemoTicks == 0;
+            bool checkStalledCombat = parties.Count != 0 && now % 60 == 0 && parties.Any(p => p.TacticsEnabled);
+            bool recheckCarriers = parties.Count != 0 && now % RaidClimb.MemoTicks == 0 && parties.Any(p => p.TacticsEnabled);
             if (!recover && !checkStalledCombat && !recheckCarriers) return;
             HashSet<Pawn> wake = new HashSet<Pawn>();
             if (recover)
@@ -313,7 +323,7 @@ namespace RimSiege.Raids
                         Release(kit);
                         if (previous.Map == map && Applies(previous) && Taking(previous, kit)) wake.Add(previous);
                     }
-                    if (party == null || !Enabled) continue;
+                    if (party?.TacticsEnabled != true) continue;
                     if (kit.Receiver == null && now >= kit.RetryAt)
                     {
                         kit.RetryAt = now + 60;

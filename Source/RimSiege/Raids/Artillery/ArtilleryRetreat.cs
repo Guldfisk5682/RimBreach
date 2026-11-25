@@ -32,6 +32,7 @@ namespace RimSiege.Raids.Artillery
             }
             foreach (ArtilleryIncident incident in artillery.TrackedIncidents.ToArray())
             {
+                if (incident.Encirclement && incident.NativeLords.Count == 0) continue;
                 var waves = artillery.TrackedRaids.Where(raid => raid.IncidentKey == incident.Key).ToArray();
                 Faction faction = waves.FirstOrDefault()?.Faction ?? incident.NativeLords.FirstOrDefault()?.faction;
                 bool breaches = incident.Breaches || waves.Any(w => w.Breaches);
@@ -122,6 +123,9 @@ namespace RimSiege.Raids.Artillery
             foreach (Pawn pawn in raid.Members)
                 if (pawn?.GetLord()?.CurLordToil is LordToil_PanicFlee)
                     SetEscortExitDuty(pawn);
+            if (raid.AssaultLord?.CurLordToil is LordToil_PanicFlee)
+                foreach (Pawn pawn in raid.AssaultLord.ownedPawns)
+                    SetEscortExitDuty(pawn);
         }
 
         private static void SetEscortExitDuty(Pawn pawn)
@@ -140,7 +144,7 @@ namespace RimSiege.Raids.Artillery
                 Lord lord = __instance.lord;
                 if (lord.faction?.def.humanlikeFaction != true) return;
                 ArtilleryMap artillery = lord.Map.GetComponent<ArtilleryMap>();
-                if (artillery.ForLord(lord) == null) return;
+                if (artillery.ForLord(lord) == null && artillery.IncidentForLord(lord) == null) return;
                 foreach (Pawn pawn in lord.ownedPawns)
                     SetEscortExitDuty(pawn);
             }
@@ -182,6 +186,8 @@ namespace RimSiege.Raids.Artillery
                     return true;
                 ArtilleryMap artillery = lord.Map.GetComponent<ArtilleryMap>();
                 ArtilleryRaid raid = artillery.ForLord(lord);
+                if (artillery.IncidentForLord(lord) is { Encirclement: true } encirclement &&
+                    encirclement.NativeLords.Count == 0) return true;
                 if (lord.LordJob is LordJob_FortressAlliedAssault && raid?.IsFortressSupport == true)
                     return true;
                 // The coordinated raid owns casualty retreats from arrival,

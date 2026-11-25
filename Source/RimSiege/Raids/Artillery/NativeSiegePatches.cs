@@ -7,6 +7,7 @@ using CombatExtended;
 using CombatExtended.Compatibility;
 using HarmonyLib;
 using RimSiege.Integration;
+using RimSiege.Raids.Encirclement;
 using RimWorld;
 using UnityEngine;
 using Verse;
@@ -126,7 +127,8 @@ namespace RimSiege.Raids.Artillery
             }
             var groups = things.Where(thing =>
             {
-                if (!raid.Camp.Guns.Any(gun => gun.Ammo == thing.def) || HasCompletedGun(raid)) return true;
+                if (!raid.Camp.Guns.Any(gun => gun.Ammo == thing.def) ||
+                    !raid.Encirclement && HasCompletedGun(raid)) return true;
                 thing.Destroy(DestroyMode.Vanish);
                 return false;
             }).Select(thing => new List<Thing> { thing }).ToList();
@@ -199,11 +201,17 @@ namespace RimSiege.Raids.Artillery
         // calibre has stock. Only the managed shell supplement is per ammo type.
         internal static void Supplement(LordToil_Siege toil, ArtilleryRaid raid)
         {
+            Map map = toil.lord.Map;
+            if (raid.Encirclement)
+            {
+                if (GameCondition_Encirclement.CampaignOn(map) is { } campaign && campaign.IncidentKey == raid.IncidentKey)
+                    campaign.Work?.SupplyAmmunition(campaign, raid);
+                return;
+            }
             var defs = raid.Camp.Guns.Where(g => g.Building is Building_TurretGunCE turret && turret.Spawned &&
                     turret.Faction == raid.Faction && turret.GetAmmo()?.UseAmmo == true && g.Ammo != null).Select(g => g.Ammo).Distinct().ToList();
             if (defs.Count == 0) return;
             var counts = defs.ToDictionary(def => def, _ => 0);
-            Map map = toil.lord.Map;
             IntVec3 center = raid.Camp.Center;
             bool floors = IsoFloor.HasFloors(map);
             int floor = floors ? IsoFloor.FloorOf(center, map) : 0;
@@ -228,7 +236,11 @@ namespace RimSiege.Raids.Artillery
             __state = null;
             ArtilleryRaid raid = NativeSiege.Raid(__instance);
             if (raid == null) return true;
-            if (raid.SuppliesDelivered) return false;
+            if (raid.SuppliesDelivered)
+            {
+                if (raid.Encirclement) NativeSiege.Data(__instance).baseRadius = 16f;
+                return false;
+            }
             if (!ArtilleryCamp.Prepare(raid, __instance.lord))
             {
                 raid.Phase = ArtilleryPhase.Assaulting;
@@ -371,6 +383,7 @@ namespace RimSiege.Raids.Artillery
             }
             if (raid != null) ArtilleryCrew.RestoreBuilders(raid, __instance);
             NativeSiege.AssignGunners(__instance);
+            if (__instance.lord.LordJob is LordJob_MechArtillery mech) mech.UpdateEncirclementEscorts();
             raid?.OptionalSmoke?.ApplyOptionalDuties(__instance.lord);
             if (__instance.lord.LordJob is LordJob_Artillery { RequiresOperators: true })
             {

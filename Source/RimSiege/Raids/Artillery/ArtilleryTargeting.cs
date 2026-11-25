@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using CombatExtended;
 using HarmonyLib;
 using RimSiege.Integration;
+using RimSiege.Raids.Encirclement;
 using RimWorld;
 using Verse;
 using Verse.AI;
@@ -61,7 +62,15 @@ namespace RimSiege.Raids.Artillery
         {
             ArtilleryRaid raid = ArtilleryRegistry.Find(__instance);
             if (raid == null || ___forcedTarget.IsValid) return true;
-            if (ArtilleryRegistry.Placement(__instance)?.Role == ArtilleryGunRole.CampDefense) return true;
+            ArtilleryPlacement placement = ArtilleryRegistry.Placement(__instance);
+            if (raid.Encirclement && placement != null &&
+                GameCondition_Encirclement.CampaignOn(__instance.Map) is { } siege && !siege.GunReady(placement))
+            {
+                __result = LocalTargetInfo.Invalid;
+                __instance.ResetCurrentTarget();
+                return false;
+            }
+            if (placement?.Role == ArtilleryGunRole.CampDefense) return true;
             Verb verb = __instance.AttackVerb;
             if (verb == null || !verb.Available())
             {

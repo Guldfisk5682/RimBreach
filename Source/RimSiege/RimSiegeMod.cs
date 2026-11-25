@@ -57,6 +57,14 @@ namespace RimSiege
             listing.CheckboxLabeled("RS_FortressFog".Translate(), ref Settings.FortressFog,
                 "RS_FortressFogDescription".Translate());
             listing.CheckboxLabeled("RS_ModifySpecialWeapons".Translate(), ref Settings.ModifySpecialWeapons);
+            listing.CheckboxLabeled("RS_EnableEncirclement".Translate(), ref Settings.EnableEncirclement,
+                "RS_EnableEncirclementDescription".Translate());
+            if (Settings.EnableEncirclement)
+            {
+                listing.Label("RS_EncirclementMinPoints".Translate(Settings.EncirclementMinPoints));
+                Settings.EncirclementMinPoints = 500 * Mathf.RoundToInt(
+                    listing.Slider(Settings.EncirclementMinPoints / 500f, 8f, 20f));
+            }
             listing.End();
         }
     }

@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Xml;
 using HarmonyLib;
+using RimSiege.Raids.Encirclement;
 using RimWorld;
 using Verse;
 using Verse.AI;
@@ -23,7 +24,7 @@ namespace RimSiege.Raids.Artillery
         public override void LordJobTick()
         {
             base.LordJobTick();
-            MechSupportShield.Tick(Raid, lord, ref nextShieldRetryTick);
+            if (!Raid.Encirclement) MechSupportShield.Tick(Raid, lord, ref nextShieldRetryTick);
         }
         internal override Pawn ConstructionWorker => lord.ownedPawns.FirstOrDefault(p => p.Spawned && CanConstruct(p));
         internal override bool PrepareCrew() => ConstructionWorker != null;
@@ -48,6 +49,13 @@ namespace RimSiege.Raids.Artillery
                 if (work != WorkTypeDefOf.Construction) pawn.workSettings.Disable(work);
             pawn.workSettings.SetPriority(WorkTypeDefOf.Construction, 1);
             return true;
+        }
+
+        internal void UpdateEncirclementEscorts()
+        {
+            if (!Raid.Encirclement || ConstructionWorker is not { } technician) return;
+            foreach (Pawn pawn in lord.ownedPawns.Where(EncirclementMechEscort.Eligible))
+                pawn.mindState.duty = new PawnDuty(DutyDefOf.Escort, technician, EncirclementMechEscort.Radius);
         }
 
         internal override void PrepareCleanup(LordToil_Siege toil)

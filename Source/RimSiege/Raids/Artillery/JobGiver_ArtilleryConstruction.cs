@@ -1,5 +1,6 @@
 using System.Linq;
 using RimSiege.Integration;
+using RimSiege.Raids.Encirclement;
 using RimWorld;
 using Verse;
 using Verse.AI;
@@ -19,6 +20,9 @@ namespace RimSiege.Raids.Artillery
                 pawn.mindState.duty?.def != DutyDefOf.Build) return ThinkResult.NoJob;
             ArtilleryRaid raid = artillery.Raid;
             if (!raid.SuppliesDelivered) return ThinkResult.NoJob;
+            if (raid.Encirclement && raid.Kind == ArtilleryRaidKind.Mechanoid &&
+                JobGiver_EncirclementGunReload.Find(pawn, Gen.YieldSingle(raid)) is { } reload)
+                return new ThinkResult(reload, this, JobTag.Misc);
             Job manning = ArtilleryGunnerPatch.AssignedJob(pawn, raid);
             if (manning != null) return new ThinkResult(manning, this, JobTag.Misc);
             if (pawn.workSettings == null || !pawn.workSettings.EverWork ||

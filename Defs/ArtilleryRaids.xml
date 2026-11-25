@@ -11,7 +11,7 @@
         <ammo>Ammo_SPG9Rocket_Frag</ammo>
       </li>
       <li>
-        <turret>Turret_Flak</turret><cost>360</cost>
+        <turret>Turret_Flak</turret><cost>360</cost><constructionWorkFactor>0.4</constructionWorkFactor>
       </li>
     </guns>
   </RimSiege.Raids.Artillery.ArtilleryGunPoolDef>
